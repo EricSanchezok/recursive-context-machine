@@ -1,0 +1,1 @@
+//! RICA — Recursive Intelligence Creation Accelerator
