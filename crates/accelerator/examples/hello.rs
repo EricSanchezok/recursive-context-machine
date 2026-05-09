@@ -4,6 +4,8 @@
 //!   export OPENAI_API_KEY=sk-...
 //!   cargo run --example hello -p accelerator
 
+use rig::client::{CompletionClient, ProviderClient};
+use rig::completion::Prompt;
 use rig::providers::openai;
 
 #[tokio::main]
