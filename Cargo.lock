@@ -3,6 +3,18 @@
 version = 4
 
 [[package]]
+name = "accelerator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rig",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5939,15 +5951,6 @@ name = "rgb"
 version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
-
-[[package]]
-name = "rica"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "rig",
- "tokio",
-]
 
 [[package]]
 name = "rig"

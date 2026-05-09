@@ -2,7 +2,7 @@
 //!
 //! Usage:
 //!   export OPENAI_API_KEY=sk-...
-//!   cargo run --example hello
+//!   cargo run --example hello -p accelerator
 
 use rig::providers::openai;
 
