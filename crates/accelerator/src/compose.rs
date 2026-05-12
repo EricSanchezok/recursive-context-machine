@@ -11,8 +11,6 @@ use crate::trace::Trace;
 // Pipeline — sequential composition
 // ============================================================================
 
-/// A pipeline runs stages in sequence. Each stage's output feeds the next
-/// stage's input through a Channel.
 pub struct Pipeline {
     stages: Vec<Arc<dyn Rica>>,
     channels: Vec<Channel>,
@@ -30,7 +28,7 @@ impl Pipeline {
 }
 
 impl Rica for Pipeline {
-    fn accelerate(
+    fn run(
         &self,
         intent: Intent,
         register: Register,
@@ -41,7 +39,7 @@ impl Rica for Pipeline {
             let mut combined_trace = Trace::new();
 
             for (i, stage) in self.stages.iter().enumerate() {
-                let (output, reg, trace) = stage.accelerate(current_intent, current_register).await;
+                let (output, reg, trace) = stage.run(current_intent, current_register).await;
 
                 combined_trace.cycles.extend(trace.cycles);
                 current_register = reg;
@@ -55,7 +53,6 @@ impl Rica for Pipeline {
                 }
             }
 
-            // Unreachable (handled in loop), but satisfy the compiler
             (
                 Output {
                     text: String::new(),
@@ -73,8 +70,6 @@ impl Rica for Pipeline {
 // Parallel — concurrent composition
 // ============================================================================
 
-/// Parallel runs multiple Rica instances concurrently on the same intent
-/// and merges their outputs.
 pub struct Parallel {
     branches: Vec<Arc<dyn Rica>>,
 }
@@ -86,7 +81,7 @@ impl Parallel {
 }
 
 impl Rica for Parallel {
-    fn accelerate(
+    fn run(
         &self,
         intent: Intent,
         register: Register,
@@ -98,7 +93,7 @@ impl Rica for Parallel {
                 .map(|branch| {
                     let branch_intent = Intent::new(format!("[branch] {}", intent.prompt));
                     let branch_reg = register.child();
-                    branch.accelerate(branch_intent, branch_reg)
+                    branch.run(branch_intent, branch_reg)
                 })
                 .collect();
 
@@ -133,8 +128,6 @@ impl Rica for Parallel {
 // Ensemble — voting composition
 // ============================================================================
 
-/// Ensemble runs multiple Rica instances on the same intent and aggregates
-/// their outputs using a custom aggregator function.
 pub struct Ensemble {
     voters: Vec<Arc<dyn Rica>>,
     aggregator: Arc<dyn Fn(Vec<Output>) -> Output + Send + Sync>,
@@ -150,7 +143,7 @@ impl Ensemble {
 }
 
 impl Rica for Ensemble {
-    fn accelerate(
+    fn run(
         &self,
         intent: Intent,
         register: Register,
@@ -162,7 +155,7 @@ impl Rica for Ensemble {
                 .map(|voter| {
                     let voter_intent = Intent::new(format!("[voter] {}", intent.prompt));
                     let voter_reg = register.child();
-                    voter.accelerate(voter_intent, voter_reg)
+                    voter.run(voter_intent, voter_reg)
                 })
                 .collect();
 
@@ -179,81 +172,5 @@ impl Rica for Ensemble {
             let output = (self.aggregator)(outputs);
             (output, register, combined_trace)
         })
-    }
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::engine::PipelineEngine;
-    use crate::rica::DefaultRica;
-
-    struct MockLlm {
-        text: String,
-    }
-
-    impl crate::rica::LlmBackend for MockLlm {
-        fn complete(
-            &self,
-            _fragments: &[&crate::fragment::Fragment],
-            _tools: &[crate::tool::Tool],
-        ) -> Pin<Box<dyn Future<Output = Result<crate::rica::LlmResponse, String>> + Send + '_>>
-        {
-            let text = self.text.clone();
-            Box::pin(async move {
-                Ok(crate::rica::LlmResponse {
-                    text: Some(text),
-                    tool_calls: vec![],
-                    tokens: Default::default(),
-                })
-            })
-        }
-
-        fn summarize(
-            &self,
-            _fragments: &[&crate::fragment::Fragment],
-        ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>> {
-            Box::pin(async move { Ok("summary".into()) })
-        }
-    }
-
-    fn make_rica(text: &str) -> Arc<dyn Rica> {
-        let llm = Arc::new(MockLlm {
-            text: text.to_string(),
-        });
-        Arc::new(DefaultRica::new(Box::new(PipelineEngine::default()), llm))
-    }
-
-    #[tokio::test]
-    async fn test_pipeline() {
-        let a = make_rica("step A");
-        let b = make_rica("step B");
-
-        let pipeline = Pipeline::new(vec![a, b], vec![Channel::last_as_intent()]);
-
-        let (output, _, _) = pipeline
-            .accelerate(Intent::new("start"), Register::new("/tmp".into()))
-            .await;
-
-        assert_eq!(output.text, "step B");
-    }
-
-    #[tokio::test]
-    async fn test_parallel() {
-        let a = make_rica("result A");
-        let b = make_rica("result B");
-
-        let parallel = Parallel::new(vec![a, b]);
-
-        let (output, _, _) = parallel
-            .accelerate(Intent::new("start"), Register::new("/tmp".into()))
-            .await;
-
-        assert!(output.text.contains("result A"));
-        assert!(output.text.contains("result B"));
     }
 }

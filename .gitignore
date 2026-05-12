@@ -37,3 +37,9 @@ docs/research/
 # Python
 venv/
 .venv/
+
+# Scout temp
+.scout-tmp/
+
+# Research notes
+research/

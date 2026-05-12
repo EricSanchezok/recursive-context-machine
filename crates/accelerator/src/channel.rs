@@ -1,10 +1,10 @@
 use crate::fragment::Fragment;
 use crate::register::Register;
 
-/// Channel — the communication pipe between two Rica instances.
+/// Channel — the communication pipe between two machines.
 ///
 /// Used in static composition (Pipeline, Parallel, Ensemble).
-/// `transform` converts the upstream output fragments into downstream input fragments.
+/// `transform` converts upstream output fragments into downstream input fragments.
 /// `isolate` builds the downstream Register from the upstream one.
 pub struct Channel {
     pub transform: Box<dyn Fn(Vec<Fragment>) -> Vec<Fragment> + Send + Sync>,
