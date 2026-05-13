@@ -2,17 +2,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+use crate::fragment::ToolDef;
+
 /// Environment — the external world accessible to the machine.
 ///
-/// Carries the working directory, environment variables, and runtime
-/// configuration (provider, model, parameters). The Policy can modify
-/// the environment via [`Action::Set`] to switch models or adjust
-/// parameters mid-computation.
+/// Carries the working directory, environment variables, runtime
+/// configuration (provider, model, parameters), and the set of
+/// available tools. The Policy can modify the environment via
+/// [`Action::Set`] to switch models or adjust parameters mid-computation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Environment {
     pub cwd: String,
     pub vars: HashMap<String, String>,
     pub config: Config,
+    pub tools: Vec<ToolDef>,
 }
 
 impl Environment {
@@ -21,6 +24,7 @@ impl Environment {
             cwd: cwd.into(),
             vars: HashMap::new(),
             config: Config::default(),
+            tools: Vec::new(),
         }
     }
 

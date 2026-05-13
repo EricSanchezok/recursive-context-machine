@@ -22,6 +22,7 @@ pub mod inbox;
 pub mod machine;
 pub mod policy;
 pub mod reactor;
+pub mod tool;
 
 pub use context::Context;
 pub use env::{Config, Environment};
@@ -33,3 +34,4 @@ pub use inbox::Inbox;
 pub use machine::Machine;
 pub use policy::{Action, Policy};
 pub use reactor::Reactor;
+pub use tool::{Tool, ToolOutput, tool_def};
