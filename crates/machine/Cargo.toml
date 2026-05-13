@@ -1,0 +1,13 @@
+[package]
+name = "machine"
+version = "0.1.0"
+edition = "2024"
+description = "CM — Context Machine core primitives"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
