@@ -1,41 +1,42 @@
+use std::collections::VecDeque;
+
 use crate::fragment::Fragment;
 
 /// Inbox — the pending queue between $\omega$ and $\pi$.
 ///
 /// The Reactor produces fragments (LLM output, tool results) and places
-/// them into the inbox. The Policy consumes them one at a time, deciding
-/// where to place each fragment in the context.
-///
-/// Fragments must be consumed in FIFO order — only the head is accessible.
+/// them into the inbox. The Machine drains them into the context.
 #[derive(Debug, Clone)]
 pub struct Inbox {
-    fragments: Vec<Fragment>,
+    fragments: VecDeque<Fragment>,
+}
+
+impl Default for Inbox {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Inbox {
     pub fn new() -> Self {
         Self {
-            fragments: Vec::new(),
+            fragments: VecDeque::new(),
         }
     }
 
     /// Push a fragment onto the queue.
     pub fn push(&mut self, f: Fragment) {
-        self.fragments.push(f);
+        self.fragments.push_back(f);
     }
 
     /// Pop the head of the queue.
     pub fn pop(&mut self) -> Option<Fragment> {
-        if self.fragments.is_empty() {
-            None
-        } else {
-            Some(self.fragments.remove(0))
-        }
+        self.fragments.pop_front()
     }
 
     /// Peek at the head without removing it.
     pub fn peek(&self) -> Option<&Fragment> {
-        self.fragments.first()
+        self.fragments.front()
     }
 
     /// Whether the inbox is empty.
@@ -46,5 +47,22 @@ impl Inbox {
     /// Number of fragments in the inbox.
     pub fn len(&self) -> usize {
         self.fragments.len()
+    }
+}
+
+impl IntoIterator for Inbox {
+    type Item = Fragment;
+    type IntoIter = std::collections::vec_deque::IntoIter<Fragment>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.fragments.into_iter()
+    }
+}
+
+impl FromIterator<Fragment> for Inbox {
+    fn from_iter<I: IntoIterator<Item = Fragment>>(iter: I) -> Self {
+        Self {
+            fragments: VecDeque::from_iter(iter),
+        }
     }
 }

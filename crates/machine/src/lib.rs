@@ -1,37 +1,41 @@
 //! CM — Context Machine
 //!
-//! A context machine is a triple $\mathcal{M} = (\mathcal{C}, \mathcal{E}, \Phi)$
-//! where $\Phi(c, e) = (c', e')$ with $c' = \pi(c, e)$ and $e' = \omega(c', e)$.
+//! A context machine is a triple ℳ = (ℂ, ℰ, Φ)
+//! where Φ(c, e) = (c′, e′) with c′ = π(c, e, ρ) and e′ = ω(c, e, τ, m).
 //!
 //! This crate provides the core primitives:
 //!
 //! | Component | Math | Role |
 //! |-----------|------|------|
-//! | [`Fragment`] | $\mathcal{F}$ | Tape symbol |
-//! | [`Context`] | $\mathcal{C}$ | Tape |
-//! | [`Environment`] | $\mathcal{E}$ | External world |
-//! | [`Inbox`] | $p$ | Pending queue |
-//! | [`Policy`] | $\pi$ | Context engineering |
-//! | [`Reactor`] | $\omega$ | Environment transition |
-//! | [`Machine`] | $\mathcal{M}$ | Composition of $\pi$ and $\omega$ |
+//! | [`Fragment`] | ℱ | Tape symbol |
+//! | [`Context`] | ℂ | Tape |
+//! | [`Environment`] | ℰ | External world |
+//! | [`Resources`] | ρ | Available pool |
+//! | [`Inbox`] | ℐ | Pending queue |
+//! | [`Policy`] | π | Context engineering |
+//! | [`Reactor`] | ω | Environment transition |
+//! | [`Machine`] | ℳ | Composition of π and ω |
 
 pub mod context;
 pub mod env;
 pub mod fragment;
 pub mod inbox;
 pub mod machine;
+pub mod model;
 pub mod policy;
 pub mod reactor;
+pub mod resources;
 pub mod tool;
 
 pub use context::Context;
-pub use env::{Config, Environment};
+pub use env::Environment;
 pub use fragment::{
-    Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, ToolDef,
-    ToolResult, Video,
+    Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, ToolResult, Video,
 };
 pub use inbox::Inbox;
 pub use machine::Machine;
+pub use model::Model;
 pub use policy::{Action, Policy};
 pub use reactor::Reactor;
-pub use tool::{Tool, ToolOutput, tool_def};
+pub use resources::Resources;
+pub use tool::{Tool, ToolOutput};

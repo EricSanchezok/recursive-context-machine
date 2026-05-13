@@ -52,14 +52,6 @@ pub struct Document {
     pub media_type: Option<String>,
 }
 
-/// Tool definition — the schema an LLM sees to decide tool usage.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolDef {
-    pub name: String,
-    pub description: String,
-    pub parameters: Value,
-}
-
 /// Tool call — produced by the assistant, requesting tool execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
@@ -83,7 +75,6 @@ pub enum Content {
     Audio(Audio),
     Video(Video),
     Document(Document),
-    ToolDef(ToolDef),
     ToolCall(ToolCall),
     ToolResult(ToolResult),
 }

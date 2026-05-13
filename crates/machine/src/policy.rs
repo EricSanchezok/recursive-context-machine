@@ -1,51 +1,50 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use serde_json::Value;
-
 use crate::context::Context;
 use crate::env::Environment;
-use crate::inbox::Inbox;
+use crate::fragment::Fragment;
+use crate::resources::Resources;
 
 /// The next action the Policy should take.
 ///
-/// These are the primitive vocabulary of context manipulation.
-/// The Policy returns one action per decision step. Multiple actions
-/// compose to form the full $\pi$ transition.
+/// These are atomic, discrete operations. The Policy composes them
+/// across multiple decision steps to build the full context state.
+/// When ready, the Policy returns [`Action::Halt`] to trigger the
+/// Reactor phase.
 #[derive(Debug, Clone)]
 pub enum Action {
-    /// Pop the inbox head and append it to the context.
-    Take,
+    /// Append a fragment to the context.
+    Add(Fragment),
 
-    /// Pop the inbox head and insert it after the fragment with the given id.
-    TakeAfter { id: u64 },
+    /// Remove the fragment with the given id.
+    Remove(u64),
 
-    /// Pop the inbox head and replace the fragment at the given id.
-    Swap { id: u64 },
+    /// Swap the positions of two fragments by id.
+    Swap(u64, u64),
 
-    /// Remove the fragment at the given id (no inbox consumption).
-    Drop { id: u64 },
+    /// Set the model name for the next Reactor invocation.
+    SetModel(String),
 
-    /// Modify the environment (e.g. switch model, set parameter).
-    Set { key: String, value: Value },
+    /// Add a tool name for the next Reactor invocation.
+    AddTool(String),
 
-    /// Stop the $\pi$ phase and trigger $\omega$.
+    /// Remove a tool name.
+    RemoveTool(String),
+
+    /// Stop the π phase and trigger ω.
     Halt,
 }
 
-/// Policy — the context engineering function $\pi$.
+/// Policy — the context engineering function π.
 ///
-/// Observes the current context, environment, and inbox, and decides
-/// the next [`Action`]. This is the primary extension point. Swap the
-/// Policy to change how the machine assembles context.
-///
-/// No concrete implementations live in this crate. They belong in
-/// downstream crates that compose specific strategies.
+/// Observes the current context, environment, and resources, and decides
+/// the next [`Action`]. This is the primary extension point.
 pub trait Policy: Send + Sync {
     fn decide<'a>(
         &'a self,
         ctx: &'a Context,
         env: &'a Environment,
-        inbox: &'a Inbox,
+        resources: &'a Resources,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>>;
 }

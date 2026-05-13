@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use machine::{Tool, ToolOutput, tool_def};
+use machine::{Tool, ToolOutput};
 use serde_json::json;
 
 struct EchoTool;
@@ -82,22 +82,4 @@ async fn tool_execute_can_fail() {
     let result = t.execute(json!({})).await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err(), "intentional failure");
-}
-
-#[test]
-fn tool_def_converts_to_fragment_schema() {
-    let t = EchoTool;
-    let def = tool_def(&t);
-    assert_eq!(def.name, "echo");
-    assert_eq!(def.description, "Echo the input back");
-    assert_eq!(def.parameters["type"], "object");
-}
-
-#[tokio::test]
-async fn tool_def_matches_tool_properties() {
-    let t = EchoTool;
-    let def = tool_def(&t);
-    assert_eq!(def.name, t.name());
-    assert_eq!(def.description, t.description());
-    assert_eq!(def.parameters, t.parameters());
 }
