@@ -135,6 +135,20 @@ impl Fragment {
         }
     }
 
+    /// Tool call fragment — produced by the assistant.
+    pub fn tool_call(id: impl Into<String>, name: impl Into<String>, arguments: Value) -> Self {
+        Self {
+            id: 0,
+            role: Role::Assistant,
+            tag: "tool_call".into(),
+            content: Content::ToolCall(ToolCall {
+                id: id.into(),
+                name: name.into(),
+                arguments,
+            }),
+        }
+    }
+
     /// Build with a custom tag.
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.tag = tag.into();

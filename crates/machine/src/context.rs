@@ -1,15 +1,20 @@
 use crate::fragment::Fragment;
 
-/// The machine's context — an ordered sequence of fragments plus selected resources.
+/// The machine's context — an ordered sequence of fragments.
 ///
-/// Each fragment is assigned a unique `id` when stored. The context also
-/// tracks which model and tools the Policy has selected for the next
-/// Reactor invocation.
+/// Each fragment is assigned a unique `id` when stored.
 pub struct Context {
     cells: Vec<Fragment>,
-    model: Option<String>,
-    tools: Vec<String>,
     next_id: u64,
+}
+
+impl Clone for Context {
+    fn clone(&self) -> Self {
+        Self {
+            cells: self.cells.clone(),
+            next_id: self.next_id,
+        }
+    }
 }
 
 impl Default for Context {
@@ -23,8 +28,6 @@ impl Context {
     pub fn new() -> Self {
         Self {
             cells: Vec::new(),
-            model: None,
-            tools: Vec::new(),
             next_id: 1,
         }
     }
@@ -44,11 +47,11 @@ impl Context {
     ///
     /// # Panics
     ///
-    /// Panics if `id` is not found in the context.
-    pub fn insert(&mut self, id: u64, mut fragment: Fragment) -> u64 {
+    /// Panics if `after` is not found in the context.
+    pub fn insert(&mut self, after: u64, mut fragment: Fragment) -> u64 {
         let pos = self
-            .find(id)
-            .unwrap_or_else(|| panic!("id {} not found in context", id));
+            .position_of(after)
+            .unwrap_or_else(|| panic!("id {} not found in context", after));
         let new_id = self.assign_id(&mut fragment);
         self.cells.insert(pos + 1, fragment);
         new_id
@@ -61,7 +64,7 @@ impl Context {
     /// Panics if `id` is not found in the context.
     pub fn replace(&mut self, id: u64, mut fragment: Fragment) {
         let pos = self
-            .find(id)
+            .position_of(id)
             .unwrap_or_else(|| panic!("id {} not found in context", id));
         fragment.id = id;
         self.cells[pos] = fragment;
@@ -74,7 +77,7 @@ impl Context {
     /// Panics if `id` is not found in the context.
     pub fn remove(&mut self, id: u64) {
         let pos = self
-            .find(id)
+            .position_of(id)
             .unwrap_or_else(|| panic!("id {} not found in context", id));
         self.cells.remove(pos);
     }
@@ -86,10 +89,10 @@ impl Context {
     /// Panics if either id is not found in the context.
     pub fn swap(&mut self, id1: u64, id2: u64) {
         let i = self
-            .find(id1)
+            .position_of(id1)
             .unwrap_or_else(|| panic!("id {} not found in context", id1));
         let j = self
-            .find(id2)
+            .position_of(id2)
             .unwrap_or_else(|| panic!("id {} not found in context", id2));
         self.cells.swap(i, j);
     }
@@ -97,36 +100,6 @@ impl Context {
     /// Clear all fragments without resetting id allocation.
     pub fn clear(&mut self) {
         self.cells.clear();
-    }
-
-    /// Set the selected model name.
-    pub fn set_model(&mut self, name: impl Into<String>) {
-        self.model = Some(name.into());
-    }
-
-    /// Add a tool name if not already present.
-    pub fn add_tool(&mut self, name: impl Into<String>) {
-        let name = name.into();
-        if !self.tools.contains(&name) {
-            self.tools.push(name);
-        }
-    }
-
-    /// Remove a tool name.
-    pub fn remove_tool(&mut self, name: impl AsRef<str>) {
-        self.tools.retain(|t| t != name.as_ref());
-    }
-
-    // ── Query ──
-
-    /// Selected model name, if any.
-    pub fn model(&self) -> Option<&str> {
-        self.model.as_deref()
-    }
-
-    /// Selected tool names.
-    pub fn tools(&self) -> &[String] {
-        &self.tools
     }
 
     /// Number of fragments in the context.
@@ -144,19 +117,19 @@ impl Context {
         &self.cells
     }
 
-    /// Find the position of a fragment by id.
-    pub fn find(&self, id: u64) -> Option<usize> {
+    /// Find the index of a fragment by id.
+    pub fn position_of(&self, id: u64) -> Option<usize> {
         self.cells.iter().position(|f| f.id == id)
     }
 
     /// Get a fragment by id.
     pub fn get(&self, id: u64) -> Option<&Fragment> {
-        self.find(id).map(|i| &self.cells[i])
+        self.position_of(id).map(|i| &self.cells[i])
     }
 
     /// Get a mutable reference to a fragment by id.
     pub fn get_mut(&mut self, id: u64) -> Option<&mut Fragment> {
-        self.find(id).map(|i| &mut self.cells[i])
+        self.position_of(id).map(|i| &mut self.cells[i])
     }
 
     /// The next id that will be assigned.

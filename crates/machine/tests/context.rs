@@ -132,13 +132,13 @@ fn find_returns_position() {
     ctx.append(Fragment::system("a"));
     let id = ctx.append(Fragment::user("b"));
     ctx.append(Fragment::assistant("c"));
-    assert_eq!(ctx.find(id), Some(1));
+    assert_eq!(ctx.position_of(id), Some(1));
 }
 
 #[test]
 fn find_returns_none_for_unknown() {
     let ctx = Context::new();
-    assert_eq!(ctx.find(999), None);
+    assert_eq!(ctx.position_of(999), None);
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn find_returns_none_after_remove() {
     let mut ctx = Context::new();
     let id = ctx.append(Fragment::system("a"));
     ctx.remove(id);
-    assert_eq!(ctx.find(id), None);
+    assert_eq!(ctx.position_of(id), None);
 }
 
 #[test]

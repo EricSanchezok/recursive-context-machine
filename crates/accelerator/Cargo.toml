@@ -2,14 +2,15 @@
 name = "accelerator"
 version = "0.1.0"
 edition = "2024"
-description = "RICA core — Recursive Intelligence Creation Accelerator"
+description = "RICA accelerator — lightweight execution entry for Context Machine"
 
 [dependencies]
+machine = { path = "../machine" }
 rig = { workspace = true }
 tokio = { workspace = true }
-anyhow = { workspace = true }
-tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-futures = "0.3"
-thiserror = "2"
+reqwest = { version = "0.12", features = ["json"] }
+
+[dev-dependencies]
+tokio = { workspace = true }

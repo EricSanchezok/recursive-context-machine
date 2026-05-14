@@ -1,9 +1,9 @@
 use crate::context::Context;
 use crate::env::Environment;
+use crate::inbox::Inbox;
 use crate::policy::{Action, Policy};
 use crate::reactor::Reactor;
 use crate::resources::Resources;
-use crate::tool::Tool;
 
 /// Machine — the composition of a Policy (π) and a Reactor (ω).
 ///
@@ -18,69 +18,60 @@ impl Machine {
         Self { policy, reactor }
     }
 
-    /// Run the machine to completion.
+    /// Run the machine until [`Action::Done`].
     ///
-    /// The loop alternates between two phases:
+    /// Borrows `ctx`, `env`, and `resources` from the caller. The inbox is
+    /// internal to the machine loop.
     ///
-    /// **π phase** — The Policy executes atomic actions on the context.
-    /// When the Policy returns [`Action::Halt`], the phase ends.
-    ///
-    /// **ω phase** — The Machine reads the selected model and tools from
-    /// the context, invokes the Reactor, and appends the returned fragments
-    /// back into the context. An empty inbox signals termination.
-    pub async fn run(&self, mut ctx: Context, env: Environment, resources: &Resources) -> Context {
-        loop {
-            // ── π phase ──
-            loop {
-                let action = self.policy.decide(&ctx, &env, resources).await;
+    /// - Context operations (`Append`, `Insert`, `Replace`, `Remove`, `Swap`)
+    ///   modify the tape.
+    /// - Resource operations (`Model`, `Catch`, `Drop`) set activation state
+    ///   on Resources.
+    /// - [`Action::Take`] pops the inbox head and appends it to the context,
+    ///   if any.
+    /// - [`Action::Halt`] triggers the Reactor phase, which pushes new
+    ///   fragments into the inbox.
+    /// - [`Action::Done`] terminates the machine.
+    pub async fn run(&self, ctx: &mut Context, env: &mut Environment, resources: &mut Resources) {
+        let mut inbox = Inbox::new();
 
-                match action {
-                    Action::Add(frag) => {
+        loop {
+            let action = self.policy.decide(ctx, env, resources, &inbox).await;
+
+            match action {
+                Action::Append(frag) => {
+                    ctx.append(frag);
+                }
+                Action::Insert { after, fragment } => {
+                    ctx.insert(after, fragment);
+                }
+                Action::Replace { id, fragment } => {
+                    ctx.replace(id, fragment);
+                }
+                Action::Remove(id) => {
+                    ctx.remove(id);
+                }
+                Action::Swap(id1, id2) => {
+                    ctx.swap(id1, id2);
+                }
+                Action::Model(name) => {
+                    resources.model(name);
+                }
+                Action::Catch(name) => {
+                    resources.catch(name);
+                }
+                Action::Drop(name) => {
+                    resources.drop(&name);
+                }
+                Action::Take => {
+                    if let Some(frag) = inbox.pop() {
                         ctx.append(frag);
                     }
-                    Action::Remove(id) => {
-                        ctx.remove(id);
-                    }
-                    Action::Swap(id1, id2) => {
-                        ctx.swap(id1, id2);
-                    }
-                    Action::SetModel(name) => {
-                        ctx.set_model(name);
-                    }
-                    Action::AddTool(name) => {
-                        ctx.add_tool(name);
-                    }
-                    Action::RemoveTool(name) => {
-                        ctx.remove_tool(&name);
-                    }
-                    Action::Halt => break,
                 }
-            }
-
-            // ── ω phase ──
-            let model = ctx
-                .model()
-                .and_then(|name| resources.models.iter().find(|m| m.name == name));
-            let tools: Vec<&dyn Tool> = ctx
-                .tools()
-                .iter()
-                .filter_map(|k| {
-                    resources
-                        .tools
-                        .iter()
-                        .find(|t| t.name() == k)
-                        .map(|t| t.as_ref())
-                })
-                .collect();
-
-            let inbox = self.reactor.react(&ctx, &env, &tools, model).await;
-
-            if inbox.is_empty() {
-                return ctx;
-            }
-
-            for frag in inbox {
-                ctx.append(frag);
+                Action::Done => return,
+                Action::Halt => {
+                    self.reactor.react(ctx, env, resources, &mut inbox).await;
+                }
             }
         }
     }

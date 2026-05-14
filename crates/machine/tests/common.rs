@@ -2,21 +2,23 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use machine::{Action, Context, Environment, Inbox, Model, Policy, Reactor, Resources, Tool};
 
 /// A policy that replays a fixed sequence of actions.
+///
+/// When the sequence is exhausted, it returns [`Action::Done`].
 pub struct SeqPolicy {
     actions: Vec<Action>,
-    pos: Mutex<usize>,
+    pos: AtomicUsize,
 }
 
 impl SeqPolicy {
     pub fn new(actions: Vec<Action>) -> Self {
         Self {
             actions,
-            pos: Mutex::new(0),
+            pos: AtomicUsize::new(0),
         }
     }
 }
@@ -27,10 +29,14 @@ impl Policy for SeqPolicy {
         _ctx: &'a Context,
         _env: &'a Environment,
         _resources: &'a Resources,
+        _inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
-        let mut pos = self.pos.lock().unwrap();
-        let action = self.actions[*pos].clone();
-        *pos += 1;
+        let pos = self.pos.fetch_add(1, Ordering::SeqCst);
+        let action = if pos >= self.actions.len() {
+            Action::Done
+        } else {
+            self.actions[pos].clone()
+        };
         Box::pin(async move { action })
     }
 }
@@ -38,14 +44,14 @@ impl Policy for SeqPolicy {
 /// A reactor that returns a fixed sequence of inboxes.
 pub struct SeqReactor {
     responses: Vec<Inbox>,
-    pos: Mutex<usize>,
+    pos: AtomicUsize,
 }
 
 impl SeqReactor {
     pub fn new(responses: Vec<Inbox>) -> Self {
         Self {
             responses,
-            pos: Mutex::new(0),
+            pos: AtomicUsize::new(0),
         }
     }
 }
@@ -55,17 +61,16 @@ impl Reactor for SeqReactor {
         &'a self,
         _ctx: &'a Context,
         _env: &'a Environment,
-        _tools: &'a [&'a dyn Tool],
-        _model: Option<&'a Model>,
-    ) -> Pin<Box<dyn Future<Output = Inbox> + Send + 'a>> {
-        let mut pos = self.pos.lock().unwrap();
-        let response = if *pos >= self.responses.len() {
-            Inbox::new()
-        } else {
-            self.responses[*pos].clone()
-        };
-        *pos += 1;
-        Box::pin(async move { response })
+        _resources: &'a Resources,
+        inbox: &'a mut Inbox,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        let pos = self.pos.fetch_add(1, Ordering::SeqCst);
+        if pos < self.responses.len() {
+            for frag in self.responses[pos].clone() {
+                inbox.push(frag);
+            }
+        }
+        Box::pin(async move {})
     }
 }
 
@@ -81,4 +86,39 @@ pub fn test_model() -> Model {
 /// Build test resources with a single model.
 pub fn test_resources() -> Resources {
     Resources::new().with_model(test_model())
+}
+
+/// Build test resources with a model and tools.
+pub fn test_resources_with_tools() -> Resources {
+    Resources::new()
+        .with_model(test_model())
+        .with_tool(Box::new(TestTool("tool-a")))
+        .with_tool(Box::new(TestTool("tool-b")))
+}
+
+struct TestTool(&'static str);
+
+impl Tool for TestTool {
+    fn name(&self) -> &str {
+        self.0
+    }
+    fn description(&self) -> &str {
+        "test tool"
+    }
+    fn parameters(&self) -> serde_json::Value {
+        serde_json::json!({})
+    }
+    fn execute<'a>(
+        &'a self,
+        _args: serde_json::Value,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<machine::ToolOutput, String>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            Ok(machine::ToolOutput {
+                content: "ok".into(),
+                title: None,
+            })
+        })
+    }
 }
