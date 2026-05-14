@@ -1,40 +1,27 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use machine::{Action, Context, Environment, Inbox, Policy, Resources};
 
-/// Default policy — simple strategy.
+/// Default policy — a minimal three-step loop.
 ///
-/// 1. Set the first available model.
-/// 2. Catch the first available tool.
-/// 3. Take all fragments from the inbox.
-/// 4. Halt to trigger the Reactor.
-/// 5. Take all new fragments from the inbox.
-/// 6. Done.
+/// ```text
+///   1. Halt — trigger LLM completion
+///   2. Take — pop the assistant response into context
+///   3. Done
+/// ```
+///
+/// This is intentionally minimal. Users can override with
+/// [`Accelerator::with_policy`](crate::Accelerator::with_policy).
 pub struct DefaultPolicy {
-    phase: std::sync::Mutex<Phase>,
-}
-
-#[derive(PartialEq)]
-enum Phase {
-    Model,
-    Catch,
-    TakeInbox,
-    Halt,
-    TakeResult,
-    Done,
-}
-
-impl Default for DefaultPolicy {
-    fn default() -> Self {
-        Self::new()
-    }
+    step: AtomicU8,
 }
 
 impl DefaultPolicy {
     pub fn new() -> Self {
         Self {
-            phase: std::sync::Mutex::new(Phase::Model),
+            step: AtomicU8::new(1),
         }
     }
 }
@@ -44,45 +31,16 @@ impl Policy for DefaultPolicy {
         &'a self,
         _ctx: &'a Context,
         _env: &'a Environment,
-        resources: &'a Resources,
-        inbox: &'a Inbox,
+        _resources: &'a Resources,
+        _inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
-        let mut phase = self.phase.lock().unwrap();
-
-        let action = loop {
-            match *phase {
-                Phase::Model => {
-                    *phase = Phase::Catch;
-                    if !resources.models.is_empty() {
-                        break Action::Model(resources.models[0].name.clone());
-                    }
-                }
-                Phase::Catch => {
-                    *phase = Phase::TakeInbox;
-                    if !resources.tools.is_empty() {
-                        break Action::Catch(resources.tools[0].name().to_string());
-                    }
-                }
-                Phase::TakeInbox => {
-                    if !inbox.is_empty() {
-                        break Action::Take;
-                    }
-                    *phase = Phase::Halt;
-                }
-                Phase::Halt => {
-                    *phase = Phase::TakeResult;
-                    break Action::Halt;
-                }
-                Phase::TakeResult => {
-                    if !inbox.is_empty() {
-                        break Action::Take;
-                    }
-                    *phase = Phase::Done;
-                }
-                Phase::Done => break Action::Done,
+        let current = self.step.fetch_add(1, Ordering::Relaxed) + 1;
+        Box::pin(async move {
+            match current {
+                1 => Action::Halt,
+                2 => Action::Take,
+                _ => Action::Done,
             }
-        };
-
-        Box::pin(async move { action })
+        })
     }
 }

@@ -1,65 +1,125 @@
-pub mod policy;
-pub mod station;
-pub mod tool;
+//! RICA Accelerator — lightweight entry for the Context Machine.
+//!
+//! The accelerator wires together:
+//!   - a user **intent**
+//!   - a **Policy** (one-shot or custom)
+//!   - an **Environment** (cwd, vars)
+//!   - **Resources** (models, tools)
+//!
+//! and runs the [`Machine`] against them.
+//!
+//! # Quick start
+//!
+//! ```no_run
+//! # async fn example() {
+//! use accelerator::Accelerator;
+//!
+//! let result = Accelerator::new("What is 3 + 5?")
+//!     .run()
+//!     .await;
+//! # }
+//! ```
+//!
+//! # Custom policy / env / tools
+//!
+//! ```no_run
+//! # async fn example() {
+//! use accelerator::Accelerator;
+//! use machine::Environment;
+//!
+//! let result = Accelerator::new("What is 3 + 5?")
+//!     .with_env(Environment::new("/tmp"))
+//!     .run()
+//!     .await;
+//! # }
+//! ```
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+mod policy;
+mod tools;
 
-use machine::{Context, Environment, Fragment, Machine, Resources};
+use machine::{Context, Environment, Fragment, Machine, Model, Policy, Resources, Tool};
+use policy::DefaultPolicy;
+use tools::builtin_tools;
 
-use crate::policy::DefaultPolicy;
-
-/// In-memory context store.
-static CONTEXTS: std::sync::LazyLock<Mutex<HashMap<String, Context>>> =
-    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
-
-/// Run an accelerator with the given intent.
+/// The accelerator entry point.
 ///
-/// - `intent`: The user's request.
-/// - `station_url`: URL of the Station configuration service.
-/// - `ctx_id`: Optional context ID for continuing a previous session.
-/// - `policy`: Optional custom Policy.
-pub async fn accelerate(
+/// `intent` is the only required parameter — everything else has
+/// sensible defaults or is additive.
+pub struct Accelerator {
     intent: String,
-    station_url: &str,
-    ctx_id: Option<&str>,
-    policy: Option<Box<dyn machine::Policy>>,
-) -> Result<Context, String> {
-    // Fetch configuration from Station
-    let client = station::Client::new(station_url);
-    let config = client.config().await?;
+    policy: Option<Box<dyn Policy>>,
+    env: Option<Environment>,
+    tools: Vec<Box<dyn Tool>>,
+}
 
-    // Build Resources
-    let mut resources = Resources::new().with_model(config.model);
-    for tool_def in &config.tools {
-        let tool = crate::tool::ShellTool::new(tool_def, station_url);
-        resources = resources.with_tool(Box::new(tool));
+impl Accelerator {
+    /// Create an accelerator with the given user intent.
+    ///
+    /// The intent becomes a `User` fragment at the head of the context.
+    pub fn new(intent: impl Into<String>) -> Self {
+        Self {
+            intent: intent.into(),
+            policy: None,
+            env: None,
+            tools: Vec::new(),
+        }
     }
 
-    // Build Environment
-    let mut env = Environment::new(std::env::current_dir().unwrap_or_else(|_| "/".into()));
-
-    // Build or retrieve Context
-    let mut ctx = match ctx_id {
-        Some(id) => CONTEXTS.lock().unwrap().remove(id).unwrap_or_default(),
-        None => Context::new(),
-    };
-
-    // Add system prompt and user intent
-    ctx.append(Fragment::system(&config.system_prompt));
-    ctx.append(Fragment::user(&intent));
-
-    // Build Machine
-    let policy: Box<dyn machine::Policy> = policy.unwrap_or_else(|| Box::new(DefaultPolicy::new()));
-    let machine = Machine::new(policy);
-
-    // Run
-    machine.run(&mut ctx, &mut env, &mut resources).await;
-
-    // Store context if ctx_id was provided
-    if let Some(id) = ctx_id {
-        CONTEXTS.lock().unwrap().insert(id.to_string(), ctx.clone());
+    /// Override the default policy.
+    pub fn with_policy(mut self, policy: Box<dyn Policy>) -> Self {
+        self.policy = Some(policy);
+        self
     }
 
-    Ok(ctx)
+    /// Override the default environment.
+    pub fn with_env(mut self, env: Environment) -> Self {
+        self.env = Some(env);
+        self
+    }
+
+    /// Register an additional tool (extends the built-in set).
+    pub fn with_tool(mut self, tool: Box<dyn Tool>) -> Self {
+        self.tools.push(tool);
+        self
+    }
+
+    /// Build the context, environment, resources, and run the machine.
+    ///
+    /// Returns the final context after the machine loop terminates.
+    pub async fn run(self) -> Context {
+        let mut ctx = Context::new();
+        ctx.append(Fragment::user(self.intent));
+
+        let mut env = self.env.unwrap_or_else(|| Environment::new("."));
+
+        let mut resources = Resources::new();
+
+        // Register built-in tools + user tools.
+        for t in builtin_tools().into_iter().chain(self.tools) {
+            let name = t.name().to_string();
+            resources = resources.with_tool(t);
+            // Activate all registered tools by default.
+            resources.catch_tool(name);
+        }
+
+        // Register a default model. The caller's Station / UI layer
+        // should ultimately provide this; for now we use a hard-coded
+        // OpenAI-compatible local endpoint.
+        resources = resources.with_model(Model {
+            name: "default".into(),
+            protocol: machine::Protocol::OpenAI,
+            endpoint: None, // falls back to OPENAI_BASE_URL or https://api.openai.com/v1
+            credentials: None, // falls back to OPENAI_API_KEY
+            ..Default::default()
+        });
+        resources.set_active_model("default");
+
+        let policy = self
+            .policy
+            .unwrap_or_else(|| Box::new(DefaultPolicy::new()));
+        let machine = Machine::new(policy);
+
+        machine.run(&mut ctx, &mut env, &mut resources).await;
+        ctx
+    }
 }
