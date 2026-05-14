@@ -9,10 +9,14 @@ use crate::fragment::{Content, Fragment, Role};
 use crate::model::{Model, Protocol};
 use crate::resources::Resources;
 
-/// Call the active LLM and return the response fragments.
+/// Call the active LLM and return the response fragments or an error.
 ///
 /// Dispatches by `Protocol` (3 arms) to the corresponding rig module.
 /// `endpoint` optionally overrides the provider's default base URL.
+///
+/// On failure, returns `Content::Error` instead of faking an assistant
+/// text fragment. The caller (Policy) can then decide to retry, switch
+/// model, or abort.
 pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
     let model = match resources.active_model() {
         Some(m) => m,
@@ -75,7 +79,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 
     match result {
         Ok(choice) => collect_fragments(choice.iter()),
-        Err(e) => vec![Fragment::assistant(format!("Error: {}", e))],
+        Err(e) => vec![Fragment::error(format!("LLM call failed: {}", e))],
     }
 }
 
@@ -150,13 +154,7 @@ fn prepare_tools(resources: &Resources) -> Vec<ToolDefinition> {
 fn fragment_to_message(frag: &Fragment) -> Option<Message> {
     match frag.role {
         Role::System => frag.as_text().map(Message::system),
-        Role::User => {
-            if let Content::ToolResult(tr) = &frag.content {
-                Some(Message::tool_result(&tr.call_id, &tr.content))
-            } else {
-                frag.as_text().map(Message::user)
-            }
-        }
+        Role::User => frag.as_text().map(Message::user),
         Role::Assistant => {
             if let Content::ToolCall(tc) = &frag.content {
                 Some(Message::Assistant {
@@ -169,6 +167,13 @@ fn fragment_to_message(frag: &Fragment) -> Option<Message> {
                 })
             } else {
                 frag.as_text().map(Message::assistant)
+            }
+        }
+        Role::Tool => {
+            if let Content::ToolResult(tr) = &frag.content {
+                Some(Message::tool_result(&tr.call_id, &tr.content))
+            } else {
+                None
             }
         }
     }

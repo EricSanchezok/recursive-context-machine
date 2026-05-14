@@ -1,5 +1,6 @@
 use crate::model::Model;
 use crate::tool::Tool;
+use std::collections::HashMap;
 
 /// Resources — the pool of available tools and models with activation state.
 ///
@@ -10,6 +11,9 @@ pub struct Resources {
     pub models: Vec<Model>,
     active_model: Option<String>,
     active_tools: Vec<String>,
+    /// Named prompt templates. Policy reads from here.
+    /// The "default" key holds the system-level instruction.
+    pub prompts: HashMap<String, String>,
 }
 
 impl Default for Resources {
@@ -25,6 +29,7 @@ impl Resources {
             models: Vec::new(),
             active_model: None,
             active_tools: Vec::new(),
+            prompts: HashMap::new(),
         }
     }
 

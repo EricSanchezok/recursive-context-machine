@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Tool — an executable capability.
@@ -21,12 +22,15 @@ pub trait Tool: Send + Sync {
     fn execute<'a>(
         &'a self,
         args: Value,
-    ) -> Pin<Box<dyn Future<Output = Result<ToolOutput, String>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>>;
 }
 
 /// The outcome of a tool execution.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ToolOutput {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolResult {
+    /// Unique ID matching the tool call that produced this result.
+    pub call_id: String,
+
     /// Textual content returned to the model.
     pub content: String,
 

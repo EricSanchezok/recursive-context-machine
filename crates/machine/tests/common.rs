@@ -78,10 +78,11 @@ impl Tool for TestTool {
         &'a self,
         _args: serde_json::Value,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<machine::ToolOutput, String>> + Send + 'a>,
+        Box<dyn std::future::Future<Output = Result<machine::ToolResult, String>> + Send + 'a>,
     > {
         Box::pin(async move {
-            Ok(machine::ToolOutput {
+            Ok(machine::ToolResult {
+                call_id: String::new(),
                 content: "ok".into(),
                 title: None,
             })

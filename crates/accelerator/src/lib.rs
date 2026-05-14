@@ -1,22 +1,20 @@
 //! RICA Accelerator — lightweight entry for the Context Machine.
 //!
-//! The accelerator wires together:
+//! The `accelerate` function wires together:
 //!   - a user **intent**
-//!   - a **Policy** (one-shot or custom)
+//!   - a **Policy** (defaults to [`DefaultPolicy`])
 //!   - an **Environment** (cwd, vars)
 //!   - **Resources** (models, tools)
 //!
-//! and runs the [`Machine`] against them.
+//! and runs the [`Machine`] against them, returning the final [`Context`].
 //!
 //! # Quick start
 //!
 //! ```no_run
 //! # async fn example() {
-//! use accelerator::Accelerator;
+//! use accelerator::accelerate;
 //!
-//! let result = Accelerator::new("What is 3 + 5?")
-//!     .run()
-//!     .await;
+//! let result = accelerate("What is 3 + 5?", None, None, vec![]).await;
 //! # }
 //! ```
 //!
@@ -24,102 +22,80 @@
 //!
 //! ```no_run
 //! # async fn example() {
-//! use accelerator::Accelerator;
+//! use accelerator::accelerate;
 //! use machine::Environment;
 //!
-//! let result = Accelerator::new("What is 3 + 5?")
-//!     .with_env(Environment::new("/tmp"))
-//!     .run()
-//!     .await;
+//! let result = accelerate(
+//!     "What is 3 + 5?",
+//!     None,
+//!     Some(Environment::new("/tmp")),
+//!     vec![],
+//! ).await;
 //! # }
 //! ```
 
 mod policy;
 mod tools;
 
-use machine::{Context, Environment, Fragment, Machine, Model, Policy, Resources, Tool};
+use machine::{Context, Environment, Machine, Model, Policy, Resources, Tool};
 use policy::DefaultPolicy;
 use tools::builtin_tools;
 
-/// The accelerator entry point.
+/// Run the context machine with a user intent and optional overrides.
 ///
-/// `intent` is the only required parameter — everything else has
-/// sensible defaults or is additive.
-pub struct Accelerator {
-    intent: String,
+/// # Parameters
+///
+/// - `intent` — the user's natural-language request (required).
+/// - `policy` — overrides the default [`DefaultPolicy`] when `Some`.
+/// - `env` — overrides the default environment (`cwd = "."`) when `Some`.
+/// - `tools` — additional tools beyond the built-in set.
+///
+/// # Returns
+///
+/// The final [`Context`] after the machine loop terminates.
+pub async fn accelerate(
+    intent: impl Into<String>,
     policy: Option<Box<dyn Policy>>,
     env: Option<Environment>,
     tools: Vec<Box<dyn Tool>>,
-}
+) -> Context {
+    let intent = intent.into();
 
-impl Accelerator {
-    /// Create an accelerator with the given user intent.
-    ///
-    /// The intent becomes a `User` fragment at the head of the context.
-    pub fn new(intent: impl Into<String>) -> Self {
-        Self {
-            intent: intent.into(),
-            policy: None,
-            env: None,
-            tools: Vec::new(),
-        }
+    let mut ctx = Context::new();
+
+    let mut env = env.unwrap_or_else(|| Environment::new("."));
+
+    let mut resources = Resources::new();
+
+    // Register built-in tools + user tools.
+    for t in builtin_tools().into_iter().chain(tools) {
+        let name = t.name().to_string();
+        resources = resources.with_tool(t);
+        // Activate all registered tools by default.
+        resources.catch_tool(name);
     }
 
-    /// Override the default policy.
-    pub fn with_policy(mut self, policy: Box<dyn Policy>) -> Self {
-        self.policy = Some(policy);
-        self
-    }
+    // Register a default model. The caller's Station / UI layer
+    // should ultimately provide this; for now we use a hard-coded
+    // OpenAI-compatible local endpoint.
+    resources = resources.with_model(Model {
+        name: "default".into(),
+        protocol: machine::Protocol::OpenAI,
+        endpoint: None, // falls back to OPENAI_BASE_URL or https://api.openai.com/v1
+        credentials: None, // falls back to OPENAI_API_KEY
+        ..Default::default()
+    });
+    resources.set_active_model("default");
 
-    /// Override the default environment.
-    pub fn with_env(mut self, env: Environment) -> Self {
-        self.env = Some(env);
-        self
-    }
+    // Load default system prompt so the policy can read it in phase 1.
+    resources.prompts.insert(
+        "default".to_string(),
+        include_str!("prompts/default.txt").to_string(),
+    );
 
-    /// Register an additional tool (extends the built-in set).
-    pub fn with_tool(mut self, tool: Box<dyn Tool>) -> Self {
-        self.tools.push(tool);
-        self
-    }
+    let policy = policy.unwrap_or_else(|| Box::new(DefaultPolicy::new(intent)));
+    let machine = Machine::new(policy);
 
-    /// Build the context, environment, resources, and run the machine.
-    ///
-    /// Returns the final context after the machine loop terminates.
-    pub async fn run(self) -> Context {
-        let mut ctx = Context::new();
-        ctx.append(Fragment::user(self.intent));
-
-        let mut env = self.env.unwrap_or_else(|| Environment::new("."));
-
-        let mut resources = Resources::new();
-
-        // Register built-in tools + user tools.
-        for t in builtin_tools().into_iter().chain(self.tools) {
-            let name = t.name().to_string();
-            resources = resources.with_tool(t);
-            // Activate all registered tools by default.
-            resources.catch_tool(name);
-        }
-
-        // Register a default model. The caller's Station / UI layer
-        // should ultimately provide this; for now we use a hard-coded
-        // OpenAI-compatible local endpoint.
-        resources = resources.with_model(Model {
-            name: "default".into(),
-            protocol: machine::Protocol::OpenAI,
-            endpoint: None, // falls back to OPENAI_BASE_URL or https://api.openai.com/v1
-            credentials: None, // falls back to OPENAI_API_KEY
-            ..Default::default()
-        });
-        resources.set_active_model("default");
-
-        let policy = self
-            .policy
-            .unwrap_or_else(|| Box::new(DefaultPolicy::new()));
-        let machine = Machine::new(policy);
-
-        machine.run(&mut ctx, &mut env, &mut resources).await;
-        ctx
-    }
+    machine.run(&mut ctx, &mut env, &mut resources).await;
+    ctx
 }

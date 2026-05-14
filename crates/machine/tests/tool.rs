@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use machine::{Tool, ToolOutput};
+use machine::{Tool, ToolResult};
 use serde_json::json;
 
 struct EchoTool;
@@ -27,10 +27,11 @@ impl Tool for EchoTool {
     fn execute<'a>(
         &'a self,
         args: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<ToolOutput, String>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
         let msg = args["message"].as_str().unwrap_or("").to_string();
         Box::pin(async move {
-            Ok(ToolOutput {
+            Ok(ToolResult {
+                call_id: String::new(),
                 content: msg,
                 title: Some("echo".to_string()),
             })
@@ -56,7 +57,7 @@ impl Tool for FailingTool {
     fn execute<'a>(
         &'a self,
         _args: serde_json::Value,
-    ) -> Pin<Box<dyn Future<Output = Result<ToolOutput, String>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
         Box::pin(async move { Err("intentional failure".to_string()) })
     }
 }

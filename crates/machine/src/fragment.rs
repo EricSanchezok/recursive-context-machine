@@ -1,12 +1,22 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::tool::ToolResult;
+
 /// Fragment role — immutable, assigned at creation.
+///
+/// Maps directly to the standard LLM wire-protocol roles:
+/// [`System`](Role::System), [`User`](Role::User), [`Assistant`](Role::Assistant), [`Tool`](Role::Tool).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
+    /// System instruction.
     System,
+    /// Human input.
     User,
+    /// LLM output (text or tool call).
     Assistant,
+    /// Tool execution result.
+    Tool,
 }
 
 /// Source of multimedia data.
@@ -60,14 +70,12 @@ pub struct ToolCall {
     pub arguments: Value,
 }
 
-/// Tool result — returned after executing a tool call.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ToolResult {
-    pub call_id: String,
-    pub content: String,
-}
-
 /// Content of a fragment.
+///
+/// All content types are value-objects — they carry data, not behavior.
+/// [`Error`](Content::Error) is singled out because it follows a different
+/// routing path than regular messages: Policy can intercept it for retry
+/// decisions rather than forwarding it to the language model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Content {
     Text(Text),
@@ -77,6 +85,10 @@ pub enum Content {
     Document(Document),
     ToolCall(ToolCall),
     ToolResult(ToolResult),
+    /// Execution error — LLM failure, tool failure, or runtime error.
+    /// Carries a human-readable message. Policy can decide to retry,
+    /// switch model, or abort.
+    Error(String),
 }
 
 /// A single symbol on the context tape.
@@ -126,12 +138,26 @@ impl Fragment {
     pub fn tool_result(call_id: impl Into<String>, text: impl Into<String>) -> Self {
         Self {
             id: 0,
-            role: Role::User,
+            role: Role::Tool,
             tag: "tool_result".into(),
             content: Content::ToolResult(ToolResult {
                 call_id: call_id.into(),
                 content: text.into(),
+                title: None,
             }),
+        }
+    }
+
+    /// Error fragment — LLM failure, runtime error, etc.
+    ///
+    /// These are routed through Policy for retry/fallback decisions,
+    /// not forwarded to the language model as context.
+    pub fn error(message: impl Into<String>) -> Self {
+        Self {
+            id: 0,
+            role: Role::System,
+            tag: "error".into(),
+            content: Content::Error(message.into()),
         }
     }
 

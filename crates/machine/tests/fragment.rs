@@ -25,7 +25,7 @@ fn assistant_has_correct_role_and_tag() {
 #[test]
 fn tool_result_has_correct_role_and_tag() {
     let f = Fragment::tool_result("call_1", "done");
-    assert_eq!(f.role, machine::Role::User);
+    assert_eq!(f.role, machine::Role::Tool);
     assert_eq!(f.tag, "tool_result");
 }
 

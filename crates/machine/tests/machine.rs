@@ -54,7 +54,7 @@ async fn halt_and_take() {
     assert_eq!(ctx.fragments()[0].as_text(), Some("sys"));
     assert_eq!(ctx.fragments()[1].as_text(), Some("hello"));
     // The third fragment is whatever the reactor produced
-    assert_eq!(ctx.fragments()[2].tag, "assistant");
+    assert_eq!(ctx.fragments()[2].tag, "error");
 }
 
 #[tokio::test]

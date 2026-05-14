@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use machine::{Tool, ToolOutput};
+use machine::{Tool, ToolResult};
 use serde_json::Value;
 
 /// Built-in tool: adds two integers.
@@ -32,11 +32,12 @@ impl Tool for AddTool {
     fn execute<'a>(
         &'a self,
         args: Value,
-    ) -> Pin<Box<dyn Future<Output = Result<ToolOutput, String>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
         Box::pin(async move {
             let a = args["a"].as_i64().ok_or("missing or invalid 'a'")?;
             let b = args["b"].as_i64().ok_or("missing or invalid 'b'")?;
-            Ok(ToolOutput {
+            Ok(ToolResult {
+                call_id: String::new(),
                 content: format!("{}", a + b),
                 title: Some(format!("add({a}, {b})")),
             })
