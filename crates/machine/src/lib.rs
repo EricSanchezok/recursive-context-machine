@@ -13,9 +13,10 @@
 //! | [`Resources`] | ρ | Available pool |
 //! | [`Inbox`] | ℐ | Pending queue |
 //! | [`Policy`] | π | Context engineering |
-//! | [`Reactor`] | ω | Environment transition |
+//! | [`reactor`] | ω | Environment transition |
 //! | [`Machine`] | ℳ | Composition of π and ω |
 
+pub mod completion;
 pub mod context;
 pub mod env;
 pub mod fragment;
@@ -34,8 +35,7 @@ pub use fragment::{
 };
 pub use inbox::Inbox;
 pub use machine::Machine;
-pub use model::Model;
+pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
 pub use policy::{Action, Policy};
-pub use reactor::Reactor;
 pub use resources::Resources;
 pub use tool::{Tool, ToolOutput};

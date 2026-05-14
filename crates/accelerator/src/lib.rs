@@ -1,5 +1,4 @@
 pub mod policy;
-pub mod reactor;
 pub mod station;
 pub mod tool;
 
@@ -9,7 +8,6 @@ use std::sync::Mutex;
 use machine::{Context, Environment, Fragment, Machine, Resources};
 
 use crate::policy::DefaultPolicy;
-use crate::reactor::LLMReactor;
 
 /// In-memory context store.
 static CONTEXTS: std::sync::LazyLock<Mutex<HashMap<String, Context>>> =
@@ -53,8 +51,7 @@ pub async fn accelerate(
 
     // Build Machine
     let policy: Box<dyn machine::Policy> = policy.unwrap_or_else(|| Box::new(DefaultPolicy::new()));
-    let reactor = Box::new(LLMReactor::new());
-    let machine = Machine::new(policy, reactor);
+    let machine = Machine::new(policy);
 
     // Run
     machine.run(&mut ctx, &mut env, &mut resources).await;

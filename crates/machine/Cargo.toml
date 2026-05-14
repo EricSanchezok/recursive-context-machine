@@ -7,6 +7,7 @@ description = "CM — Context Machine core primitives"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rig = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

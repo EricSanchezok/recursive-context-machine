@@ -4,7 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use machine::{Action, Context, Environment, Inbox, Model, Policy, Reactor, Resources, Tool};
+use machine::{Action, Context, Environment, Inbox, Model, Policy, Resources, Tool};
 
 /// A policy that replays a fixed sequence of actions.
 ///
@@ -41,44 +41,10 @@ impl Policy for SeqPolicy {
     }
 }
 
-/// A reactor that returns a fixed sequence of inboxes.
-pub struct SeqReactor {
-    responses: Vec<Inbox>,
-    pos: AtomicUsize,
-}
-
-impl SeqReactor {
-    pub fn new(responses: Vec<Inbox>) -> Self {
-        Self {
-            responses,
-            pos: AtomicUsize::new(0),
-        }
-    }
-}
-
-impl Reactor for SeqReactor {
-    fn react<'a>(
-        &'a self,
-        _ctx: &'a Context,
-        _env: &'a Environment,
-        _resources: &'a Resources,
-        inbox: &'a mut Inbox,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
-        let pos = self.pos.fetch_add(1, Ordering::SeqCst);
-        if pos < self.responses.len() {
-            for frag in self.responses[pos].clone() {
-                inbox.push(frag);
-            }
-        }
-        Box::pin(async move {})
-    }
-}
-
 /// Build a test model.
 pub fn test_model() -> Model {
     Model {
         name: "test".into(),
-        provider: "test".into(),
         ..Default::default()
     }
 }

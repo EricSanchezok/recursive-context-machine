@@ -3,8 +3,8 @@ use crate::tool::Tool;
 
 /// Resources — the pool of available tools and models with activation state.
 ///
-/// The Policy sets the active model and catches/drops tools via [`Action`].
-/// The Reactor reads the active state directly from Resources.
+/// The Policy sets the active model and catches/drops tools via [`Action`](crate::Action).
+/// The Completion reads the active state directly from Resources.
 pub struct Resources {
     pub tools: Vec<Box<dyn Tool>>,
     pub models: Vec<Model>,
@@ -45,7 +45,7 @@ impl Resources {
     /// # Panics
     ///
     /// Panics if the model is not registered.
-    pub fn model(&mut self, name: impl Into<String>) {
+    pub fn set_active_model(&mut self, name: impl Into<String>) {
         let name = name.into();
         assert!(
             self.models.iter().any(|m| m.name == name),
@@ -55,12 +55,12 @@ impl Resources {
         self.active_model = Some(name);
     }
 
-    /// Catch a tool — add it to the active set. Idempotent.
+    /// Activate a tool by adding it to the active set. Idempotent.
     ///
     /// # Panics
     ///
     /// Panics if the tool is not registered.
-    pub fn catch(&mut self, name: impl Into<String>) {
+    pub fn catch_tool(&mut self, name: impl Into<String>) {
         let name = name.into();
         assert!(
             self.tools.iter().any(|t| t.name() == name),
@@ -72,8 +72,8 @@ impl Resources {
         }
     }
 
-    /// Drop a tool — remove it from the active set.
-    pub fn drop(&mut self, name: impl AsRef<str>) {
+    /// Deactivate a tool by removing it from the active set.
+    pub fn drop_tool(&mut self, name: impl AsRef<str>) {
         self.active_tools.retain(|t| t != name.as_ref());
     }
 

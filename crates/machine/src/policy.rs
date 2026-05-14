@@ -11,7 +11,7 @@ use crate::resources::Resources;
 ///
 /// These are atomic, discrete operations. The Policy composes them
 /// across multiple decision steps to build the full context state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     // ── Context ──
     /// Append a fragment to the end of the context.
@@ -43,7 +43,7 @@ pub enum Action {
     /// Pop the inbox head and append it to the context.
     Take,
 
-    /// Stop the π phase and trigger ω.
+    /// Stop the π phase and trigger ω (LLM completion).
     Halt,
 
     /// Stop the machine.

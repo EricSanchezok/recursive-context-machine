@@ -6,15 +6,9 @@ use crate::fragment::Fragment;
 ///
 /// The Reactor produces fragments (LLM output, tool results) and places
 /// them into the inbox. The Machine drains them into the context.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Inbox {
     fragments: VecDeque<Fragment>,
-}
-
-impl Default for Inbox {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl Inbox {

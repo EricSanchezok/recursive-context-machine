@@ -10,7 +10,7 @@ pub enum Role {
 }
 
 /// Source of multimedia data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DataSource {
     Url(String),
     Base64(String),
@@ -19,41 +19,41 @@ pub enum DataSource {
 }
 
 /// Plain text content.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Text {
     pub text: String,
 }
 
 /// Image content.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Image {
     pub source: DataSource,
     pub media_type: Option<String>,
 }
 
 /// Audio content.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Audio {
     pub source: DataSource,
     pub media_type: Option<String>,
 }
 
 /// Video content.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Video {
     pub source: DataSource,
     pub media_type: Option<String>,
 }
 
 /// Document content — PDF, TXT, code files, JSON, etc.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Document {
     pub source: DataSource,
     pub media_type: Option<String>,
 }
 
 /// Tool call — produced by the assistant, requesting tool execution.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
@@ -61,14 +61,14 @@ pub struct ToolCall {
 }
 
 /// Tool result — returned after executing a tool call.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolResult {
     pub call_id: String,
     pub content: String,
 }
 
 /// Content of a fragment.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Content {
     Text(Text),
     Image(Image),
@@ -81,9 +81,9 @@ pub enum Content {
 
 /// A single symbol on the context tape.
 ///
-/// The `id` field is assigned by [`Context`] when the fragment is stored.
+/// The `id` field is assigned by [`Context`](crate::Context) when the fragment is stored.
 /// A value of `0` means "not yet assigned".
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fragment {
     pub id: u64,
     pub role: Role,

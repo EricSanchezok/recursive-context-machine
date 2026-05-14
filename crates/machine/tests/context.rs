@@ -127,7 +127,7 @@ fn remove_panics_on_unknown_id() {
 }
 
 #[test]
-fn find_returns_position() {
+fn position_of_returns_position() {
     let mut ctx = Context::new();
     ctx.append(Fragment::system("a"));
     let id = ctx.append(Fragment::user("b"));
@@ -136,13 +136,13 @@ fn find_returns_position() {
 }
 
 #[test]
-fn find_returns_none_for_unknown() {
+fn position_of_returns_none_for_unknown() {
     let ctx = Context::new();
     assert_eq!(ctx.position_of(999), None);
 }
 
 #[test]
-fn find_returns_none_after_remove() {
+fn position_of_returns_none_after_remove() {
     let mut ctx = Context::new();
     let id = ctx.append(Fragment::system("a"));
     ctx.remove(id);

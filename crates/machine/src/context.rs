@@ -3,18 +3,10 @@ use crate::fragment::Fragment;
 /// The machine's context — an ordered sequence of fragments.
 ///
 /// Each fragment is assigned a unique `id` when stored.
+#[derive(Clone, Debug)]
 pub struct Context {
     cells: Vec<Fragment>,
     next_id: u64,
-}
-
-impl Clone for Context {
-    fn clone(&self) -> Self {
-        Self {
-            cells: self.cells.clone(),
-            next_id: self.next_id,
-        }
-    }
 }
 
 impl Default for Context {

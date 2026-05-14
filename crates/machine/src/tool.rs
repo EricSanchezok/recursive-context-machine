@@ -25,7 +25,7 @@ pub trait Tool: Send + Sync {
 }
 
 /// The outcome of a tool execution.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ToolOutput {
     /// Textual content returned to the model.
     pub content: String,
