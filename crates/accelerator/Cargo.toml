@@ -7,6 +7,4 @@ description = "RICA accelerator — lightweight execution entry for Context Mach
 [dependencies]
 machine = { path = "../machine" }
 serde_json = { workspace = true }
-
-[dev-dependencies]
 tokio = { workspace = true }

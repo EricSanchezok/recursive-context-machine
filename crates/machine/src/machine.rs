@@ -4,6 +4,7 @@ use crate::inbox::Inbox;
 use crate::policy::{Action, Policy};
 use crate::reactor;
 use crate::resources::Resources;
+use tracing::trace;
 
 /// Machine — the composition of a Policy and a Reactor.
 pub struct Machine {
@@ -21,6 +22,7 @@ impl Machine {
 
         loop {
             let action = self.policy.decide(ctx, env, resources, &inbox).await;
+            trace!(?action, "machine step");
 
             match action {
                 Action::Append(frag) => {

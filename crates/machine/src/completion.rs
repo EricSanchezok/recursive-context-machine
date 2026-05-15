@@ -7,6 +7,7 @@ use crate::context::Context;
 use crate::fragment::{Content, Fragment, Role};
 use crate::model::{Model, Protocol};
 use crate::resources::Resources;
+use tracing::{debug, warn};
 
 /// Call the active LLM and return the response fragments or an error.
 ///
@@ -29,6 +30,13 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
             parameters: t.parameters(),
         })
         .collect();
+
+    debug!(
+        model = %model.name,
+        messages = messages.len(),
+        tools = tools.len(),
+        "completion request"
+    );
 
     let api_key = model.credentials.as_deref().unwrap_or("");
     let base_url = model.endpoint.as_deref();
@@ -72,8 +80,22 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
     };
 
     match result {
-        Ok(choice) => decode(choice.iter()),
-        Err(hitch) => vec![hitch],
+        Ok(choice) => {
+            let text_fragments = choice
+                .iter()
+                .filter(|c| matches!(c, AssistantContent::Text(_)))
+                .count();
+            let tool_calls = choice
+                .iter()
+                .filter(|c| matches!(c, AssistantContent::ToolCall(_)))
+                .count();
+            debug!(text_fragments, tool_calls, "completion response");
+            decode(choice.iter())
+        }
+        Err(hitch) => {
+            warn!("completion failed");
+            vec![hitch]
+        }
     }
 }
 

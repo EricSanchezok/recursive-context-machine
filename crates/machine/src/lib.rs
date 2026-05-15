@@ -16,6 +16,7 @@ pub mod context;
 pub mod env;
 pub mod fragment;
 pub mod inbox;
+pub mod logging;
 pub mod machine;
 pub mod model;
 pub mod policy;
