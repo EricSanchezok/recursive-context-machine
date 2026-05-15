@@ -51,14 +51,6 @@ impl Captain {
             state: AtomicU8::new(State::Boot as u8),
         }
     }
-
-    fn load_state(&self) -> State {
-        State::from_u8(self.state.load(Ordering::Relaxed))
-    }
-
-    fn store_state(&self, state: State) {
-        self.state.store(state as u8, Ordering::Relaxed);
-    }
 }
 
 impl Policy for Captain {
@@ -70,14 +62,14 @@ impl Policy for Captain {
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            let state = self.load_state();
+            let state = State::from_u8(self.state.load(Ordering::Relaxed));
             let (next, action) = match state {
                 State::Boot => boot(ctx, resources),
                 State::Halt => halt(),
                 State::Drain => drain(inbox),
                 State::Done => done(),
             };
-            self.store_state(next);
+            self.state.store(next as u8, Ordering::Relaxed);
             action
         })
     }
