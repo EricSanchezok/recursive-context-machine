@@ -86,26 +86,26 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 
 /// Send a completion request with a configurable timeout.
 ///
-/// Reads `config.timeout` (seconds); defaults to 180s (3 minutes).
+/// Timeout is read from `model.timeout_secs()` (defaults to 180s).
 async fn send<M: CompletionModel>(
-    model: M,
-    config: &Model,
+    client: M,
+    model: &Model,
     messages: &[Message],
     tools: &[ToolDefinition],
 ) -> Result<OneOrMany<AssistantContent>, String> {
-    let mut request = model
+    let mut request = client
         .completion_request(Message::user(""))
         .messages(messages.to_vec())
         .tools(tools.to_vec());
 
-    if let Some(temp) = config.temperature {
+    if let Some(temp) = model.temperature {
         request = request.temperature(temp);
     }
-    if let Some(limit) = &config.limit {
+    if let Some(limit) = &model.limit {
         request = request.max_tokens(limit.output);
     }
 
-    let timeout_secs = config.timeout.unwrap_or(180);
+    let timeout_secs = model.timeout_secs();
     match timeout(Duration::from_secs(timeout_secs), request.send()).await {
         Ok(Ok(response)) => Ok(response.choice),
         Ok(Err(e)) => Err(format!("{}", e)),

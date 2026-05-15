@@ -50,9 +50,18 @@ impl Default for Model {
             limit: None,
             cost: None,
             modalities: None,
-            timeout: None,
+            timeout: Some(180),
             extra: HashMap::new(),
         }
+    }
+}
+
+impl Model {
+    /// Request timeout in seconds.
+    ///
+    /// Falls back to 180s (3 minutes) when not explicitly set.
+    pub fn timeout_secs(&self) -> u64 {
+        self.timeout.unwrap_or(180)
     }
 }
 
