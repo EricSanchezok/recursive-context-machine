@@ -185,7 +185,7 @@ impl Fragment {
     /// Extract text if this is a Text fragment.
     pub fn as_text(&self) -> Option<&str> {
         match &self.content {
-            Content::Text(t) => Some(&t.text),
+            Content::Text(text) => Some(&text.text),
             _ => None,
         }
     }

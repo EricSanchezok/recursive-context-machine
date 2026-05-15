@@ -43,39 +43,37 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 
     let result = match model.protocol {
         Protocol::OpenAI => {
-            let mut b = rig::providers::openai::CompletionsClient::builder().api_key(api_key);
-            if let Some(ep) = base_url {
-                b = b.base_url(ep);
+            let mut builder = rig::providers::openai::CompletionsClient::builder().api_key(api_key);
+            if let Some(endpoint) = base_url {
+                builder = builder.base_url(endpoint);
             }
-            let provider = b
+            let endpoint = builder
                 .build()
                 .expect("failed to build openai client")
                 .completion_model(&model.name);
-            send(&provider, model, &messages, &tools).await
+            send(&endpoint, model, &messages, &tools).await
         }
         Protocol::Anthropic => {
-            let mut b = rig::providers::anthropic::Client::builder().api_key(api_key);
-            if let Some(ep) = base_url {
-                b = b.base_url(ep);
+            let mut builder = rig::providers::anthropic::Client::builder().api_key(api_key);
+            if let Some(endpoint) = base_url {
+                builder = builder.base_url(endpoint);
             }
-            let provider = b
+            let endpoint = builder
                 .build()
                 .expect("failed to build anthropic client")
                 .completion_model(&model.name);
-            send(&provider, model, &messages, &tools).await
+            send(&endpoint, model, &messages, &tools).await
         }
         Protocol::Gemini => {
-            let c = match base_url {
-                Some(ep) => rig::providers::gemini::Client::builder()
-                    .api_key(api_key)
-                    .base_url(ep)
-                    .build()
-                    .expect("failed to build gemini client"),
-                None => rig::providers::gemini::Client::new(api_key)
-                    .expect("failed to build gemini client"),
-            };
-            let provider = c.completion_model(&model.name);
-            send(&provider, model, &messages, &tools).await
+            let mut builder = rig::providers::gemini::Client::builder().api_key(api_key);
+            if let Some(endpoint) = base_url {
+                builder = builder.base_url(endpoint);
+            }
+            let endpoint = builder
+                .build()
+                .expect("failed to build gemini client")
+                .completion_model(&model.name);
+            send(&endpoint, model, &messages, &tools).await
         }
     };
 
@@ -122,7 +120,7 @@ async fn send(
 
     match timeout(Duration::from_secs(model.timeout), request.send()).await {
         Ok(Ok(response)) => Ok(response.choice),
-        Ok(Err(e)) => Err(Fragment::hitch(format!("{}", e))),
+        Ok(Err(error)) => Err(Fragment::hitch(format!("{}", error))),
         Err(_) => Err(Fragment::hitch(format!(
             "request timed out after {}s",
             model.timeout

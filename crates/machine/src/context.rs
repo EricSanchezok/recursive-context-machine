@@ -109,7 +109,7 @@ impl Context {
 
     /// Find the index of a fragment by id.
     pub fn position_of(&self, id: u64) -> Option<usize> {
-        self.cells.iter().position(|f| f.id == id)
+        self.cells.iter().position(|cell| cell.id == id)
     }
 
     /// Get a fragment by id.

@@ -16,6 +16,12 @@ must follow these conventions. Do not override unless explicitly instructed by t
 
 ## Naming
 
+- Single-letter variable names (`a`, `b`, `c`, `e`, `r`, `s`, `v`, etc.) are not
+  allowed. Every variable must describe what it holds. The only exceptions are:
+  `i` / `j` for loop indices, and `f` in closures like `|f| f.id == id`.
+- Abbreviated names are acceptable when they are domain-standard and unambiguous
+  across the codebase: `frag` (fragment), `ctx` (context), `env` (environment),
+  `msg` (message), `args` (arguments), `req` (request). If in doubt, spell it out.
 - Single-letter generic parameters are not allowed. Use `impl Trait` in argument
   position, or a descriptive name.
 - Enum variants and function names must be self-explanatory without a doc comment.
@@ -23,6 +29,8 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - `Catch`/`Drop` style verb confusion is not allowed. "Catch" is error handling,
   "Drop" is deallocation. Use `Activate`/`Deactivate` for tool toggling.
 - Avoid `XxxInfo`, `XxxDetail`, `XxxData` — find a real name.
+- The same concept must be named consistently across all files. If `completion.rs`
+  calls it `endpoint`, `machine.rs` must not call it `base_url` for the same thing.
 
 ## Architecture
 
@@ -33,6 +41,16 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - Policy receives `&self` — use atomics for internal state, not `Mutex`.
 - All execution (LLM calls, tool calls) uses `tokio::time::timeout`.
   Defaults are defined once as module-level constants.
+
+## Logging
+
+- Use `tracing` macros (`debug!`, `info!`, `warn!`, `trace!`) — never `println!`
+  or `eprintln!` for operational output.
+- Every failed outcome must log at `warn!` with structured fields (`?error` or named
+  fields), not a bare string.
+- Hot-path components (`completion`, `reactor`, `machine`, `policy`) must log at
+  `debug!` on entry/exit with enough context to reconstruct what happened.
+- `trace!` is reserved for the per-step machine loop — use sparingly.
 
 ## Execution
 

@@ -24,9 +24,9 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                 Some(tool) => {
                     let deadline = Duration::from_secs(tool.timeout().as_secs());
                     match timeout(deadline, tool.execute(tc.arguments.clone(), env)).await {
-                        Ok(Ok(r)) => {
-                            info!(tool = tc.name, result = r.content, "tool executed");
-                            Fragment::tool_result(tc.id.clone(), r.content)
+                        Ok(Ok(result)) => {
+                            info!(tool = tc.name, result = result.content, "tool executed");
+                            Fragment::tool_result(tc.id.clone(), result.content)
                         }
                         Ok(Err(msg)) => {
                             warn!(tool = tc.name, msg, "tool failed");

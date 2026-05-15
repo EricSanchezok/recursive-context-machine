@@ -76,9 +76,9 @@ pub fn kit() -> Resources {
 
     let mut resources = Resources::new();
 
-    for t in builtin_tools() {
-        let name = t.name().to_string();
-        resources = resources.with_tool(t);
+    for tool in builtin_tools() {
+        let name = tool.name().to_string();
+        resources = resources.with_tool(tool);
         resources.enable(name);
     }
 

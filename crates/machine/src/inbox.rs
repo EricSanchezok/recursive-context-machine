@@ -18,8 +18,8 @@ impl Inbox {
         }
     }
 
-    pub fn push(&mut self, f: Fragment) {
-        self.fragments.push_back(f);
+    pub fn push(&mut self, fragment: Fragment) {
+        self.fragments.push_back(fragment);
     }
 
     pub fn pop(&mut self) -> Option<Fragment> {
