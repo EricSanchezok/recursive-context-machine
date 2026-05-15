@@ -21,15 +21,27 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
         None => return vec![],
     };
 
-    let messages = prepare_messages(ctx);
-    let tools = prepare_tools(resources);
+    // Encode context fragments into rig messages.
+    let messages: Vec<Message> = ctx.fragments().iter().filter_map(encode).collect();
+
+    // Map active tools into rig tool definitions.
+    let tools: Vec<ToolDefinition> = resources
+        .active_tools()
+        .iter()
+        .map(|t| ToolDefinition {
+            name: t.name().to_string(),
+            description: t.description().to_string(),
+            parameters: t.parameters(),
+        })
+        .collect();
+
     let api_key = model.credentials.as_deref().unwrap_or("");
-    let endpoint = model.endpoint.as_deref();
+    let base_url = model.endpoint.as_deref();
 
     let result = match model.protocol {
         Protocol::OpenAI => {
             let mut b = rig::providers::openai::Client::builder().api_key(api_key);
-            if let Some(ep) = endpoint {
+            if let Some(ep) = base_url {
                 b = b.base_url(ep);
             }
             let provider = b
@@ -40,7 +52,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
         }
         Protocol::Anthropic => {
             let mut b = rig::providers::anthropic::Client::builder().api_key(api_key);
-            if let Some(ep) = endpoint {
+            if let Some(ep) = base_url {
                 b = b.base_url(ep);
             }
             let provider = b
@@ -50,7 +62,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
             send(&provider, model, &messages, &tools).await
         }
         Protocol::Gemini => {
-            let c = match endpoint {
+            let c = match base_url {
                 Some(ep) => rig::providers::gemini::Client::builder()
                     .api_key(api_key)
                     .base_url(ep)
@@ -65,16 +77,16 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
     };
 
     match result {
-        Ok(choice) => collect_fragments(choice.iter()),
+        Ok(choice) => decode(choice.iter()),
         Err(hitch) => vec![hitch],
     }
 }
 
 // ── Internal ──
 
-/// Send a dispatch with a deadline.
+/// Send a request to the endpoint with a deadline.
 ///
-/// The call is cancelled if it exceeds `model.timeout` seconds.
+/// Cancelled if exceeding `model.timeout` seconds.
 async fn send(
     endpoint: &impl CompletionModel,
     model: &Model,
@@ -103,8 +115,8 @@ async fn send(
     }
 }
 
-/// Extract fragments from a rig response's `AssistantContent` items.
-fn collect_fragments<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
+/// Decode rig assistant content into fragments for the context tape.
+fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
     let mut fragments = Vec::new();
     for content in choice {
         match content {
@@ -124,29 +136,8 @@ fn collect_fragments<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> 
     fragments
 }
 
-/// Convert context fragments into rig messages.
-fn prepare_messages(ctx: &Context) -> Vec<Message> {
-    ctx.fragments()
-        .iter()
-        .filter_map(fragment_to_message)
-        .collect()
-}
-
-/// Convert active tools into rig tool definitions.
-fn prepare_tools(resources: &Resources) -> Vec<ToolDefinition> {
-    resources
-        .active_tools()
-        .iter()
-        .map(|t| ToolDefinition {
-            name: t.name().to_string(),
-            description: t.description().to_string(),
-            parameters: t.parameters(),
-        })
-        .collect()
-}
-
-/// Convert a context fragment into a rig message.
-fn fragment_to_message(frag: &Fragment) -> Option<Message> {
+/// Encode a context fragment into a rig message.
+fn encode(frag: &Fragment) -> Option<Message> {
     match frag.role {
         Role::System => frag.as_text().map(Message::system),
         Role::User => frag.as_text().map(Message::user),
