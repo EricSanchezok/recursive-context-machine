@@ -1,18 +1,17 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::model::Model;
 use crate::tool::Tool;
-use std::collections::HashMap;
 
 /// Resources — the pool of available tools and models with activation state.
 ///
-/// The Policy sets the active model and activates/deactivates tools via [`Action`](crate::Action).
+/// The Policy switches models and toggles tools via [`Action`](crate::Action).
 /// The completion reads the active state directly.
 pub struct Resources {
-    pub tools: Vec<Box<dyn Tool>>,
+    pub tools: HashMap<String, Box<dyn Tool>>,
     pub models: Vec<Model>,
-    active_model: Option<String>,
-    active_tools: Vec<String>,
-    /// Named prompt templates. Policy reads from here.
-    /// The "default" key holds the system-level instruction.
+    active_model: String,
+    active_tools: HashSet<String>,
     pub prompts: HashMap<String, String>,
 }
 
@@ -25,25 +24,31 @@ impl Default for Resources {
 impl Resources {
     pub fn new() -> Self {
         Self {
-            tools: Vec::new(),
+            tools: HashMap::new(),
             models: Vec::new(),
-            active_model: None,
-            active_tools: Vec::new(),
+            active_model: String::new(),
+            active_tools: HashSet::new(),
             prompts: HashMap::new(),
         }
     }
 
+    /// Register a tool. Overwrites any tool with the same name.
     pub fn with_tool(mut self, tool: Box<dyn Tool>) -> Self {
-        self.tools.push(tool);
+        let name = tool.name().to_string();
+        self.tools.insert(name, tool);
         self
     }
 
+    /// Register a model. The first model registered becomes the active model.
     pub fn with_model(mut self, model: Model) -> Self {
+        if self.active_model.is_empty() {
+            self.active_model.clone_from(&model.name);
+        }
         self.models.push(model);
         self
     }
 
-    /// Enable a tool — add it to the active set. Idempotent.
+    /// Enable a tool. Idempotent.
     ///
     /// # Panics
     ///
@@ -51,18 +56,15 @@ impl Resources {
     pub fn enable(&mut self, name: impl Into<String>) {
         let name = name.into();
         assert!(
-            self.tools.iter().any(|t| t.name() == name),
-            "tool '{}' not registered",
-            name
+            self.tools.contains_key(&name),
+            "tool '{name}' not registered"
         );
-        if !self.active_tools.contains(&name) {
-            self.active_tools.push(name);
-        }
+        self.active_tools.insert(name);
     }
 
-    /// Disable a tool — remove it from the active set.
+    /// Disable a tool.
     pub fn disable(&mut self, name: impl AsRef<str>) {
-        self.active_tools.retain(|t| t != name.as_ref());
+        self.active_tools.remove(name.as_ref());
     }
 
     /// Switch the active model.
@@ -74,40 +76,37 @@ impl Resources {
         let name = name.into();
         assert!(
             self.models.iter().any(|m| m.name == name),
-            "model '{}' not registered",
-            name
+            "model '{name}' not registered"
         );
-        self.active_model = Some(name);
+        self.active_model = name;
     }
 
-    /// The currently active model, if any.
-    pub fn active_model(&self) -> Option<&Model> {
-        self.active_model
-            .as_deref()
-            .and_then(|name| self.models.iter().find(|m| m.name == name))
+    /// The currently active model.
+    ///
+    /// # Panics
+    ///
+    /// Panics when no model has been registered.
+    pub fn active_model(&self) -> &Model {
+        self.models
+            .iter()
+            .find(|m| m.name == self.active_model)
+            .expect("active model not found")
     }
 
-    /// The currently active tools.
+    /// All active tools.
     pub fn active_tools(&self) -> Vec<&dyn Tool> {
         self.active_tools
             .iter()
-            .filter_map(|name| {
-                self.tools
-                    .iter()
-                    .find(|t| t.name() == name)
-                    .map(|t| t.as_ref())
-            })
+            .filter_map(|name| self.tools.get(name))
+            .map(|t| t.as_ref())
             .collect()
     }
 
-    /// Look up an active tool by name, without allocating a Vec.
+    /// Look up an active tool by name.
     pub fn lookup(&self, name: &str) -> Option<&dyn Tool> {
-        if !self.active_tools.iter().any(|n| n == name) {
+        if !self.active_tools.contains(name) {
             return None;
         }
-        self.tools
-            .iter()
-            .find(|t| t.name() == name)
-            .map(|t| t.as_ref())
+        self.tools.get(name).map(|t| t.as_ref())
     }
 }

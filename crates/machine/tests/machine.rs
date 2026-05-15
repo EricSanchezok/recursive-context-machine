@@ -58,26 +58,6 @@ async fn halt_and_take() {
 }
 
 #[tokio::test]
-async fn halt_with_no_model() {
-    // No model configured → complete() returns empty → Take is a no-op
-    let policy = common::SeqPolicy::new(vec![
-        Action::Append(Fragment::user("q")),
-        Action::Halt,
-        Action::Take,
-        Action::Done,
-    ]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = Resources::new();
-
-    machine.run(&mut ctx, &mut env, &mut resources).await;
-    // Only the user fragment — reactor returned nothing
-    assert_eq!(ctx.len(), 1);
-    assert_eq!(ctx.fragments()[0].as_text(), Some("q"));
-}
-
-#[tokio::test]
 async fn take_empty_inbox_is_noop() {
     // Take when inbox is empty should not panic
     let policy = common::SeqPolicy::new(vec![Action::Take, Action::Done]);

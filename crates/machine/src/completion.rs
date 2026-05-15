@@ -16,10 +16,7 @@ use crate::resources::Resources;
 /// On failure, returns `Content::Hitch` so the caller (Policy) can
 /// decide to retry, switch model, or abort.
 pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
-    let model = match resources.active_model() {
-        Some(m) => m,
-        None => return vec![],
-    };
+    let model = resources.active_model();
 
     let messages: Vec<Message> = ctx.fragments().iter().filter_map(encode).collect();
 

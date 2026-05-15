@@ -115,7 +115,6 @@ pub fn kit() -> Resources {
 
     // Register and activate the default model.
     resources = resources.with_model(nex_n1());
-    resources.use_model("nex-agi/nex-n1");
 
     resources
 }
