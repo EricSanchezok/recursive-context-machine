@@ -16,10 +16,6 @@ impl Machine {
     }
 
     /// Run the machine until [`Action::Done`].
-    ///
-    /// When the reactor executes tools, the machine automatically drains
-    /// the results into context and re-invokes the reactor so the LLM
-    /// can see the tool output — no policy intervention needed.
     pub async fn run(&self, ctx: &mut Context, env: &mut Environment, resources: &mut Resources) {
         let mut inbox = Inbox::new();
 
@@ -57,21 +53,17 @@ impl Machine {
                     }
                 }
                 Action::Done => return,
-                Action::Halt => {
-                    // Reactor loop: complete + execute tools until stable.
-                    loop {
-                        let executed = reactor::react(ctx, env, resources, &mut inbox).await;
+                Action::Halt => loop {
+                    let executed = reactor::react(ctx, env, resources, &mut inbox).await;
 
-                        // Drain all results into context.
-                        while let Some(frag) = inbox.pop() {
-                            ctx.append(frag);
-                        }
-
-                        if !executed {
-                            break;
-                        }
+                    while let Some(frag) = inbox.pop() {
+                        ctx.append(frag);
                     }
-                }
+
+                    if !executed {
+                        break;
+                    }
+                },
             }
         }
     }

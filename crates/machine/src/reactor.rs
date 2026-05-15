@@ -6,16 +6,8 @@ use crate::inbox::Inbox;
 use crate::resources::Resources;
 use tokio::time::{Duration, timeout};
 
-/// Complete and execute tools in one pass.
-///
-/// 1. Call the LLM via [`completion::complete`].
-/// 2. For each ToolCall → execute the tool, pass `env` for sandboxing,
-///    push the ToolCall followed by the result (ToolResult or Hitch).
-/// 3. All other fragments (Text, etc.) → push as-is.
-///
-/// Returns `true` if any tools were executed, signalling the machine
-/// to re‑invoke the reactor so the LLM can see and reason about the
-/// tool results.
+/// Complete the LLM call and execute all ToolCalls. Returns `true` if any
+/// tool was executed, signalling the machine to re-invoke the reactor.
 pub async fn react(
     ctx: &Context,
     env: &Environment,
@@ -32,8 +24,6 @@ pub async fn react(
             let tc_name = tc.name.clone();
             let tc_args = tc.arguments.clone();
 
-            // Preserve the original ToolCall so the LLM conversation
-            // format stays valid (assistant → tool → tool).
             inbox.push(frag);
 
             let tool = resources
