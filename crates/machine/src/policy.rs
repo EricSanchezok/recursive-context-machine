@@ -37,10 +37,10 @@ pub enum Action {
     Deactivate(String),
 
     // ── Control ──
-    /// Pop the inbox head and append it to the context.
+    /// Pop the head of the inbox and append it to context.
     Take,
 
-    /// Stop the π phase and trigger LLM completion.
+    /// Trigger LLM completion.
     Halt,
 
     /// Stop the machine.

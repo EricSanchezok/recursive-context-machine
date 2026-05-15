@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-/// Default LLM request timeout in seconds (3 minutes).
 const DEFAULT_TIMEOUT_SECS: u64 = 180;
 
 /// LLM configuration.
@@ -12,13 +11,10 @@ const DEFAULT_TIMEOUT_SECS: u64 = 180;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Model {
     pub name: String,
-    /// The API wire protocol. Defaults to `OpenAI` since most providers
-    /// are OpenAI-compatible.
+    /// API wire protocol.
     #[serde(default)]
     pub protocol: Protocol,
-    /// Base URL for the provider's API. Required for custom endpoints;
-    /// omitted for well-known providers where the protocol implies the
-    /// default endpoint.
+    /// Override the default endpoint URL.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,7 +27,7 @@ pub struct Model {
     pub cost: Option<Cost>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modalities: Option<Modalities>,
-    /// Request timeout in seconds. Defaults to [`DEFAULT_TIMEOUT_SECS`].
+    /// Request timeout in seconds.
     pub timeout: u64,
     #[serde(flatten, default, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, Value>,

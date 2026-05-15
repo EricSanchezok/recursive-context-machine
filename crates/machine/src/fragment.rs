@@ -57,7 +57,7 @@ pub struct Document {
     pub media_type: Option<String>,
 }
 
-/// Tool call — produced by the assistant, requesting tool execution.
+/// Tool call — requests tool execution.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolCall {
     pub id: String,
@@ -65,16 +65,16 @@ pub struct ToolCall {
     pub arguments: Value,
 }
 
-/// The outcome of a tool execution.
+/// Outcome of a tool execution.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolResult {
-    /// Unique ID matching the tool call that produced this result.
+    /// ID of the originating tool call.
     pub call_id: String,
 
-    /// Textual content returned to the model.
+    /// Output content.
     pub content: String,
 
-    /// Optional short title for display/logging.
+    /// Summary label for logging UIs.
     pub title: Option<String>,
 }
 
@@ -96,10 +96,9 @@ pub enum Content {
     },
 }
 
-/// A single symbol on the context tape.
+/// A symbol on the context tape.
 ///
-/// The `id` field is assigned by [`Context`](crate::Context) when the fragment is stored.
-/// A value of `0` means "not yet assigned".
+/// `id` is assigned by [`Context`] on storage. `0` means unassigned.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fragment {
     pub id: u64,
@@ -119,7 +118,6 @@ impl Fragment {
         }
     }
 
-    /// User fragment — defaults to text.
     pub fn user(text: impl Into<String>) -> Self {
         Self {
             id: 0,
@@ -129,7 +127,6 @@ impl Fragment {
         }
     }
 
-    /// Assistant fragment — defaults to text.
     pub fn assistant(text: impl Into<String>) -> Self {
         Self {
             id: 0,
@@ -139,7 +136,6 @@ impl Fragment {
         }
     }
 
-    /// Tool result fragment.
     pub fn tool_result(call_id: impl Into<String>, text: impl Into<String>) -> Self {
         Self {
             id: 0,
@@ -167,7 +163,6 @@ impl Fragment {
         }
     }
 
-    /// Tool call fragment — produced by the assistant.
     pub fn tool_call(id: impl Into<String>, name: impl Into<String>, arguments: Value) -> Self {
         Self {
             id: 0,

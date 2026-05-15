@@ -11,7 +11,6 @@ pub struct Machine {
 }
 
 impl Machine {
-    /// Create a machine with the given policy.
     pub fn new(policy: Box<dyn Policy>) -> Self {
         Self { policy }
     }

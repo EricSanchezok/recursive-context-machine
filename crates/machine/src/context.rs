@@ -94,17 +94,15 @@ impl Context {
         self.cells.clear();
     }
 
-    /// Number of fragments in the context.
     pub fn len(&self) -> usize {
         self.cells.len()
     }
 
-    /// Whether the context is empty.
     pub fn is_empty(&self) -> bool {
         self.cells.is_empty()
     }
 
-    /// All fragments in order.
+    /// All fragments in insertion order.
     pub fn fragments(&self) -> &[Fragment] {
         &self.cells
     }
