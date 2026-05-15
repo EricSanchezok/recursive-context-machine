@@ -75,8 +75,8 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 /// Dispatch a completion call with a deadline.
 ///
 /// The call is cancelled if it exceeds `model.timeout` seconds.
-async fn request<M: CompletionModel>(
-    provider: &M,
+async fn request(
+    provider: &impl CompletionModel,
     model: &Model,
     messages: &[Message],
     tools: &[ToolDefinition],
