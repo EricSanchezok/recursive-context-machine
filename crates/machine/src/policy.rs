@@ -7,10 +7,7 @@ use crate::fragment::Fragment;
 use crate::inbox::Inbox;
 use crate::resources::Resources;
 
-/// The next action the Policy should take.
-///
-/// These are atomic, discrete operations. The Policy composes them
-/// across multiple decision steps to build the full context state.
+/// Atomic, discrete operations composed by Policy across decision steps.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     // ── Context ──
@@ -34,16 +31,16 @@ pub enum Action {
     Model(String),
 
     /// Catch a tool — add it to the active set.
-    Catch(String),
+    Activate(String),
 
     /// Drop a tool — remove it from the active set.
-    Drop(String),
+    Deactivate(String),
 
     // ── Control ──
     /// Pop the inbox head and append it to the context.
     Take,
 
-    /// Stop the π phase and trigger ω (LLM completion).
+    /// Stop the π phase and trigger LLM completion.
     Halt,
 
     /// Stop the machine.

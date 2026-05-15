@@ -5,9 +5,7 @@ use crate::policy::{Action, Policy};
 use crate::reactor;
 use crate::resources::Resources;
 
-/// Machine — the composition of a Policy (π) and a Reactor (ω).
-///
-/// A machine is a triple ℳ = (ℂ, ℰ, Φ) where Φ is implemented by [`Machine::run`].
+/// Machine — the composition of a Policy and a Reactor.
 pub struct Machine {
     policy: Box<dyn Policy>,
 }
@@ -19,9 +17,6 @@ impl Machine {
     }
 
     /// Run the machine until [`Action::Done`].
-    ///
-    /// Borrows `ctx`, `env`, and `resources` from the caller. The inbox is
-    /// internal to the machine loop.
     pub async fn run(&self, ctx: &mut Context, env: &mut Environment, resources: &mut Resources) {
         let mut inbox = Inbox::new();
 
@@ -47,11 +42,11 @@ impl Machine {
                 Action::Model(name) => {
                     resources.set_active_model(name);
                 }
-                Action::Catch(name) => {
-                    resources.catch_tool(name);
+                Action::Activate(name) => {
+                    resources.activate_tool(name);
                 }
-                Action::Drop(name) => {
-                    resources.drop_tool(&name);
+                Action::Deactivate(name) => {
+                    resources.deactivate_tool(&name);
                 }
                 Action::Take => {
                     if let Some(frag) = inbox.pop() {

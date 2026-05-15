@@ -21,10 +21,8 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
         None => return vec![],
     };
 
-    // Encode context fragments into rig messages.
     let messages: Vec<Message> = ctx.fragments().iter().filter_map(encode).collect();
 
-    // Map active tools into rig tool definitions.
     let tools: Vec<ToolDefinition> = resources
         .active_tools()
         .iter()
@@ -84,9 +82,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 
 // ── Internal ──
 
-/// Send a request to the endpoint with a deadline.
-///
-/// Cancelled if exceeding `model.timeout` seconds.
+/// Send a request with a deadline. Returns an error if exceeding `model.timeout` seconds.
 async fn send(
     endpoint: &impl CompletionModel,
     model: &Model,
@@ -115,7 +111,7 @@ async fn send(
     }
 }
 
-/// Decode rig assistant content into fragments for the context tape.
+/// Decode rig assistant content into fragments.
 fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
     let mut fragments = Vec::new();
     for content in choice {

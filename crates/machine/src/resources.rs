@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 /// Resources — the pool of available tools and models with activation state.
 ///
-/// The Policy sets the active model and catches/drops tools via [`Action`](crate::Action).
-/// The Completion reads the active state directly from Resources.
+/// The Policy sets the active model and activates/deactivates tools via [`Action`](crate::Action).
+/// The completion reads the active state directly.
 pub struct Resources {
     pub tools: Vec<Box<dyn Tool>>,
     pub models: Vec<Model>,
@@ -43,9 +43,29 @@ impl Resources {
         self
     }
 
-    // ── Mutation ──
+    /// Activate a tool by adding it to the active set. Idempotent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the tool is not registered.
+    pub fn activate_tool(&mut self, name: impl Into<String>) {
+        let name = name.into();
+        assert!(
+            self.tools.iter().any(|t| t.name() == name),
+            "tool '{}' not registered",
+            name
+        );
+        if !self.active_tools.contains(&name) {
+            self.active_tools.push(name);
+        }
+    }
 
-    /// Set the active model by name. Only one model can be active.
+    /// Deactivate a tool by removing it from the active set.
+    pub fn deactivate_tool(&mut self, name: impl AsRef<str>) {
+        self.active_tools.retain(|t| t != name.as_ref());
+    }
+
+    /// Set the active model by name.
     ///
     /// # Panics
     ///
@@ -59,30 +79,6 @@ impl Resources {
         );
         self.active_model = Some(name);
     }
-
-    /// Activate a tool by adding it to the active set. Idempotent.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tool is not registered.
-    pub fn catch_tool(&mut self, name: impl Into<String>) {
-        let name = name.into();
-        assert!(
-            self.tools.iter().any(|t| t.name() == name),
-            "tool '{}' not registered",
-            name
-        );
-        if !self.active_tools.contains(&name) {
-            self.active_tools.push(name);
-        }
-    }
-
-    /// Deactivate a tool by removing it from the active set.
-    pub fn drop_tool(&mut self, name: impl AsRef<str>) {
-        self.active_tools.retain(|t| t != name.as_ref());
-    }
-
-    // ── Query ──
 
     /// The currently active model, if any.
     pub fn active_model(&self) -> Option<&Model> {

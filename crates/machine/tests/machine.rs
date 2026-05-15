@@ -172,11 +172,11 @@ async fn policy_can_replace() {
 }
 
 #[tokio::test]
-async fn catch_and_drop_tools() {
+async fn activate_and_deactivate_tools() {
     let policy = common::SeqPolicy::new(vec![
-        Action::Catch("tool-a".into()),
-        Action::Catch("tool-b".into()),
-        Action::Drop("tool-a".into()),
+        Action::Activate("tool-a".into()),
+        Action::Activate("tool-b".into()),
+        Action::Deactivate("tool-a".into()),
         Action::Done,
     ]);
     let machine = Machine::new(Box::new(policy));

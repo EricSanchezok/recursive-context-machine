@@ -2,10 +2,10 @@ use std::collections::VecDeque;
 
 use crate::fragment::Fragment;
 
-/// Inbox — the pending queue between $\omega$ and $\pi$.
+/// Inbox — the pending queue between reactor and policy.
 ///
-/// The Reactor produces fragments (LLM output, tool results) and places
-/// them into the inbox. The Machine drains them into the context.
+/// The reactor produces fragments and places them into the inbox.
+/// The machine drains them into the context.
 #[derive(Debug, Clone, Default)]
 pub struct Inbox {
     fragments: VecDeque<Fragment>,
@@ -18,27 +18,22 @@ impl Inbox {
         }
     }
 
-    /// Push a fragment onto the queue.
     pub fn push(&mut self, f: Fragment) {
         self.fragments.push_back(f);
     }
 
-    /// Pop the head of the queue.
     pub fn pop(&mut self) -> Option<Fragment> {
         self.fragments.pop_front()
     }
 
-    /// Peek at the head without removing it.
     pub fn peek(&self) -> Option<&Fragment> {
         self.fragments.front()
     }
 
-    /// Whether the inbox is empty.
     pub fn is_empty(&self) -> bool {
         self.fragments.is_empty()
     }
 
-    /// Number of fragments in the inbox.
     pub fn len(&self) -> usize {
         self.fragments.len()
     }

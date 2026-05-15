@@ -89,7 +89,7 @@ impl Context {
         self.cells.swap(i, j);
     }
 
-    /// Clear all fragments without resetting id allocation.
+    /// Clear all fragments. Id allocation continues (avoids collisions with external references).
     pub fn clear(&mut self) {
         self.cells.clear();
     }
@@ -128,8 +128,6 @@ impl Context {
     pub fn next_id(&self) -> u64 {
         self.next_id
     }
-
-    // ── Private ──
 
     fn assign_id(&mut self, fragment: &mut Fragment) -> u64 {
         let id = self.next_id;

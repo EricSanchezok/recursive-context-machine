@@ -1,20 +1,15 @@
-//! CM — Context Machine
+//! Core primitives for the Context Machine.
 //!
-//! A context machine is a triple ℳ = (ℂ, ℰ, Φ)
-//! where Φ(c, e) = (c′, e′) with c′ = π(c, e, ρ) and e′ = ω(c, e, τ, m).
-//!
-//! This crate provides the core primitives:
-//!
-//! | Component | Math | Role |
-//! |-----------|------|------|
-//! | [`Fragment`] | ℱ | Tape symbol |
-//! | [`Context`] | ℂ | Tape |
-//! | [`Environment`] | ℰ | External world |
-//! | [`Resources`] | ρ | Available pool |
-//! | [`Inbox`] | ℐ | Pending queue |
-//! | [`Policy`] | π | Context engineering |
-//! | [`reactor`] | ω | Environment transition |
-//! | [`Machine`] | ℳ | Composition of π and ω |
+//! | Component | Role |
+//! |-----------|------|
+//! | [`Fragment`] | Tape symbol |
+//! | [`Context`] | Tape |
+//! | [`Environment`] | External world |
+//! | [`Resources`] | Available pool |
+//! | [`Inbox`] | Pending queue |
+//! | [`Policy`] | Context engineering |
+//! | [`reactor`] | Environment transition |
+//! | [`Machine`] | Policy + Reactor composition |
 
 pub mod completion;
 pub mod context;

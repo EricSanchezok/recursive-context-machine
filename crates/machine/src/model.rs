@@ -5,14 +5,10 @@ use std::collections::HashMap;
 /// Default LLM request timeout in seconds (3 minutes).
 const DEFAULT_TIMEOUT_SECS: u64 = 180;
 
-/// Model configuration — a structured description of an LLM.
+/// LLM configuration.
 ///
-/// `name` is required. `protocol` defaults to `OpenAI`. `endpoint` and
-/// `credentials` are used to construct the client.
-///
-/// Most providers (DeepSeek, Groq, Mistral, xAI, Ollama, OpenRouter,
-/// ...) all speak the OpenAI Chat Completions protocol — just set a
-/// different `endpoint`.
+/// `name` is required. `protocol` defaults to `OpenAI`.
+/// Most providers use the OpenAI wire format — set `endpoint` for custom providers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Model {
     pub name: String,
@@ -58,16 +54,16 @@ impl Default for Model {
     }
 }
 
-/// The API wire protocol.
+/// Wire protocol.
 ///
-/// Only 3 protocols exist — all other distinctions are just different
-/// `endpoint` values on the same OpenAI-compatible wire format.
+/// Three protocols are supported. Most providers are OpenAI-compatible;
+/// use the `OpenAI` variant with a custom `endpoint`.
 ///
-/// | Protocol | Rig module | Examples |
-/// |----------|-----------|----------|
-/// | `OpenAI` | `rig::providers::openai` | OpenAI, DeepSeek, Groq, Mistral, xAI, Ollama, OpenRouter, Together, Perplexity, Hyperbolic, MiniMax, Moonshot, Galadriel, Llamafile, XiaomiMimo, ZAI, Mira, ... |
-/// | `Anthropic` | `rig::providers::anthropic` | Anthropic Claude |
-/// | `Gemini` | `rig::providers::gemini` | Google Gemini |
+/// | Protocol | Examples |
+/// |----------|---------|
+/// | `OpenAI` | OpenAI, DeepSeek, Groq, Mistral, xAI, Ollama, OpenRouter ... |
+/// | `Anthropic` | Anthropic Claude |
+/// | `Gemini` | Google Gemini |
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {

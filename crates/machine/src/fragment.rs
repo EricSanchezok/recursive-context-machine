@@ -1,10 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Fragment role — immutable, assigned at creation.
-///
-/// Maps directly to the standard LLM wire-protocol roles:
-/// [`System`](Role::System), [`User`](Role::User), [`Assistant`](Role::Assistant), [`Tool`](Role::Tool).
+/// Fragment role (system, user, assistant, or tool).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
     /// System instruction.
@@ -82,11 +79,6 @@ pub struct ToolResult {
 }
 
 /// Content of a fragment.
-///
-/// All content types are value-objects — they carry data, not behavior.
-/// [`Hitch`](Content::Hitch) is singled out because it follows a different
-/// routing path than regular messages: Policy can intercept it for retry
-/// decisions rather than forwarding it to the language model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Content {
     Text(Text),
@@ -96,10 +88,7 @@ pub enum Content {
     Document(Document),
     ToolCall(ToolCall),
     ToolResult(ToolResult),
-    /// A hitch — a transient obstruction in the execution flow.
-    ///
-    /// LLM failure, tool failure, or runtime snag. Policy decides whether
-    /// to retry, switch model, or abort.
+    /// Execution error that Policy may intercept for retry decisions.
     Hitch {
         message: String,
         retryable: bool,
@@ -164,10 +153,7 @@ impl Fragment {
         }
     }
 
-    /// A hitch fragment — LLM failure, runtime snag, etc.
-    ///
-    /// Routed through Policy for retry/fallback decisions, not forwarded
-    /// to the language model as context.
+    /// Creates a [`Content::Hitch`] fragment.
     pub fn hitch(message: impl Into<String>) -> Self {
         Self {
             id: 0,
@@ -195,7 +181,7 @@ impl Fragment {
         }
     }
 
-    /// Build with a custom tag.
+    /// Assign a custom tag.
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.tag = tag.into();
         self

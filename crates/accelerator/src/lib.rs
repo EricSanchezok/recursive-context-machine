@@ -104,7 +104,7 @@ pub fn kit() -> Resources {
     for t in builtin_tools() {
         let name = t.name().to_string();
         resources = resources.with_tool(t);
-        resources.catch_tool(name);
+        resources.activate_tool(name);
     }
 
     // Load default system prompt.
