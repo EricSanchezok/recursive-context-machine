@@ -43,7 +43,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 
     let result = match model.protocol {
         Protocol::OpenAI => {
-            let mut b = rig::providers::openai::Client::builder().api_key(api_key);
+            let mut b = rig::providers::openai::CompletionsClient::builder().api_key(api_key);
             if let Some(ep) = base_url {
                 b = b.base_url(ep);
             }
