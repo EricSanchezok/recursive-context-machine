@@ -5,7 +5,7 @@ use tokio::time::{Duration, timeout};
 
 use crate::context::Context;
 use crate::fragment::{Content, Fragment, Role};
-use crate::model::{Model, Protocol};
+use crate::model::{DEFAULT_TIMEOUT_SECS, Model, Protocol};
 use crate::resources::Resources;
 
 /// Call the active LLM and return the response fragments or an error.
@@ -86,7 +86,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 
 /// Send a completion request with a configurable timeout.
 ///
-/// Timeout is read from `model.timeout_secs()` (defaults to 180s).
+/// Timeout is read from `model.timeout` (defaults to 180s when `None`).
 async fn send<M: CompletionModel>(
     client: M,
     model: &Model,
@@ -105,7 +105,7 @@ async fn send<M: CompletionModel>(
         request = request.max_tokens(limit.output);
     }
 
-    let timeout_secs = model.timeout_secs();
+    let timeout_secs = model.timeout.unwrap_or(DEFAULT_TIMEOUT_SECS);
     match timeout(Duration::from_secs(timeout_secs), request.send()).await {
         Ok(Ok(response)) => Ok(response.choice),
         Ok(Err(e)) => Err(format!("{}", e)),

@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+/// Default LLM request timeout in seconds (3 minutes).
+pub(crate) const DEFAULT_TIMEOUT_SECS: u64 = 180;
+
 /// Model configuration — a structured description of an LLM.
 ///
 /// `name` is required. `protocol` defaults to `OpenAI`. `endpoint` and
@@ -50,18 +53,9 @@ impl Default for Model {
             limit: None,
             cost: None,
             modalities: None,
-            timeout: Some(180),
+            timeout: Some(DEFAULT_TIMEOUT_SECS),
             extra: HashMap::new(),
         }
-    }
-}
-
-impl Model {
-    /// Request timeout in seconds.
-    ///
-    /// Falls back to 180s (3 minutes) when not explicitly set.
-    pub fn timeout_secs(&self) -> u64 {
-        self.timeout.unwrap_or(180)
     }
 }
 
