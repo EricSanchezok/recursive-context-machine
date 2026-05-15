@@ -65,5 +65,16 @@ must follow these conventions. Do not override unless explicitly instructed by t
 ## Testing
 
 - Tests go in `tests/`, not inline modules.
-- Each failure mode should have a test.
-- Test tools are defined in the test file, not in `src/`.
+- Test tools and test policies are defined in the test file, not in `src/`.
+- Never test mock infrastructure (helpers, builders, replay policies). Tests must
+  exercise the real crate API — `Machine::run`, `Context::append`, `Fragment::system`,
+  etc. If a test only asserts the behaviour of a `SeqPolicy` helper, delete it.
+- Never test getters (`tool_name_and_description`, `new_context_is_empty`). Test
+  **behaviour**: "does this produce the right side-effect?" not "does this struct
+  field match what I just set it to?"
+- Prefer edge cases over CRUD enumeration. One test for "remove and verify length"
+  is enough — don't write three variations.
+- Every `#[should_panic]` test must verify the panic message (`expected = "..."`).
+- Tests must be fast. No test may depend on external services (LLM APIs) or long
+  timeouts. Tests that currently depend on the reactor loop use SeqPolicy without
+  `Action::Halt` to avoid HTTP calls.
