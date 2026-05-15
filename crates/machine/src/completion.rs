@@ -36,7 +36,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
                 .build()
                 .expect("failed to build openai client")
                 .completion_model(&model.name);
-            request(&provider, model, &messages, &tools).await
+            send(&provider, model, &messages, &tools).await
         }
         Protocol::Anthropic => {
             let mut b = rig::providers::anthropic::Client::builder().api_key(api_key);
@@ -47,7 +47,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
                 .build()
                 .expect("failed to build anthropic client")
                 .completion_model(&model.name);
-            request(&provider, model, &messages, &tools).await
+            send(&provider, model, &messages, &tools).await
         }
         Protocol::Gemini => {
             let c = match endpoint {
@@ -60,7 +60,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
                     .expect("failed to build gemini client"),
             };
             let provider = c.completion_model(&model.name);
-            request(&provider, model, &messages, &tools).await
+            send(&provider, model, &messages, &tools).await
         }
     };
 
@@ -72,30 +72,28 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 
 // ── Internal ──
 
-/// Dispatch a completion call with a deadline.
+/// Send a dispatch with a deadline.
 ///
 /// The call is cancelled if it exceeds `model.timeout` seconds.
-async fn request(
-    provider: &impl CompletionModel,
+async fn send(
+    endpoint: &impl CompletionModel,
     model: &Model,
     messages: &[Message],
     tools: &[ToolDefinition],
 ) -> Result<OneOrMany<AssistantContent>, Fragment> {
-    let mut call = provider
+    let mut request = endpoint
         .completion_request(Message::user(""))
         .messages(messages.to_vec())
         .tools(tools.to_vec());
 
     if let Some(temp) = model.temperature {
-        call = call.temperature(temp);
+        request = request.temperature(temp);
     }
     if let Some(limit) = &model.limit {
-        call = call.max_tokens(limit.output);
+        request = request.max_tokens(limit.output);
     }
 
-    let deadline = Duration::from_secs(model.timeout);
-
-    match timeout(deadline, call.send()).await {
+    match timeout(Duration::from_secs(model.timeout), request.send()).await {
         Ok(Ok(response)) => Ok(response.choice),
         Ok(Err(e)) => Err(Fragment::hitch(format!("{}", e))),
         Err(_) => Err(Fragment::hitch(format!(
