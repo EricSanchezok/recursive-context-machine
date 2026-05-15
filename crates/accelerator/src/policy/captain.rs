@@ -68,7 +68,7 @@ impl Policy for Captain {
     fn decide<'a>(
         &'a self,
         ctx: &'a Context,
-        _env: &'a Environment,
+        env: &'a Environment,
         resources: &'a Resources,
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
@@ -78,7 +78,7 @@ impl Policy for Captain {
                 State::Boot => transition::boot(ctx, resources),
                 State::Halt => transition::halt(),
                 State::Drain => transition::drain(inbox),
-                State::React => transition::react(ctx, resources).await,
+                State::React => transition::react(ctx, env, resources).await,
                 State::Digest => transition::digest(),
                 State::Done => transition::done(),
             };
@@ -126,7 +126,7 @@ mod transition {
     }
 
     /// React — scan for unanswered ToolCalls and execute the first one.
-    pub async fn react(ctx: &Context, resources: &Resources) -> (State, Action) {
+    pub async fn react(ctx: &Context, env: &Environment, resources: &Resources) -> (State, Action) {
         let unanswered = find_unanswered_tool_call(ctx);
 
         match unanswered {
@@ -145,7 +145,7 @@ mod transition {
                             name
                         ))),
                     ),
-                    Some(tool) => match tool.execute(args).await {
+                    Some(tool) => match tool.execute(args, env).await {
                         Ok(result) => (
                             State::Digest,
                             Action::Append(Fragment::tool_result(call_id, result.content)),

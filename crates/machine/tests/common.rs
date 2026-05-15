@@ -77,6 +77,7 @@ impl Tool for TestTool {
     fn execute<'a>(
         &'a self,
         _args: serde_json::Value,
+        _env: &'a Environment,
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<machine::ToolResult, String>> + Send + 'a>,
     > {
