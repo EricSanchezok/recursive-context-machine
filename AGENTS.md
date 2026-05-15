@@ -34,6 +34,16 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - All execution (LLM calls, tool calls) uses `tokio::time::timeout`.
   Defaults are defined once as module-level constants.
 
+## Execution
+
+- Do not autonomously modify code unless the user explicitly asks.
+- When the user asks you to change code, wait for their confirmation before
+  starting. Do not pre-emptively implement.
+- Every batch of changes must be committed before continuing to the next
+  topic. Do not accumulate uncommitted work.
+- Commits must be atomic per logical change. Do not squash unrelated
+  refactors into a single commit.
+
 ## Testing
 
 - Tests go in `tests/`, not inline modules.

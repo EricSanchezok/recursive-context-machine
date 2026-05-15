@@ -20,40 +20,34 @@ pub async fn react(
     for frag in fragments {
         if let Content::ToolCall(tc) = &frag.content {
             executed = true;
-            let tc_id = tc.id.clone();
-            let tc_name = tc.name.clone();
-            let tc_args = tc.arguments.clone();
+
+            let call_id = tc.id.clone();
+            let call_name = tc.name.clone();
+            let call_args = tc.arguments.clone();
 
             inbox.push(frag);
 
-            let tool = resources
+            match resources
                 .active_tools()
                 .into_iter()
-                .find(|t| t.name() == tc_name);
-
-            match tool {
-                None => {
-                    inbox.push(Fragment::hitch(format!("tool '{}' not found", tc_name)));
-                }
+                .find(|t| t.name() == call_name)
+            {
+                None => inbox.push(Fragment::hitch(format!("tool '{}' not found", call_name))),
                 Some(tool) => {
                     let deadline = Duration::from_secs(tool.timeout().as_secs());
-                    match timeout(deadline, tool.execute(tc_args, env)).await {
+                    match timeout(deadline, tool.execute(call_args, env)).await {
                         Ok(Ok(result)) => {
-                            inbox.push(Fragment::tool_result(tc_id, result.content));
+                            inbox.push(Fragment::tool_result(call_id, result.content))
                         }
-                        Ok(Err(msg)) => {
-                            inbox.push(Fragment::hitch(format!(
-                                "tool '{}' error: {}",
-                                tc_name, msg
-                            )));
-                        }
-                        Err(_) => {
-                            inbox.push(Fragment::hitch(format!(
-                                "tool '{}' timed out after {}s",
-                                tc_name,
-                                tool.timeout().as_secs()
-                            )));
-                        }
+                        Ok(Err(msg)) => inbox.push(Fragment::hitch(format!(
+                            "tool '{}' error: {}",
+                            call_name, msg
+                        ))),
+                        Err(_) => inbox.push(Fragment::hitch(format!(
+                            "tool '{}' timed out after {}s",
+                            call_name,
+                            tool.timeout().as_secs()
+                        ))),
                     }
                 }
             }
