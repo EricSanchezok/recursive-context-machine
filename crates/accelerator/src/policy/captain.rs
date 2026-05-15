@@ -6,37 +6,50 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use machine::{Action, Content, Context, Environment, Fragment, Inbox, Policy, Resources};
 use serde_json::Value;
 
-/// Default policy — a 6-phase state machine that injects system/user
-/// prompts, drains the inbox, and executes tool calls in a loop.
+/// Captain — the default steering policy.
+///
+/// A 5-phase state machine that boots the context, drains the inbox,
+/// and executes tool calls in a loop until the conversation reaches
+/// a stable state.
 ///
 /// ```text
-/// Phase 1 (Boot sys):   Append(system prompt from resources) → phase 2
-/// Phase 2 (Boot user):  Append(user intent) → phase 3
-/// Phase 3 (Halt):       Halt → phase 4
-/// Phase 4 (Drain):      inbox empty → phase 5; else Take (stay)
-/// Phase 5 (Check):      Scan for unanswered ToolCalls:
-///                         - should_halt set → clear, Halt → phase 4
-///                         - unanswered TC → execute, Append, set should_halt
-///                         - none → Done
+/// Phase 1 (Boot):   ctx has sys prompt? → Halt : Append(sys) → Phase 2
+/// Phase 2 (Halt):   Halt → Phase 3
+/// Phase 3 (Drain):  inbox empty? → Phase 4 : Take (stay)
+/// Phase 4 (React):  Scan for unanswered ToolCalls:
+///                     - should_halt set → clear, Halt → Phase 3
+///                     - unanswered TC → execute, Append, set should_halt
+///                     - none → Done
 /// ```
-pub struct DefaultPolicy {
+pub struct Captain {
     phase: AtomicU8,
     should_halt: AtomicBool,
-    intent: String,
 }
 
-impl DefaultPolicy {
-    /// Create a new default policy with the given user intent.
-    pub fn new(intent: impl Into<String>) -> Self {
-        Self {
-            phase: AtomicU8::new(1),
-            should_halt: AtomicBool::new(false),
-            intent: intent.into(),
-        }
+impl Default for Captain {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl Policy for DefaultPolicy {
+impl Captain {
+    /// Create a new Captain policy.
+    pub fn new() -> Self {
+        Self {
+            phase: AtomicU8::new(1),
+            should_halt: AtomicBool::new(false),
+        }
+    }
+
+    /// Check whether the context already contains a system prompt.
+    fn has_system_prompt(&self, ctx: &Context) -> bool {
+        ctx.fragments()
+            .iter()
+            .any(|f| f.role == machine::Role::System)
+    }
+}
+
+impl Policy for Captain {
     fn decide<'a>(
         &'a self,
         ctx: &'a Context,
@@ -48,8 +61,14 @@ impl Policy for DefaultPolicy {
             let phase = self.phase.load(Ordering::Relaxed);
 
             match phase {
-                // ── Phase 1: Boot sys ──
+                // ── Phase 1: Boot ──
+                // Inject the system prompt only if the context is empty
+                // of system-level instructions.
                 1 => {
+                    if self.has_system_prompt(ctx) {
+                        self.phase.store(2, Ordering::Relaxed);
+                        return Action::Halt;
+                    }
                     let prompt = resources
                         .prompts
                         .get("default")
@@ -59,36 +78,23 @@ impl Policy for DefaultPolicy {
                     Action::Append(Fragment::system(prompt))
                 }
 
-                // ── Phase 2: Boot user ──
+                // ── Phase 2: Halt ──
                 2 => {
                     self.phase.store(3, Ordering::Relaxed);
-                    Action::Append(Fragment::user(self.intent.clone()))
-                }
-
-                // ── Phase 3: Halt ──
-                3 => {
-                    self.phase.store(4, Ordering::Relaxed);
                     Action::Halt
                 }
 
-                // ── Phase 4: Drain inbox ──
-                4 => {
+                // ── Phase 3: Drain inbox ──
+                3 => {
                     if inbox.is_empty() {
-                        self.phase.store(5, Ordering::Relaxed);
-                        // Recurse: re-evaluate at phase 5 in this same step.
-                        return self.evaluate_phase_5(ctx, resources).await;
+                        self.phase.store(4, Ordering::Relaxed);
+                        return self.react(ctx, resources).await;
                     }
                     Action::Take
                 }
 
-                // ── Phase 5: Check context for unanswered tool calls ──
-                5 => self.evaluate_phase_5(ctx, resources).await,
-
-                // ── Phase 6: Halt after exec (entry via phase 5 should_halt) ──
-                6 => {
-                    self.phase.store(4, Ordering::Relaxed);
-                    Action::Halt
-                }
+                // ── Phase 4: React — check for unanswered tool calls ──
+                4 => self.react(ctx, resources).await,
 
                 _ => Action::Done,
             }
@@ -96,13 +102,14 @@ impl Policy for DefaultPolicy {
     }
 }
 
-impl DefaultPolicy {
-    /// Evaluate phase 5: scan for unanswered tool calls, handle should_halt.
-    async fn evaluate_phase_5<'a>(&'a self, ctx: &'a Context, resources: &'a Resources) -> Action {
+impl Captain {
+    /// React — scan for unanswered ToolCalls and execute them.
+    async fn react<'a>(&'a self, ctx: &'a Context, resources: &'a Resources) -> Action {
         // ── should_halt check ──
+        // After executing a tool, we loop back through Halt so the LLM
+        // can see the result before deciding what to do next.
         if self.should_halt.swap(false, Ordering::Relaxed) {
-            // Transition through phase 6: Halt then go to phase 4.
-            self.phase.store(4, Ordering::Relaxed);
+            self.phase.store(3, Ordering::Relaxed);
             return Action::Halt;
         }
 
@@ -126,11 +133,10 @@ impl DefaultPolicy {
 
         match unanswered {
             None => {
-                // No unanswered tool calls — we're done.
+                // No unanswered tool calls — conversation is stable.
                 Action::Done
             }
             Some((call_id, name, args)) => {
-                // Find and execute the tool.
                 let active_tools = resources.active_tools();
                 let tool = active_tools.iter().find(|t| t.name() == *name);
 

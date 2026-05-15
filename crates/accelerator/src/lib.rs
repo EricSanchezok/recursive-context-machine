@@ -1,12 +1,7 @@
 //! RICA Accelerator — lightweight entry for the Context Machine.
 //!
-//! The `accelerate` function wires together:
-//!   - a user **intent**
-//!   - a **Policy** (defaults to [`DefaultPolicy`])
-//!   - an **Environment** (cwd, vars)
-//!   - **Resources** (models, tools)
-//!
-//! and runs the [`Machine`] against them, returning the final [`Context`].
+//! The [`accelerate`] function wires together a user intent, context,
+//! resources, environment, and policy, then runs the [`Machine`].
 //!
 //! # Quick start
 //!
@@ -14,86 +9,73 @@
 //! # async fn example() {
 //! use accelerator::accelerate;
 //!
-//! let result = accelerate("What is 3 + 5?", None, None, vec![]).await;
+//! let result = accelerate("What is 3 + 5?", None, None, None, None).await;
 //! # }
 //! ```
 //!
-//! # Custom policy / env / tools
+//! # Custom resources
 //!
 //! ```no_run
 //! # async fn example() {
-//! use accelerator::accelerate;
-//! use machine::Environment;
+//! use accelerator::{accelerate, kit};
 //!
 //! let result = accelerate(
 //!     "What is 3 + 5?",
 //!     None,
-//!     Some(Environment::new("/tmp")),
-//!     vec![],
+//!     Some(kit()),
+//!     None,
+//!     None,
 //! ).await;
 //! # }
 //! ```
 
-mod policy;
-mod tools;
+mod env;
+mod model;
+pub mod policy;
+mod resources;
+pub mod tools;
 
-use machine::{Context, Environment, Machine, Model, Policy, Resources, Tool};
-use policy::DefaultPolicy;
-use tools::builtin_tools;
+use machine::{Context, Environment, Machine, Policy, Resources};
+
+pub use env::default_env;
+pub use model::nex_n1;
+pub use policy::Captain;
+pub use resources::kit;
 
 /// Run the context machine with a user intent and optional overrides.
 ///
 /// # Parameters
 ///
 /// - `intent` — the user's natural-language request (required).
-/// - `policy` — overrides the default [`DefaultPolicy`] when `Some`.
-/// - `env` — overrides the default environment (`cwd = "."`) when `Some`.
-/// - `tools` — additional tools beyond the built-in set.
+///   Ignored when `ctx` is non-empty (continuing an existing conversation).
+/// - `ctx` — an existing context. When `None` or empty, a fresh context
+///   is created and `intent` is appended as a user fragment.
+/// - `resources` — overrides the default [`kit`]. When `None`, the
+///   built-in kit (tools, prompts, and model) is used.
+/// - `env` — overrides the default environment. When `None`, `cwd = "."`.
+/// - `policy` — overrides the default [`Captain`].
 ///
 /// # Returns
 ///
 /// The final [`Context`] after the machine loop terminates.
 pub async fn accelerate(
     intent: impl Into<String>,
-    policy: Option<Box<dyn Policy>>,
+    ctx: Option<Context>,
+    resources: Option<Resources>,
     env: Option<Environment>,
-    tools: Vec<Box<dyn Tool>>,
+    policy: Option<Box<dyn Policy>>,
 ) -> Context {
     let intent = intent.into();
 
-    let mut ctx = Context::new();
-
-    let mut env = env.unwrap_or_else(|| Environment::new("."));
-
-    let mut resources = Resources::new();
-
-    // Register built-in tools + user tools.
-    for t in builtin_tools().into_iter().chain(tools) {
-        let name = t.name().to_string();
-        resources = resources.with_tool(t);
-        // Activate all registered tools by default.
-        resources.catch_tool(name);
+    let mut ctx = ctx.unwrap_or_default();
+    if ctx.is_empty() {
+        ctx.append(machine::Fragment::user(intent));
     }
 
-    // Register a default model. The caller's Station / UI layer
-    // should ultimately provide this; for now we use a hard-coded
-    // OpenAI-compatible local endpoint.
-    resources = resources.with_model(Model {
-        name: "default".into(),
-        protocol: machine::Protocol::OpenAI,
-        endpoint: None, // falls back to OPENAI_BASE_URL or https://api.openai.com/v1
-        credentials: None, // falls back to OPENAI_API_KEY
-        ..Default::default()
-    });
-    resources.set_active_model("default");
+    let mut env = env.unwrap_or_else(default_env);
+    let mut resources = resources.unwrap_or_else(kit);
 
-    // Load default system prompt so the policy can read it in phase 1.
-    resources.prompts.insert(
-        "default".to_string(),
-        include_str!("prompts/default.txt").to_string(),
-    );
-
-    let policy = policy.unwrap_or_else(|| Box::new(DefaultPolicy::new(intent)));
+    let policy = policy.unwrap_or_else(|| Box::new(Captain::new()));
     let machine = Machine::new(policy);
 
     machine.run(&mut ctx, &mut env, &mut resources).await;
