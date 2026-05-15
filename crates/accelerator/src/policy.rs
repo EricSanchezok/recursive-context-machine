@@ -137,7 +137,7 @@ impl DefaultPolicy {
                 match tool {
                     None => {
                         self.should_halt.store(true, Ordering::Relaxed);
-                        Action::Append(Fragment::error(format!(
+                        Action::Append(Fragment::hitch(format!(
                             "tool '{}' not found in active tools",
                             name
                         )))
@@ -149,7 +149,7 @@ impl DefaultPolicy {
                         }
                         Err(msg) => {
                             self.should_halt.store(true, Ordering::Relaxed);
-                            Action::Append(Fragment::error(format!(
+                            Action::Append(Fragment::hitch(format!(
                                 "tool '{}' error: {}",
                                 name, msg
                             )))

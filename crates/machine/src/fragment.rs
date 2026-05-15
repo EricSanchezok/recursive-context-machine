@@ -73,7 +73,7 @@ pub struct ToolCall {
 /// Content of a fragment.
 ///
 /// All content types are value-objects — they carry data, not behavior.
-/// [`Error`](Content::Error) is singled out because it follows a different
+/// [`Hitch`](Content::Hitch) is singled out because it follows a different
 /// routing path than regular messages: Policy can intercept it for retry
 /// decisions rather than forwarding it to the language model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -85,10 +85,15 @@ pub enum Content {
     Document(Document),
     ToolCall(ToolCall),
     ToolResult(ToolResult),
-    /// Execution error — LLM failure, tool failure, or runtime error.
-    /// Carries a human-readable message. Policy can decide to retry,
-    /// switch model, or abort.
-    Error(String),
+    /// A hitch — a transient obstruction in the execution flow.
+    ///
+    /// LLM failure, tool failure, or runtime snag. Policy decides whether
+    /// to retry, switch model, or abort.
+    Hitch {
+        message: String,
+        retryable: bool,
+        code: Option<u16>,
+    },
 }
 
 /// A single symbol on the context tape.
@@ -148,16 +153,20 @@ impl Fragment {
         }
     }
 
-    /// Error fragment — LLM failure, runtime error, etc.
+    /// A hitch fragment — LLM failure, runtime snag, etc.
     ///
-    /// These are routed through Policy for retry/fallback decisions,
-    /// not forwarded to the language model as context.
-    pub fn error(message: impl Into<String>) -> Self {
+    /// Routed through Policy for retry/fallback decisions, not forwarded
+    /// to the language model as context.
+    pub fn hitch(message: impl Into<String>) -> Self {
         Self {
             id: 0,
             role: Role::System,
-            tag: "error".into(),
-            content: Content::Error(message.into()),
+            tag: "hitch".into(),
+            content: Content::Hitch {
+                message: message.into(),
+                retryable: false,
+                code: None,
+            },
         }
     }
 

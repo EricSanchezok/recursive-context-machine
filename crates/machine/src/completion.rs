@@ -14,7 +14,7 @@ use crate::resources::Resources;
 /// Dispatches by `Protocol` (3 arms) to the corresponding rig module.
 /// `endpoint` optionally overrides the provider's default base URL.
 ///
-/// On failure, returns `Content::Error` instead of faking an assistant
+/// On failure, returns `Content::Hitch` instead of faking an assistant
 /// text fragment. The caller (Policy) can then decide to retry, switch
 /// model, or abort.
 pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
@@ -79,7 +79,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 
     match result {
         Ok(choice) => collect_fragments(choice.iter()),
-        Err(e) => vec![Fragment::error(format!("LLM call failed: {}", e))],
+        Err(e) => vec![Fragment::hitch(format!("LLM call failed: {}", e))],
     }
 }
 
