@@ -39,13 +39,13 @@ impl Machine {
                     ctx.swap(id1, id2);
                 }
                 Action::Model(name) => {
-                    resources.set_active_model(name);
+                    resources.use_model(name);
                 }
                 Action::Activate(name) => {
-                    resources.activate_tool(name);
+                    resources.enable(name);
                 }
                 Action::Deactivate(name) => {
-                    resources.deactivate_tool(&name);
+                    resources.disable(&name);
                 }
                 Action::Take => {
                     if let Some(frag) = inbox.pop() {

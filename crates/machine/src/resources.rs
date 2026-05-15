@@ -43,12 +43,12 @@ impl Resources {
         self
     }
 
-    /// Activate a tool by adding it to the active set. Idempotent.
+    /// Enable a tool — add it to the active set. Idempotent.
     ///
     /// # Panics
     ///
     /// Panics if the tool is not registered.
-    pub fn activate_tool(&mut self, name: impl Into<String>) {
+    pub fn enable(&mut self, name: impl Into<String>) {
         let name = name.into();
         assert!(
             self.tools.iter().any(|t| t.name() == name),
@@ -60,17 +60,17 @@ impl Resources {
         }
     }
 
-    /// Deactivate a tool by removing it from the active set.
-    pub fn deactivate_tool(&mut self, name: impl AsRef<str>) {
+    /// Disable a tool — remove it from the active set.
+    pub fn disable(&mut self, name: impl AsRef<str>) {
         self.active_tools.retain(|t| t != name.as_ref());
     }
 
-    /// Set the active model by name.
+    /// Switch the active model.
     ///
     /// # Panics
     ///
     /// Panics if the model is not registered.
-    pub fn set_active_model(&mut self, name: impl Into<String>) {
+    pub fn use_model(&mut self, name: impl Into<String>) {
         let name = name.into();
         assert!(
             self.models.iter().any(|m| m.name == name),
@@ -100,8 +100,8 @@ impl Resources {
             .collect()
     }
 
-    /// Find an active tool by name, without allocating a Vec.
-    pub fn find_active_tool(&self, name: &str) -> Option<&dyn Tool> {
+    /// Look up an active tool by name, without allocating a Vec.
+    pub fn lookup(&self, name: &str) -> Option<&dyn Tool> {
         if !self.active_tools.iter().any(|n| n == name) {
             return None;
         }

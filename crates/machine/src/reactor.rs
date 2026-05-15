@@ -16,7 +16,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
         let mut result: Option<Fragment> = None;
 
         if let Content::ToolCall(tc) = &frag.content {
-            result = Some(match resources.find_active_tool(&tc.name) {
+            result = Some(match resources.lookup(&tc.name) {
                 None => Fragment::hitch(format!("tool '{}' not found", tc.name)),
                 Some(tool) => {
                     let deadline = Duration::from_secs(tool.timeout().as_secs());

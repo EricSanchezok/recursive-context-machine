@@ -104,7 +104,7 @@ pub fn kit() -> Resources {
     for t in builtin_tools() {
         let name = t.name().to_string();
         resources = resources.with_tool(t);
-        resources.activate_tool(name);
+        resources.enable(name);
     }
 
     // Load default system prompt.
@@ -115,7 +115,7 @@ pub fn kit() -> Resources {
 
     // Register and activate the default model.
     resources = resources.with_model(nex_n1());
-    resources.set_active_model("nex-agi/nex-n1");
+    resources.use_model("nex-agi/nex-n1");
 
     resources
 }
