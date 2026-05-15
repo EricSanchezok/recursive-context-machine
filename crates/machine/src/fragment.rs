@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::tool::ToolResult;
-
 /// Fragment role — immutable, assigned at creation.
 ///
 /// Maps directly to the standard LLM wire-protocol roles:
@@ -68,6 +66,19 @@ pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: Value,
+}
+
+/// The outcome of a tool execution.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolResult {
+    /// Unique ID matching the tool call that produced this result.
+    pub call_id: String,
+
+    /// Textual content returned to the model.
+    pub content: String,
+
+    /// Optional short title for display/logging.
+    pub title: Option<String>,
 }
 
 /// Content of a fragment.

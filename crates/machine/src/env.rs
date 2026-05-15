@@ -10,6 +10,9 @@ use std::path::PathBuf;
 pub struct Environment {
     pub cwd: PathBuf,
     pub vars: HashMap<String, String>,
+    /// Filesystem boundary — tools may only access paths within this root.
+    /// When `None`, no boundary is enforced.
+    pub root: Option<PathBuf>,
 }
 
 impl Environment {
@@ -17,6 +20,7 @@ impl Environment {
         Self {
             cwd: cwd.into(),
             vars: HashMap::new(),
+            root: None,
         }
     }
 }

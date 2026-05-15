@@ -32,6 +32,9 @@ pub struct Model {
     pub cost: Option<Cost>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modalities: Option<Modalities>,
+    /// Request timeout in seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
     #[serde(flatten, default, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, Value>,
 }
@@ -47,6 +50,7 @@ impl Default for Model {
             limit: None,
             cost: None,
             modalities: None,
+            timeout: None,
             extra: HashMap::new(),
         }
     }

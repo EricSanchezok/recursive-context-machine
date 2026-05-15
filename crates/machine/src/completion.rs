@@ -1,8 +1,7 @@
 use rig::OneOrMany;
 use rig::client::CompletionClient;
-use rig::completion::{
-    AssistantContent, CompletionError, CompletionModel, Message, ToolDefinition,
-};
+use rig::completion::{AssistantContent, CompletionModel, Message, ToolDefinition};
+use tokio::time::{Duration, timeout};
 
 use crate::context::Context;
 use crate::fragment::{Content, Fragment, Role};
@@ -85,13 +84,15 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 
 // ── Internal ──
 
-/// Send a completion request and return the raw choice.
+/// Send a completion request with a configurable timeout.
+///
+/// Reads `config.timeout` (seconds); defaults to 180s (3 minutes).
 async fn send<M: CompletionModel>(
     model: M,
     config: &Model,
     messages: &[Message],
     tools: &[ToolDefinition],
-) -> Result<OneOrMany<AssistantContent>, CompletionError> {
+) -> Result<OneOrMany<AssistantContent>, String> {
     let mut request = model
         .completion_request(Message::user(""))
         .messages(messages.to_vec())
@@ -104,8 +105,12 @@ async fn send<M: CompletionModel>(
         request = request.max_tokens(limit.output);
     }
 
-    let response = request.send().await?;
-    Ok(response.choice)
+    let timeout_secs = config.timeout.unwrap_or(180);
+    match timeout(Duration::from_secs(timeout_secs), request.send()).await {
+        Ok(Ok(response)) => Ok(response.choice),
+        Ok(Err(e)) => Err(format!("{}", e)),
+        Err(_) => Err(format!("request timed out after {}s", timeout_secs)),
+    }
 }
 
 /// Extract fragments from a rig response's `AssistantContent` items.

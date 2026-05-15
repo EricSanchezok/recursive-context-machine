@@ -31,11 +31,11 @@ pub mod tool;
 pub use context::Context;
 pub use env::Environment;
 pub use fragment::{
-    Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, Video,
+    Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, ToolResult, Video,
 };
 pub use inbox::Inbox;
 pub use machine::Machine;
 pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
 pub use policy::{Action, Policy};
 pub use resources::Resources;
-pub use tool::{Tool, ToolResult};
+pub use tool::Tool;

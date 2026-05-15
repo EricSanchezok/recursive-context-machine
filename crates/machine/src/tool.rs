@@ -1,8 +1,10 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::fragment::ToolResult;
 
 /// Tool — an executable capability.
 ///
@@ -18,22 +20,16 @@ pub trait Tool: Send + Sync {
     /// JSON Schema describing the tool's input parameters.
     fn parameters(&self) -> Value;
 
+    /// Maximum time the tool is allowed to run before cancellation.
+    ///
+    /// Defaults to 180 seconds (3 minutes).
+    fn timeout(&self) -> Duration {
+        Duration::from_secs(180)
+    }
+
     /// Execute the tool with the given arguments.
     fn execute<'a>(
         &'a self,
         args: Value,
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>>;
-}
-
-/// The outcome of a tool execution.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ToolResult {
-    /// Unique ID matching the tool call that produced this result.
-    pub call_id: String,
-
-    /// Textual content returned to the model.
-    pub content: String,
-
-    /// Optional short title for display/logging.
-    pub title: Option<String>,
 }
