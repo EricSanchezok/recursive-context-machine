@@ -6,6 +6,9 @@ use serde_json::Value;
 
 use crate::fragment::ToolResult;
 
+/// Default tool execution timeout in seconds (3 minutes).
+const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 180;
+
 /// Tool — an executable capability.
 ///
 /// Implementations may wrap rig tools, pure functions, WASM plugins, remote
@@ -22,9 +25,9 @@ pub trait Tool: Send + Sync {
 
     /// Maximum time the tool is allowed to run before cancellation.
     ///
-    /// Defaults to 180 seconds (3 minutes).
+    /// Defaults to [`DEFAULT_TOOL_TIMEOUT_SECS`] (3 minutes).
     fn timeout(&self) -> Duration {
-        Duration::from_secs(180)
+        Duration::from_secs(DEFAULT_TOOL_TIMEOUT_SECS)
     }
 
     /// Execute the tool with the given arguments.
