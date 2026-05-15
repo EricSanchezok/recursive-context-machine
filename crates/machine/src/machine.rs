@@ -53,17 +53,7 @@ impl Machine {
                     }
                 }
                 Action::Done => return,
-                Action::Halt => loop {
-                    let executed = reactor::react(ctx, env, resources, &mut inbox).await;
-
-                    while let Some(frag) = inbox.pop() {
-                        ctx.append(frag);
-                    }
-
-                    if !executed {
-                        break;
-                    }
-                },
+                Action::Halt => reactor::react(ctx, env, resources, &mut inbox).await,
             }
         }
     }

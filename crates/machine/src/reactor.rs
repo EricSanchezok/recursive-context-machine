@@ -6,23 +6,16 @@ use crate::inbox::Inbox;
 use crate::resources::Resources;
 use tokio::time::{Duration, timeout};
 
-/// Complete the LLM call and execute all ToolCalls. Returns `true` if any
-/// tool was executed, signalling the machine to re-invoke the reactor.
-pub async fn react(
-    ctx: &Context,
-    env: &Environment,
-    resources: &Resources,
-    inbox: &mut Inbox,
-) -> bool {
+/// Call the LLM and execute ToolCalls. All fragments (original LLM text,
+/// ToolCalls, and their ToolResults/Hitches) are pushed into the inbox.
+/// The Policy drains them via [`Take`](crate::Action::Take).
+pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbox: &mut Inbox) {
     let fragments = completion::complete(ctx, resources).await;
-    let mut executed = false;
 
     for frag in fragments {
         let mut result: Option<Fragment> = None;
 
         if let Content::ToolCall(tc) = &frag.content {
-            executed = true;
-
             result = Some(
                 match resources
                     .active_tools()
@@ -53,6 +46,4 @@ pub async fn react(
             inbox.push(f);
         }
     }
-
-    executed
 }

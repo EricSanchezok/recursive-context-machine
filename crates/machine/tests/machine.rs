@@ -202,7 +202,6 @@ async fn model_sets_active() {
     let mut resources = common::test_resources();
 
     machine.run(&mut ctx, &mut env, &mut resources).await;
-    // The model was set; reactor tried to use it and produced a hitch
-    assert_eq!(ctx.len(), 1);
-    assert_eq!(ctx.fragments()[0].tag, "hitch");
+    // The model was set; reactor pushed a hitch to inbox, but Take was never called.
+    assert_eq!(ctx.len(), 0);
 }
