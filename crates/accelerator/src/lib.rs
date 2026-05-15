@@ -32,7 +32,6 @@
 mod env;
 mod model;
 pub mod policy;
-mod resources;
 pub mod tools;
 
 use machine::{Context, Environment, Machine, Policy, Resources};
@@ -40,7 +39,6 @@ use machine::{Context, Environment, Machine, Policy, Resources};
 pub use env::default_env;
 pub use model::nex_n1;
 pub use policy::Captain;
-pub use resources::kit;
 
 /// Run the context machine with a user intent and optional overrides.
 ///
@@ -80,4 +78,44 @@ pub async fn accelerate(
 
     machine.run(&mut ctx, &mut env, &mut resources).await;
     ctx
+}
+
+/// Build the default resource kit — built-in tools, prompts, and model.
+///
+/// The kit includes:
+///   - all built-in tools (activated by default)
+///   - the default system prompt
+///   - the Nex N1 model (active by default)
+///
+/// # Example
+///
+/// ```no_run
+/// use accelerator::kit;
+///
+/// let resources = kit();
+/// ```
+pub fn kit() -> Resources {
+    use crate::model::nex_n1;
+    use crate::tools::builtin_tools;
+
+    let mut resources = Resources::new();
+
+    // Register and activate all built-in tools.
+    for t in builtin_tools() {
+        let name = t.name().to_string();
+        resources = resources.with_tool(t);
+        resources.catch_tool(name);
+    }
+
+    // Load default system prompt.
+    resources.prompts.insert(
+        "default".to_string(),
+        include_str!("prompts/default.txt").to_string(),
+    );
+
+    // Register and activate the default model.
+    resources = resources.with_model(nex_n1());
+    resources.set_active_model("nex-agi/nex-n1");
+
+    resources
 }
