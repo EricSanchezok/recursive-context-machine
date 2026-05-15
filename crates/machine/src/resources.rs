@@ -9,7 +9,7 @@ use crate::tool::Tool;
 /// The completion reads the active state directly.
 pub struct Resources {
     pub tools: HashMap<String, Box<dyn Tool>>,
-    pub models: Vec<Model>,
+    pub models: HashMap<String, Model>,
     active_model: String,
     active_tools: HashSet<String>,
     pub prompts: HashMap<String, String>,
@@ -25,7 +25,7 @@ impl Resources {
     pub fn new() -> Self {
         Self {
             tools: HashMap::new(),
-            models: Vec::new(),
+            models: HashMap::new(),
             active_model: String::new(),
             active_tools: HashSet::new(),
             prompts: HashMap::new(),
@@ -40,11 +40,12 @@ impl Resources {
     }
 
     /// Register a model. The first model registered becomes the active model.
+    /// Overwrites any model with the same name.
     pub fn with_model(mut self, model: Model) -> Self {
         if self.active_model.is_empty() {
             self.active_model.clone_from(&model.name);
         }
-        self.models.push(model);
+        self.models.insert(model.name.clone(), model);
         self
     }
 
@@ -75,7 +76,7 @@ impl Resources {
     pub fn use_model(&mut self, name: impl Into<String>) {
         let name = name.into();
         assert!(
-            self.models.iter().any(|m| m.name == name),
+            self.models.contains_key(&name),
             "model '{name}' not registered"
         );
         self.active_model = name;
@@ -88,8 +89,7 @@ impl Resources {
     /// Panics when no model has been registered.
     pub fn active_model(&self) -> &Model {
         self.models
-            .iter()
-            .find(|m| m.name == self.active_model)
+            .get(&self.active_model)
             .expect("active model not found")
     }
 
