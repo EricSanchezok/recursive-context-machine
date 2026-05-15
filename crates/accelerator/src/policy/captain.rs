@@ -3,18 +3,11 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Resources, Role};
+use tracing::debug;
 
 /// Captain — the default steering policy.
 ///
-/// A minimal four-state machine:
-///
-/// ```text
 /// Boot → Halt → Drain → Done
-/// ```
-///
-/// `Boot` injects the system prompt if missing, then `Halt` triggers
-/// the reactor (LLM call + tool execution). `Drain` consumes results
-/// from the inbox into context, and `Done` returns control.
 pub struct Captain {
     state: AtomicU8,
 }
@@ -77,6 +70,7 @@ impl Policy for Captain {
 
 fn boot(ctx: &Context, resources: &Resources) -> (State, Action) {
     if ctx.fragments().iter().any(|f| f.role == Role::System) {
+        debug!("boot: system prompt present, skipping");
         return (State::Halt, Action::Halt);
     }
     let prompt = resources
@@ -84,6 +78,7 @@ fn boot(ctx: &Context, resources: &Resources) -> (State, Action) {
         .get("default")
         .cloned()
         .unwrap_or_default();
+    debug!("boot: injecting system prompt");
     (State::Halt, Action::Append(Fragment::system(prompt)))
 }
 

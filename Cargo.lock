@@ -9,6 +9,7 @@ dependencies = [
  "machine",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

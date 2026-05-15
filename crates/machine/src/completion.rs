@@ -93,7 +93,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
             decode(choice.iter())
         }
         Err(hitch) => {
-            warn!("completion failed");
+            warn!(?hitch, "completion failed");
             vec![hitch]
         }
     }

@@ -8,3 +8,4 @@ description = "RICA accelerator — lightweight execution entry for Context Mach
 machine = { path = "../machine" }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tracing = "0.1"

@@ -10,7 +10,8 @@ pub mod tools;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use machine::{Context, Environment, Machine, Policy, Resources};
+use machine::{Context, Environment, Fragment, Machine, Policy, Resources};
+use tracing::debug;
 
 pub use model::nex_n1;
 pub use policy::Captain;
@@ -26,8 +27,14 @@ pub async fn accelerate(
     let intent = intent.into();
 
     let mut ctx = ctx.unwrap_or_default();
+    debug!(
+        intent = %intent,
+        ctx_empty = ctx.is_empty(),
+        "accelerate"
+    );
+
     if ctx.is_empty() {
-        ctx.append(machine::Fragment::user(intent));
+        ctx.append(Fragment::user(intent));
     }
 
     let mut env = env.unwrap_or_else(local);
@@ -37,6 +44,7 @@ pub async fn accelerate(
     let machine = Machine::new(policy);
 
     machine.run(&mut ctx, &mut env, &mut resources).await;
+    debug!(fragments = ctx.len(), "accelerate done");
     ctx
 }
 
