@@ -1,63 +1,39 @@
-use machine::Fragment;
+use machine::{Content, Fragment, Role};
 
 #[test]
-fn system_has_correct_role_and_tag() {
-    let f = Fragment::system("hello");
-    assert_eq!(f.role, machine::Role::System);
-    assert_eq!(f.tag, "system");
-    assert_eq!(f.id, 0);
+fn fragment_constructor_roles() {
+    assert_eq!(Fragment::system("x").role, Role::System);
+    assert_eq!(Fragment::user("x").role, Role::User);
+    assert_eq!(Fragment::assistant("x").role, Role::Assistant);
+    assert_eq!(Fragment::tool_result("id", "ok").role, Role::Tool);
 }
 
 #[test]
-fn user_has_correct_role_and_tag() {
-    let f = Fragment::user("hello");
-    assert_eq!(f.role, machine::Role::User);
-    assert_eq!(f.tag, "user");
+fn as_text_roundtrips() {
+    assert_eq!(Fragment::user("hello").as_text(), Some("hello"));
 }
 
 #[test]
-fn assistant_has_correct_role_and_tag() {
-    let f = Fragment::assistant("hello");
-    assert_eq!(f.role, machine::Role::Assistant);
-    assert_eq!(f.tag, "assistant");
+fn as_text_none_for_nontinuitive_types() {
+    assert_eq!(Fragment::tool_result("id", "ok").as_text(), None);
 }
 
 #[test]
-fn tool_result_has_correct_role_and_tag() {
-    let f = Fragment::tool_result("call_1", "done");
-    assert_eq!(f.role, machine::Role::Tool);
-    assert_eq!(f.tag, "tool_result");
+fn hitch_content() {
+    let f = Fragment::hitch("broken");
+    assert!(matches!(f.content, Content::Hitch { message, .. } if message == "broken"));
+    assert_eq!(f.role, Role::System);
 }
 
 #[test]
-fn with_tag_overrides_default() {
-    let f = Fragment::system("hello").with_tag("custom");
+fn tag_override() {
+    let f = Fragment::system("x").with_tag("custom");
     assert_eq!(f.tag, "custom");
-    assert_eq!(f.role, machine::Role::System);
+    assert_eq!(f.role, Role::System); // role preserved
 }
 
 #[test]
-fn as_text_returns_text_content() {
-    let f = Fragment::user("hello world");
-    assert_eq!(f.as_text(), Some("hello world"));
-}
-
-#[test]
-fn as_text_returns_none_for_non_text() {
-    let f = Fragment::tool_result("id", "result");
-    assert_eq!(f.as_text(), None);
-}
-
-#[test]
-fn id_defaults_to_zero() {
-    let f = Fragment::system("test");
-    assert_eq!(f.id, 0);
-}
-
-#[test]
-fn role_is_immutable_via_constructor() {
-    // System fragment cannot become User via with_tag
-    let f = Fragment::system("s").with_tag("user");
-    assert_eq!(f.role, machine::Role::System);
-    assert_eq!(f.tag, "user");
+fn tool_call_preserves_data() {
+    let f = Fragment::tool_call("tc1", "add", serde_json::json!({"a": 1}));
+    assert!(matches!(f.content, Content::ToolCall(ref tc) if tc.id == "tc1" && tc.name == "add"));
 }

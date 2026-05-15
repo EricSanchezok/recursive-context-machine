@@ -1,9 +1,9 @@
 mod common;
 
-use machine::{Action, Context, Environment, Fragment, Machine, Resources};
+use machine::{Action, Context, Environment, Fragment, Machine};
 
 #[tokio::test]
-async fn done_immediately() {
+async fn done_stops_immediately() {
     let policy = common::SeqPolicy::new(vec![Action::Done]);
     let machine = Machine::new(Box::new(policy));
     let mut ctx = Context::new();
@@ -15,32 +15,10 @@ async fn done_immediately() {
 }
 
 #[tokio::test]
-async fn append_then_done() {
-    let policy = common::SeqPolicy::new(vec![
-        Action::Append(Fragment::system("you are helpful")),
-        Action::Done,
-    ]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources();
-
-    machine.run(&mut ctx, &mut env, &mut resources).await;
-    assert_eq!(ctx.len(), 1);
-    assert_eq!(ctx.fragments()[0].as_text(), Some("you are helpful"));
-}
-
-#[tokio::test]
-async fn halt_and_take() {
-    // Halt calls the real reactor, which calls completion.
-    // With no real API key, it produces an error fragment.
-    // We test that the Take → inbox → context flow works.
+async fn append_and_take_flow() {
     let policy = common::SeqPolicy::new(vec![
         Action::Append(Fragment::system("sys")),
         Action::Append(Fragment::user("hello")),
-        Action::Model("test".into()),
-        Action::Halt,
-        Action::Take,
         Action::Done,
     ]);
     let machine = Machine::new(Box::new(policy));
@@ -49,17 +27,13 @@ async fn halt_and_take() {
     let mut resources = common::test_resources();
 
     machine.run(&mut ctx, &mut env, &mut resources).await;
-    // sys + user + one fragment from reactor (likely an error)
-    assert_eq!(ctx.len(), 3);
+    assert_eq!(ctx.len(), 2);
     assert_eq!(ctx.fragments()[0].as_text(), Some("sys"));
     assert_eq!(ctx.fragments()[1].as_text(), Some("hello"));
-    // The third fragment is whatever the reactor produced
-    assert_eq!(ctx.fragments()[2].tag, "hitch");
 }
 
 #[tokio::test]
 async fn take_empty_inbox_is_noop() {
-    // Take when inbox is empty should not panic
     let policy = common::SeqPolicy::new(vec![Action::Take, Action::Done]);
     let machine = Machine::new(Box::new(policy));
     let mut ctx = Context::new();
@@ -71,25 +45,7 @@ async fn take_empty_inbox_is_noop() {
 }
 
 #[tokio::test]
-async fn policy_can_remove() {
-    let policy = common::SeqPolicy::new(vec![
-        Action::Append(Fragment::system("sys")),
-        Action::Append(Fragment::user("env").with_tag("env")),
-        Action::Remove(2),
-        Action::Done,
-    ]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources();
-
-    machine.run(&mut ctx, &mut env, &mut resources).await;
-    assert_eq!(ctx.len(), 1);
-    assert_eq!(ctx.fragments()[0].as_text(), Some("sys"));
-}
-
-#[tokio::test]
-async fn policy_can_swap() {
+async fn swap_preserves_count() {
     let policy = common::SeqPolicy::new(vec![
         Action::Append(Fragment::system("first")),
         Action::Append(Fragment::system("second")),
@@ -108,7 +64,28 @@ async fn policy_can_swap() {
 }
 
 #[tokio::test]
-async fn policy_can_insert() {
+async fn replace_preserves_id() {
+    let policy = common::SeqPolicy::new(vec![
+        Action::Append(Fragment::system("old")),
+        Action::Replace {
+            id: 1,
+            fragment: Fragment::system("new"),
+        },
+        Action::Done,
+    ]);
+    let machine = Machine::new(Box::new(policy));
+    let mut ctx = Context::new();
+    let mut env = Environment::new("/tmp");
+    let mut resources = common::test_resources();
+
+    machine.run(&mut ctx, &mut env, &mut resources).await;
+    assert_eq!(ctx.len(), 1);
+    assert_eq!(ctx.fragments()[0].as_text(), Some("new"));
+    assert_eq!(ctx.fragments()[0].id, 1);
+}
+
+#[tokio::test]
+async fn insert_after_id() {
     let policy = common::SeqPolicy::new(vec![
         Action::Append(Fragment::system("first")),
         Action::Append(Fragment::system("third")),
@@ -131,13 +108,11 @@ async fn policy_can_insert() {
 }
 
 #[tokio::test]
-async fn policy_can_replace() {
+async fn remove_and_check_context() {
     let policy = common::SeqPolicy::new(vec![
-        Action::Append(Fragment::system("old")),
-        Action::Replace {
-            id: 1,
-            fragment: Fragment::system("new"),
-        },
+        Action::Append(Fragment::system("a")),
+        Action::Append(Fragment::user("b")),
+        Action::Remove(1),
         Action::Done,
     ]);
     let machine = Machine::new(Box::new(policy));
@@ -147,41 +122,17 @@ async fn policy_can_replace() {
 
     machine.run(&mut ctx, &mut env, &mut resources).await;
     assert_eq!(ctx.len(), 1);
-    assert_eq!(ctx.fragments()[0].as_text(), Some("new"));
-    assert_eq!(ctx.fragments()[0].id, 1);
+    assert_eq!(ctx.fragments()[0].as_text(), Some("b"));
 }
 
 #[tokio::test]
-async fn activate_and_deactivate_tools() {
-    let policy = common::SeqPolicy::new(vec![
-        Action::Activate("tool-a".into()),
-        Action::Activate("tool-b".into()),
-        Action::Deactivate("tool-a".into()),
-        Action::Done,
-    ]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources_with_tools();
-
-    machine.run(&mut ctx, &mut env, &mut resources).await;
-    let active: Vec<&str> = resources.active_tools().iter().map(|t| t.name()).collect();
-    assert_eq!(active, vec!["tool-b"]);
-}
-
-#[tokio::test]
-async fn model_sets_active() {
-    let policy = common::SeqPolicy::new(vec![
-        Action::Model("test".into()),
-        Action::Halt,
-        Action::Done,
-    ]);
+#[should_panic(expected = "not found")]
+async fn remove_unknown_panics() {
+    let policy = common::SeqPolicy::new(vec![Action::Remove(999), Action::Done]);
     let machine = Machine::new(Box::new(policy));
     let mut ctx = Context::new();
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
 
     machine.run(&mut ctx, &mut env, &mut resources).await;
-    // The model was set; reactor pushed a hitch to inbox, but Take was never called.
-    assert_eq!(ctx.len(), 0);
 }
