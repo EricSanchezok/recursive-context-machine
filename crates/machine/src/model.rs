@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 /// Default LLM request timeout in seconds (3 minutes).
-pub(crate) const DEFAULT_TIMEOUT_SECS: u64 = 180;
+const DEFAULT_TIMEOUT_SECS: u64 = 180;
 
 /// Model configuration — a structured description of an LLM.
 ///
@@ -35,9 +35,8 @@ pub struct Model {
     pub cost: Option<Cost>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modalities: Option<Modalities>,
-    /// Request timeout in seconds.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub timeout: Option<u64>,
+    /// Request timeout in seconds. Defaults to [`DEFAULT_TIMEOUT_SECS`].
+    pub timeout: u64,
     #[serde(flatten, default, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, Value>,
 }
@@ -53,7 +52,7 @@ impl Default for Model {
             limit: None,
             cost: None,
             modalities: None,
-            timeout: Some(DEFAULT_TIMEOUT_SECS),
+            timeout: DEFAULT_TIMEOUT_SECS,
             extra: HashMap::new(),
         }
     }

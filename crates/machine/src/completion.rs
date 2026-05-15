@@ -5,7 +5,7 @@ use tokio::time::{Duration, timeout};
 
 use crate::context::Context;
 use crate::fragment::{Content, Fragment, Role};
-use crate::model::{DEFAULT_TIMEOUT_SECS, Model, Protocol};
+use crate::model::{Model, Protocol};
 use crate::resources::Resources;
 
 /// Call the active LLM and return the response fragments or an error.
@@ -13,9 +13,8 @@ use crate::resources::Resources;
 /// Dispatches by `Protocol` (3 arms) to the corresponding rig module.
 /// `endpoint` optionally overrides the provider's default base URL.
 ///
-/// On failure, returns `Content::Hitch` instead of faking an assistant
-/// text fragment. The caller (Policy) can then decide to retry, switch
-/// model, or abort.
+/// On failure, returns `Content::Hitch` so the caller (Policy) can
+/// decide to retry, switch model, or abort.
 pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
     let model = match resources.active_model() {
         Some(m) => m,
@@ -33,31 +32,25 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
             if let Some(ep) = endpoint {
                 b = b.base_url(ep);
             }
-            let client = b.build().expect("failed to build openai client");
-            send(
-                client.completion_model(&model.name),
-                model,
-                &messages,
-                &tools,
-            )
-            .await
+            let provider = b
+                .build()
+                .expect("failed to build openai client")
+                .completion_model(&model.name);
+            transmit(&provider, model, &messages, &tools).await
         }
         Protocol::Anthropic => {
             let mut b = rig::providers::anthropic::Client::builder().api_key(api_key);
             if let Some(ep) = endpoint {
                 b = b.base_url(ep);
             }
-            let client = b.build().expect("failed to build anthropic client");
-            send(
-                client.completion_model(&model.name),
-                model,
-                &messages,
-                &tools,
-            )
-            .await
+            let provider = b
+                .build()
+                .expect("failed to build anthropic client")
+                .completion_model(&model.name);
+            transmit(&provider, model, &messages, &tools).await
         }
         Protocol::Gemini => {
-            let client = match endpoint {
+            let c = match endpoint {
                 Some(ep) => rig::providers::gemini::Client::builder()
                     .api_key(api_key)
                     .base_url(ep)
@@ -66,50 +59,49 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
                 None => rig::providers::gemini::Client::new(api_key)
                     .expect("failed to build gemini client"),
             };
-            send(
-                client.completion_model(&model.name),
-                model,
-                &messages,
-                &tools,
-            )
-            .await
+            let provider = c.completion_model(&model.name);
+            transmit(&provider, model, &messages, &tools).await
         }
     };
 
     match result {
         Ok(choice) => collect_fragments(choice.iter()),
-        Err(e) => vec![Fragment::hitch(format!("LLM call failed: {}", e))],
+        Err(hitch) => vec![hitch],
     }
 }
 
 // ── Internal ──
 
-/// Send a completion request with a configurable timeout.
+/// Dispatch a completion call with a deadline.
 ///
-/// Timeout is read from `model.timeout` (defaults to 180s when `None`).
-async fn send<M: CompletionModel>(
-    client: M,
+/// The call is cancelled if it exceeds `model.timeout` seconds.
+async fn transmit<M: CompletionModel>(
+    provider: &M,
     model: &Model,
     messages: &[Message],
     tools: &[ToolDefinition],
-) -> Result<OneOrMany<AssistantContent>, String> {
-    let mut request = client
+) -> Result<OneOrMany<AssistantContent>, Fragment> {
+    let mut call = provider
         .completion_request(Message::user(""))
         .messages(messages.to_vec())
         .tools(tools.to_vec());
 
     if let Some(temp) = model.temperature {
-        request = request.temperature(temp);
+        call = call.temperature(temp);
     }
     if let Some(limit) = &model.limit {
-        request = request.max_tokens(limit.output);
+        call = call.max_tokens(limit.output);
     }
 
-    let timeout_secs = model.timeout.unwrap_or(DEFAULT_TIMEOUT_SECS);
-    match timeout(Duration::from_secs(timeout_secs), request.send()).await {
+    let deadline = Duration::from_secs(model.timeout);
+
+    match timeout(deadline, call.send()).await {
         Ok(Ok(response)) => Ok(response.choice),
-        Ok(Err(e)) => Err(format!("{}", e)),
-        Err(_) => Err(format!("request timed out after {}s", timeout_secs)),
+        Ok(Err(e)) => Err(Fragment::hitch(format!("{}", e))),
+        Err(_) => Err(Fragment::hitch(format!(
+            "request timed out after {}s",
+            model.timeout
+        ))),
     }
 }
 
