@@ -36,7 +36,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
                 .build()
                 .expect("failed to build openai client")
                 .completion_model(&model.name);
-            transmit(&provider, model, &messages, &tools).await
+            request(&provider, model, &messages, &tools).await
         }
         Protocol::Anthropic => {
             let mut b = rig::providers::anthropic::Client::builder().api_key(api_key);
@@ -47,7 +47,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
                 .build()
                 .expect("failed to build anthropic client")
                 .completion_model(&model.name);
-            transmit(&provider, model, &messages, &tools).await
+            request(&provider, model, &messages, &tools).await
         }
         Protocol::Gemini => {
             let c = match endpoint {
@@ -60,7 +60,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
                     .expect("failed to build gemini client"),
             };
             let provider = c.completion_model(&model.name);
-            transmit(&provider, model, &messages, &tools).await
+            request(&provider, model, &messages, &tools).await
         }
     };
 
@@ -75,7 +75,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 /// Dispatch a completion call with a deadline.
 ///
 /// The call is cancelled if it exceeds `model.timeout` seconds.
-async fn transmit<M: CompletionModel>(
+async fn request<M: CompletionModel>(
     provider: &M,
     model: &Model,
     messages: &[Message],
