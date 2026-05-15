@@ -99,4 +99,15 @@ impl Resources {
             })
             .collect()
     }
+
+    /// Find an active tool by name, without allocating a Vec.
+    pub fn find_active_tool(&self, name: &str) -> Option<&dyn Tool> {
+        if !self.active_tools.iter().any(|n| n == name) {
+            return None;
+        }
+        self.tools
+            .iter()
+            .find(|t| t.name() == name)
+            .map(|t| t.as_ref())
+    }
 }
