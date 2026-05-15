@@ -1,29 +1,44 @@
 use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 
-use machine::{Action, Content, Context, Environment, Fragment, Inbox, Policy, Resources};
+use machine::{Action, Content, Context, Environment, Fragment, Inbox, Policy, Resources, Role};
 use serde_json::Value;
 
 /// Captain — the default steering policy.
 ///
-/// A 5-phase state machine that boots the context, drains the inbox,
-/// and executes tool calls in a loop until the conversation reaches
-/// a stable state.
+/// A finite-state machine with six explicit states.
 ///
 /// ```text
-/// Phase 1 (Boot):   ctx has sys prompt? → Halt : Append(sys) → Phase 2
-/// Phase 2 (Halt):   Halt → Phase 3
-/// Phase 3 (Drain):  inbox empty? → Phase 4 : Take (stay)
-/// Phase 4 (React):  Scan for unanswered ToolCalls:
-///                     - should_halt set → clear, Halt → Phase 3
-///                     - unanswered TC → execute, Append, set should_halt
-///                     - none → Done
+/// Boot → Halt → Drain → React → (Digest → Halt → Drain → React)* → Done
 /// ```
 pub struct Captain {
-    phase: AtomicU8,
-    should_halt: AtomicBool,
+    state: AtomicU8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum State {
+    Boot = 1,
+    Halt = 2,
+    Drain = 3,
+    React = 4,
+    Digest = 5,
+    Done = 6,
+}
+
+impl State {
+    fn from_u8(v: u8) -> Self {
+        match v {
+            1 => Self::Boot,
+            2 => Self::Halt,
+            3 => Self::Drain,
+            4 => Self::React,
+            5 => Self::Digest,
+            _ => Self::Done,
+        }
+    }
 }
 
 impl Default for Captain {
@@ -36,16 +51,16 @@ impl Captain {
     /// Create a new Captain policy.
     pub fn new() -> Self {
         Self {
-            phase: AtomicU8::new(1),
-            should_halt: AtomicBool::new(false),
+            state: AtomicU8::new(State::Boot as u8),
         }
     }
 
-    /// Check whether the context already contains a system prompt.
-    fn has_system_prompt(&self, ctx: &Context) -> bool {
-        ctx.fragments()
-            .iter()
-            .any(|f| f.role == machine::Role::System)
+    fn load_state(&self) -> State {
+        State::from_u8(self.state.load(Ordering::Relaxed))
+    }
+
+    fn store_state(&self, state: State) {
+        self.state.store(state as u8, Ordering::Relaxed);
     }
 }
 
@@ -58,62 +73,109 @@ impl Policy for Captain {
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            let phase = self.phase.load(Ordering::Relaxed);
-
-            match phase {
-                // ── Phase 1: Boot ──
-                // Inject the system prompt only if the context is empty
-                // of system-level instructions.
-                1 => {
-                    if self.has_system_prompt(ctx) {
-                        self.phase.store(2, Ordering::Relaxed);
-                        return Action::Halt;
-                    }
-                    let prompt = resources
-                        .prompts
-                        .get("default")
-                        .cloned()
-                        .unwrap_or_default();
-                    self.phase.store(2, Ordering::Relaxed);
-                    Action::Append(Fragment::system(prompt))
-                }
-
-                // ── Phase 2: Halt ──
-                2 => {
-                    self.phase.store(3, Ordering::Relaxed);
-                    Action::Halt
-                }
-
-                // ── Phase 3: Drain inbox ──
-                3 => {
-                    if inbox.is_empty() {
-                        self.phase.store(4, Ordering::Relaxed);
-                        return self.react(ctx, resources).await;
-                    }
-                    Action::Take
-                }
-
-                // ── Phase 4: React — check for unanswered tool calls ──
-                4 => self.react(ctx, resources).await,
-
-                _ => Action::Done,
-            }
+            let state = self.load_state();
+            let (next, action) = match state {
+                State::Boot => transition::boot(ctx, resources),
+                State::Halt => transition::halt(),
+                State::Drain => transition::drain(inbox),
+                State::React => transition::react(ctx, resources).await,
+                State::Digest => transition::digest(),
+                State::Done => transition::done(),
+            };
+            self.store_state(next);
+            action
         })
     }
 }
 
-impl Captain {
-    /// React — scan for unanswered ToolCalls and execute them.
-    async fn react<'a>(&'a self, ctx: &'a Context, resources: &'a Resources) -> Action {
-        // ── should_halt check ──
-        // After executing a tool, we loop back through Halt so the LLM
-        // can see the result before deciding what to do next.
-        if self.should_halt.swap(false, Ordering::Relaxed) {
-            self.phase.store(3, Ordering::Relaxed);
-            return Action::Halt;
-        }
+// ── Transitions ──
+//
+// Each function maps (current inputs) → (next_state, action).
+// No side effects, no mutable state — pure state transitions.
 
-        // ── Scan context for unanswered ToolCalls ──
+mod transition {
+    use super::*;
+
+    /// Boot — inject system prompt if the context lacks one.
+    pub fn boot(ctx: &Context, resources: &Resources) -> (State, Action) {
+        if ctx.fragments().iter().any(|f| f.role == Role::System) {
+            return (State::Halt, Action::Halt);
+        }
+        let prompt = resources
+            .prompts
+            .get("default")
+            .cloned()
+            .unwrap_or_default();
+        (State::Halt, Action::Append(Fragment::system(prompt)))
+    }
+
+    /// Halt — trigger LLM completion.
+    pub fn halt() -> (State, Action) {
+        (State::Drain, Action::Halt)
+    }
+
+    /// Drain — pop the inbox into context until empty.
+    pub fn drain(inbox: &Inbox) -> (State, Action) {
+        if inbox.is_empty() {
+            // Inbox drained — advance to React. Take on an empty inbox
+            // is a no-op, so this is effectively an internal transition.
+            (State::React, Action::Take)
+        } else {
+            (State::Drain, Action::Take)
+        }
+    }
+
+    /// React — scan for unanswered ToolCalls and execute the first one.
+    pub async fn react(ctx: &Context, resources: &Resources) -> (State, Action) {
+        let unanswered = find_unanswered_tool_call(ctx);
+
+        match unanswered {
+            None => (State::Done, Action::Done),
+            Some((call_id, name, args)) => {
+                let tool = resources
+                    .active_tools()
+                    .into_iter()
+                    .find(|t| t.name() == name);
+
+                match tool {
+                    None => (
+                        State::Digest,
+                        Action::Append(Fragment::hitch(format!(
+                            "tool '{}' not found in active tools",
+                            name
+                        ))),
+                    ),
+                    Some(tool) => match tool.execute(args).await {
+                        Ok(result) => (
+                            State::Digest,
+                            Action::Append(Fragment::tool_result(call_id, result.content)),
+                        ),
+                        Err(msg) => (
+                            State::Digest,
+                            Action::Append(Fragment::hitch(format!(
+                                "tool '{}' error: {}",
+                                name, msg
+                            ))),
+                        ),
+                    },
+                }
+            }
+        }
+    }
+
+    /// Digest — let the LLM absorb the tool result before deciding next steps.
+    pub fn digest() -> (State, Action) {
+        (State::Drain, Action::Halt)
+    }
+
+    /// Done — terminal state.
+    pub fn done() -> (State, Action) {
+        (State::Done, Action::Done)
+    }
+
+    // ── Helpers ──
+
+    fn find_unanswered_tool_call(ctx: &Context) -> Option<(&str, &str, Value)> {
         let mut tc_entries: Vec<(&str, &str, &Value)> = Vec::new();
         let mut tr_ids: HashSet<&str> = HashSet::new();
 
@@ -129,40 +191,9 @@ impl Captain {
             }
         }
 
-        let unanswered = tc_entries.iter().find(|(id, _, _)| !tr_ids.contains(id));
-
-        match unanswered {
-            None => {
-                // No unanswered tool calls — conversation is stable.
-                Action::Done
-            }
-            Some((call_id, name, args)) => {
-                let active_tools = resources.active_tools();
-                let tool = active_tools.iter().find(|t| t.name() == *name);
-
-                match tool {
-                    None => {
-                        self.should_halt.store(true, Ordering::Relaxed);
-                        Action::Append(Fragment::hitch(format!(
-                            "tool '{}' not found in active tools",
-                            name
-                        )))
-                    }
-                    Some(tool) => match tool.execute((*args).clone()).await {
-                        Ok(result) => {
-                            self.should_halt.store(true, Ordering::Relaxed);
-                            Action::Append(Fragment::tool_result(*call_id, result.content))
-                        }
-                        Err(msg) => {
-                            self.should_halt.store(true, Ordering::Relaxed);
-                            Action::Append(Fragment::hitch(format!(
-                                "tool '{}' error: {}",
-                                name, msg
-                            )))
-                        }
-                    },
-                }
-            }
-        }
+        tc_entries
+            .iter()
+            .find(|(id, _, _)| !tr_ids.contains(id))
+            .map(|(id, name, args)| (*id, *name, (*args).clone()))
     }
 }
