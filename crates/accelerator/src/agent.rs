@@ -42,15 +42,7 @@ impl Accelerator {
         }
     }
 
-    pub fn then(self, next: Accelerator) -> Self {
-        Self::Then {
-            first: Box::new(self),
-            next: Box::new(next),
-            flux: Flux::ISOLATE,
-        }
-    }
-
-    pub fn then_with(self, next: Accelerator, flux: Flux) -> Self {
+    pub fn then(self, next: Accelerator, flux: Flux) -> Self {
         Self::Then {
             first: Box::new(self),
             next: Box::new(next),
@@ -58,15 +50,7 @@ impl Accelerator {
         }
     }
 
-    pub fn and(self, other: Accelerator) -> Self {
-        Self::And {
-            left: Box::new(self),
-            right: Box::new(other),
-            flux: Flux::ISOLATE,
-        }
-    }
-
-    pub fn and_with(self, other: Accelerator, flux: Flux) -> Self {
+    pub fn and(self, other: Accelerator, flux: Flux) -> Self {
         Self::And {
             left: Box::new(self),
             right: Box::new(other),
