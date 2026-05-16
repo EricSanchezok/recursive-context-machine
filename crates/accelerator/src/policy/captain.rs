@@ -1,43 +1,54 @@
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources, Role};
 use tracing::{debug, trace, warn};
 
 /// Captain — the default steering policy.
 ///
-/// Boot → Halt → Drain → Done
+/// `Bootstrap → Inject → Halt → Drain → [loop] → Done`
+///
+/// - **Bootstrap**: replace or inject the `tag == "agent"` system prompt.
+/// - **Inject**: append the user's purpose as a user fragment.
+/// - **Halt**: call the LLM.
+/// - **Drain**: take inbox into context. If any [`Role::Tool`] fragments were
+///   taken, halt again so the LLM can see results and call more tools.
+/// - **Done**: final answer is in context.
 pub struct Captain {
-    state: AtomicU8,
+    phase: AtomicU8,
+    tool_seen: AtomicBool,
 }
 
 impl Clone for Captain {
     fn clone(&self) -> Self {
         Self {
-            state: AtomicU8::new(self.state.load(Ordering::Relaxed)),
+            phase: AtomicU8::new(self.phase.load(Ordering::Relaxed)),
+            tool_seen: AtomicBool::new(self.tool_seen.load(Ordering::Relaxed)),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-enum State {
-    Boot = 1,
-    Halt = 2,
-    Drain = 3,
-    Done = 4,
+enum Phase {
+    Bootstrap = 1,
+    Inject = 2,
+    Halt = 3,
+    Drain = 4,
+    Done = 5,
 }
 
-impl State {
+impl Phase {
     fn from_u8(v: u8) -> Self {
         match v {
-            1 => Self::Boot,
-            2 => Self::Halt,
-            3 => Self::Drain,
-            4 => Self::Done,
+            1 => Self::Bootstrap,
+            2 => Self::Inject,
+            3 => Self::Halt,
+            4 => Self::Drain,
+            5 => Self::Done,
             other => {
-                warn!(state = other, "captain: unknown state, forcing done");
+                warn!(phase = other, "captain: unknown phase, forcing done");
                 Self::Done
             }
         }
@@ -47,7 +58,8 @@ impl State {
 impl Default for Captain {
     fn default() -> Self {
         Self {
-            state: AtomicU8::new(State::Boot as u8),
+            phase: AtomicU8::new(Phase::Bootstrap as u8),
+            tool_seen: AtomicBool::new(false),
         }
     }
 }
@@ -72,61 +84,81 @@ impl Policy for Captain {
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            let state = State::from_u8(self.state.load(Ordering::Relaxed));
-            let (next, action) = match state {
-                State::Boot => boot(purpose, ctx, resources),
-                State::Halt => halt(),
-                State::Drain => drain(inbox),
-                State::Done => done(),
+            let phase = Phase::from_u8(self.phase.load(Ordering::Relaxed));
+            let (next, action) = match phase {
+                Phase::Bootstrap => bootstrap(purpose, ctx, resources),
+                Phase::Inject => inject(purpose),
+                Phase::Halt => {
+                    self.tool_seen.store(false, Ordering::Relaxed);
+                    (Phase::Drain, Action::Halt)
+                }
+                Phase::Drain => self.drain(inbox),
+                Phase::Done => (Phase::Done, Action::Done),
             };
-            self.state.store(next as u8, Ordering::Relaxed);
-            trace!(?state, ?next, "captain decide");
+            self.phase.store(next as u8, Ordering::Relaxed);
+            trace!(?phase, ?next, "captain decide");
             action
         })
     }
 }
 
-fn boot(purpose: &Purpose, ctx: &Context, resources: &Resources) -> (State, Action) {
-    if ctx.fragments().iter().any(|f| f.role == Role::System) {
-        if purpose.is_empty() {
-            debug!("boot: system present, skipping");
-            return (State::Halt, Action::Halt);
-        }
-        // System already injected but purpose is new → just inject purpose
-        debug!(purpose = purpose.text, "boot: injecting purpose");
-        return (State::Halt, Action::Append(Fragment::user(&purpose.text)));
-    }
-
+/// Ensure the `tag == "agent"` system prompt is in scope.
+///
+/// - Exists → **Replace** with the default prompt (preserves position).
+/// - Missing → **Append** the default prompt.
+fn bootstrap(_purpose: &Purpose, ctx: &Context, resources: &Resources) -> (Phase, Action) {
     let prompt = resources
         .prompts
         .get("default")
-        .map(|s| s.to_owned())
+        .cloned()
         .unwrap_or_default();
-    let content = if purpose.is_empty() {
-        debug!("boot: injecting system prompt");
-        prompt
-    } else {
-        debug!(purpose = purpose.text, "boot: injecting system + purpose");
-        format!("{}\n\nUser intent: {}", prompt, purpose.text)
-    };
-    (State::Halt, Action::Append(Fragment::system(content)))
-}
 
-fn halt() -> (State, Action) {
-    (State::Drain, Action::Halt)
-}
-
-fn drain(inbox: &Inbox) -> (State, Action) {
-    if inbox.is_empty() {
-        trace!("drain: inbox empty, advancing to done");
-        (State::Done, Action::Done)
+    if let Some(frag) = ctx
+        .fragments()
+        .iter()
+        .find(|f| f.role == Role::System && f.tag == "agent")
+    {
+        debug!("bootstrap: replacing agent prompt");
+        (
+            Phase::Inject,
+            Action::Replace {
+                id: frag.id(),
+                fragment: Fragment::system(prompt).with_tag("agent"),
+            },
+        )
     } else {
-        trace!("drain: taking one fragment");
-        (State::Drain, Action::Take)
+        debug!("bootstrap: injecting new agent prompt");
+        (
+            Phase::Inject,
+            Action::Append(Fragment::system(prompt).with_tag("agent")),
+        )
     }
 }
 
-fn done() -> (State, Action) {
-    trace!("done: machine stopping");
-    (State::Done, Action::Done)
+/// Append the user's purpose as a [`Role::User`] fragment.
+fn inject(purpose: &Purpose) -> (Phase, Action) {
+    if purpose.is_empty() {
+        debug!("inject: no purpose, skipping");
+        (Phase::Halt, Action::Halt)
+    } else {
+        debug!(purpose = purpose.text, "inject: appending purpose");
+        (Phase::Halt, Action::Append(Fragment::user(&purpose.text)))
+    }
+}
+
+impl Captain {
+    fn drain(&self, inbox: &Inbox) -> (Phase, Action) {
+        if let Some(frag) = inbox.peek() {
+            if frag.role == Role::Tool {
+                self.tool_seen.store(true, Ordering::Relaxed);
+            }
+            (Phase::Drain, Action::Take)
+        } else if self.tool_seen.load(Ordering::Relaxed) {
+            trace!("drain: tool results seen, halting again");
+            (Phase::Halt, Action::Halt)
+        } else {
+            trace!("drain: final answer ready");
+            (Phase::Done, Action::Done)
+        }
+    }
 }
