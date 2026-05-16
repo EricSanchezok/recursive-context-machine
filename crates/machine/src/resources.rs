@@ -66,8 +66,8 @@ impl Resources {
     }
 
     /// Disable a tool.
-    pub fn disable(&mut self, name: impl AsRef<str>) {
-        self.active_tools.remove(name.as_ref());
+    pub fn disable(&mut self, name: impl Into<String>) {
+        self.active_tools.remove(&name.into());
     }
 
     /// Switch the active model.

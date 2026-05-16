@@ -91,7 +91,7 @@ async fn replace_preserves_id() {
         .await;
     assert_eq!(ctx.len(), 1);
     assert_eq!(ctx.fragments()[0].as_text(), Some("new"));
-    assert_eq!(ctx.fragments()[0].id, 1);
+    assert_eq!(ctx.fragments()[0].id(), 1);
 }
 
 #[tokio::test]

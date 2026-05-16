@@ -9,10 +9,9 @@
 //! | [`Resources`] | Available pool |
 //! | [`Inbox`] | Pending queue |
 //! | [`Policy`] | Context engineering |
-//! | [`reactor`] | Environment transition |
 //! | [`Machine`] | Policy + Reactor composition |
 
-pub mod completion;
+pub(crate) mod completion;
 pub mod context;
 pub mod env;
 pub mod fragment;
@@ -22,7 +21,7 @@ pub mod machine;
 pub mod model;
 pub mod policy;
 pub mod purpose;
-pub mod reactor;
+pub(crate) mod reactor;
 pub mod resources;
 pub mod tool;
 

@@ -39,12 +39,12 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
     );
 
     let api_key = model.credentials.as_deref().unwrap_or("");
-    let base_url = model.endpoint.as_deref();
+    let endpoint_url = model.endpoint.as_deref();
 
     let result = match model.protocol {
         Protocol::OpenAI => {
             let mut builder = rig::providers::openai::CompletionsClient::builder().api_key(api_key);
-            if let Some(endpoint) = base_url {
+            if let Some(endpoint) = endpoint_url {
                 builder = builder.base_url(endpoint);
             }
             let endpoint = builder
@@ -55,7 +55,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
         }
         Protocol::Anthropic => {
             let mut builder = rig::providers::anthropic::Client::builder().api_key(api_key);
-            if let Some(endpoint) = base_url {
+            if let Some(endpoint) = endpoint_url {
                 builder = builder.base_url(endpoint);
             }
             let endpoint = builder
@@ -66,7 +66,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
         }
         Protocol::Gemini => {
             let mut builder = rig::providers::gemini::Client::builder().api_key(api_key);
-            if let Some(endpoint) = base_url {
+            if let Some(endpoint) = endpoint_url {
                 builder = builder.base_url(endpoint);
             }
             let endpoint = builder

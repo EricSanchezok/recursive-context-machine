@@ -14,7 +14,7 @@ fn append_assigns_ids() {
     let id2 = ctx.append(Fragment::user("b"));
     assert_eq!(id1, 1);
     assert_eq!(id2, 2);
-    assert_eq!(ctx.get(1).unwrap().id, 1);
+    assert_eq!(ctx.get(1).unwrap().id(), 1);
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn replace_preserves_id() {
     let id = ctx.append(Fragment::system("old"));
     ctx.replace(id, Fragment::system("new"));
     assert_eq!(ctx.get(id).unwrap().as_text(), Some("new"));
-    assert_eq!(ctx.get(id).unwrap().id, id);
+    assert_eq!(ctx.get(id).unwrap().id(), id);
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn fragments_in_order() {
     let id3 = ctx.append(Fragment::assistant("c"));
     let frags = ctx.fragments();
     assert_eq!(frags.len(), 3);
-    assert_eq!(frags[0].id, id1);
-    assert_eq!(frags[1].id, id2);
-    assert_eq!(frags[2].id, id3);
+    assert_eq!(frags[0].id(), id1);
+    assert_eq!(frags[1].id(), id2);
+    assert_eq!(frags[2].id(), id3);
 }

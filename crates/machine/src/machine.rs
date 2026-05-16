@@ -57,7 +57,7 @@ impl Machine {
                     resources.enable(name);
                 }
                 Action::Deactivate(name) => {
-                    resources.disable(&name);
+                    resources.disable(name);
                 }
                 Action::Take => {
                     if let Some(frag) = inbox.pop() {

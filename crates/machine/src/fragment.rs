@@ -19,7 +19,9 @@ pub enum Role {
 pub enum DataSource {
     Url(String),
     Base64(String),
+    /// Raw binary data.
     Raw(Vec<u8>),
+    /// Plain string.
     String(String),
 }
 
@@ -70,10 +72,8 @@ pub struct ToolCall {
 pub struct ToolResult {
     /// ID of the originating tool call.
     pub call_id: String,
-
     /// Output content.
     pub content: String,
-
     /// Summary label for logging UIs.
     pub title: Option<String>,
 }
@@ -98,17 +98,25 @@ pub enum Content {
 
 /// A symbol on the context tape.
 ///
-/// `id` is assigned by [`Context`] on storage. `0` means unassigned.
+/// `id` is assigned by [`Context`](crate::Context) on storage and should not be
+/// set directly — mutating the id would break the context's internal invariants.
+/// The `role`, `tag`, and `content` fields are public but effectively read-only
+/// after construction; the only way to modify a fragment in a context is through
+/// [`Action`](crate::Action) variants applied by [`Machine`](crate::Machine).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fragment {
-    pub id: u64,
+    pub(crate) id: u64,
     pub role: Role,
     pub tag: String,
     pub content: Content,
 }
 
 impl Fragment {
-    /// System fragment.
+    /// The context-assigned identifier. `0` means unassigned.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
     pub fn system(text: impl Into<String>) -> Self {
         Self {
             id: 0,

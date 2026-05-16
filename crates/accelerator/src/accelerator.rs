@@ -70,7 +70,7 @@ impl AcceleratorRef {
     pub fn res_in(&self) -> Port {
         Port::Node(NodeId::Accelerator(self.id), Channel::Resources)
     }
-    pub fn run(&self) -> Port {
+    pub fn trigger(&self) -> Port {
         Port::Node(NodeId::Accelerator(self.id), Channel::Pulse)
     }
 }
