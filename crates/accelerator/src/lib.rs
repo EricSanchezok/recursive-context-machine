@@ -4,6 +4,7 @@ pub mod accelerator;
 pub mod assembly;
 pub mod flux;
 pub mod graph;
+pub mod logging;
 mod model;
 pub mod policy;
 pub mod state;

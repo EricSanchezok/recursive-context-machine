@@ -3,7 +3,7 @@ use machine::Role;
 
 #[tokio::main]
 async fn main() {
-    let _guard = machine::logging::init();
+    let _guard = accelerator::logging::init();
 
     let args: Vec<String> = std::env::args().collect();
     let intent = if args.len() > 1 {
