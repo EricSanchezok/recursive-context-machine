@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Resources, Role};
-use tracing::debug;
+use tracing::{debug, trace};
 
 /// Captain — the default steering policy.
 ///
@@ -63,6 +63,7 @@ impl Policy for Captain {
                 State::Done => done(),
             };
             self.state.store(next as u8, Ordering::Relaxed);
+            trace!(?state, ?next, "captain decide");
             action
         })
     }
@@ -88,12 +89,15 @@ fn halt() -> (State, Action) {
 
 fn drain(inbox: &Inbox) -> (State, Action) {
     if inbox.is_empty() {
+        trace!("drain: inbox empty, advancing to done");
         (State::Done, Action::Done)
     } else {
+        trace!("drain: taking one fragment");
         (State::Drain, Action::Take)
     }
 }
 
 fn done() -> (State, Action) {
+    trace!("done: machine stopping");
     (State::Done, Action::Done)
 }

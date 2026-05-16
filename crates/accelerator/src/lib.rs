@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use machine::{Context, Environment, Fragment, Machine, Policy, Resources};
 use tracing::debug;
 
-pub use model::nex_n1;
+pub use model::{gpt4_1, nex_n1};
 pub use policy::Captain;
 
 /// Run the context machine with a user intent and optional overrides.
