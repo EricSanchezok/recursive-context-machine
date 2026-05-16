@@ -104,7 +104,7 @@ async fn execute(acc: Accelerator) -> (Context, Resources, Environment) {
 
         Accelerator::Then { first, next, flux } => {
             let (f_ctx, f_res, f_env) = first.run().await;
-            let next = inherit(*next, &f_ctx, &f_res, &f_env, &flux);
+            let next = shift(next, f_ctx, f_res, f_env, &flux);
             next.run().await
         }
 
@@ -116,15 +116,16 @@ async fn execute(acc: Accelerator) -> (Context, Resources, Environment) {
     }
 }
 
-/// Walk the accelerator tree and apply upstream state to the first leaf.
-fn inherit(
-    target: Accelerator,
-    source_ctx: &Context,
-    source_res: &Resources,
-    source_env: &Environment,
+/// Walk to the first agent and merge upstream state via flux.
+#[allow(clippy::boxed_local)]
+fn shift(
+    target: Box<Accelerator>,
+    src_ctx: Context,
+    src_res: Resources,
+    src_env: Environment,
     flux: &Flux,
-) -> Accelerator {
-    match target {
+) -> Box<Accelerator> {
+    match *target {
         Accelerator::Agent {
             purpose,
             ctx,
@@ -133,32 +134,32 @@ fn inherit(
             policy,
         } => {
             let (ctx, resources, env) =
-                flux.shift(*ctx, source_ctx, *resources, source_res, *env, source_env);
-            Accelerator::Agent {
+                flux.shift(*ctx, &src_ctx, *resources, &src_res, *env, &src_env);
+            Box::new(Accelerator::Agent {
                 purpose,
                 ctx: Box::new(ctx),
                 resources: Box::new(resources),
                 env: Box::new(env),
                 policy,
-            }
+            })
         }
         Accelerator::Then {
             first,
             next,
             flux: inner,
-        } => Accelerator::Then {
-            first: Box::new(inherit(*first, source_ctx, source_res, source_env, flux)),
+        } => Box::new(Accelerator::Then {
+            first: shift(first, src_ctx, src_res, src_env, flux),
             next,
             flux: inner,
-        },
+        }),
         Accelerator::And {
             left,
             right,
             flux: inner,
-        } => Accelerator::And {
-            left: Box::new(inherit(*left, source_ctx, source_res, source_env, flux)),
+        } => Box::new(Accelerator::And {
+            left: shift(left, src_ctx, src_res, src_env, flux),
             right,
             flux: inner,
-        },
+        }),
     }
 }
