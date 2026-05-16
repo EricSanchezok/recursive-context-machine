@@ -3,7 +3,7 @@ use crate::env::Environment;
 use crate::event::preview;
 use crate::hook;
 use crate::inbox::Inbox;
-use crate::policy::{Action, Policy};
+use crate::policy::{Action, PhaseOutcome, Policy};
 use crate::purpose::Purpose;
 use crate::reactor;
 use crate::resources::Resources;
@@ -20,6 +20,8 @@ impl Machine {
     }
 
     /// Run the machine until [`Action::Done`].
+    ///
+    /// Execution order: **pre phases → core policy loop → post phases**.
     pub async fn run(
         &self,
         purpose: &Purpose,
@@ -32,6 +34,24 @@ impl Machine {
 
         hook!(event = "machine_start", purpose = %purpose.text);
 
+        // ── Pre phases ──
+        for phase in self.policy.pre() {
+            loop {
+                match phase.decide(purpose, ctx, env, resources) {
+                    PhaseOutcome::Action(action) => {
+                        if self
+                            .apply(action, ctx, env, resources, &mut inbox, &mut round)
+                            .await
+                        {
+                            return;
+                        }
+                    }
+                    PhaseOutcome::Done => break,
+                }
+            }
+        }
+
+        // ── Core loop ──
         loop {
             let action = self
                 .policy
@@ -39,85 +59,123 @@ impl Machine {
                 .await;
             trace!(?action, "machine step");
 
-            match action {
-                Action::Append(frag) => {
-                    let id = ctx.append(frag);
-                    let frag = ctx.get(id).expect("just appended");
-                    hook!(
-                        event = "appended",
-                        id,
-                        role = ?frag.role,
-                        preview = %preview(frag),
-                    );
-                }
-                Action::Insert { after, fragment } => {
-                    let id = ctx.insert(after, fragment);
-                    let frag = ctx.get(id).expect("just inserted");
-                    hook!(
-                        event = "inserted",
-                        id,
-                        role = ?frag.role,
-                        preview = %preview(frag),
-                    );
-                }
-                Action::Replace { id, fragment } => {
-                    ctx.replace(id, fragment);
-                    let frag = ctx.get(id).expect("just replaced");
-                    hook!(
-                        event = "replaced",
-                        id,
-                        role = ?frag.role,
-                        preview = %preview(frag),
-                    );
-                }
-                Action::Remove(id) => {
-                    ctx.remove(id);
-                    hook!(event = "removed", id);
-                }
-                Action::Swap(id1, id2) => {
-                    ctx.swap(id1, id2);
-                    hook!(event = "swapped", id1, id2);
-                }
-                Action::Model(name) => {
-                    hook!(event = "model", name);
-                    resources.use_model(name);
-                }
-                Action::Activate(name) => {
-                    hook!(event = "activate", name);
-                    resources.enable(name);
-                }
-                Action::Deactivate(name) => {
-                    hook!(event = "deactivate", name);
-                    resources.disable(name);
-                }
-                Action::Take => {
-                    if let Some(frag) = inbox.pop() {
-                        let id = ctx.append(frag);
-                        let frag = ctx.get(id).expect("just appended");
-                        hook!(
-                            event = "taken",
-                            id,
-                            role = ?frag.role,
-                            preview = %preview(frag),
-                        );
+            if self
+                .apply(action, ctx, env, resources, &mut inbox, &mut round)
+                .await
+            {
+                break;
+            }
+        }
+
+        // ── Post phases ──
+        for phase in self.policy.post() {
+            loop {
+                match phase.decide(purpose, ctx, env, resources) {
+                    PhaseOutcome::Action(action) => {
+                        if self
+                            .apply(action, ctx, env, resources, &mut inbox, &mut round)
+                            .await
+                        {
+                            return;
+                        }
                     }
-                }
-                Action::Done => {
-                    hook!(event = "done");
-                    return;
-                }
-                Action::Halt => {
-                    round += 1;
-                    hook!(
-                        event = "halt",
-                        round,
-                        model = %resources.active_model().name,
-                        messages = ctx.fragments().len(),
-                        tools = resources.active_tools.len(),
-                    );
-                    reactor::react(ctx, env, resources, &mut inbox).await;
+                    PhaseOutcome::Done => break,
                 }
             }
         }
+    }
+
+    /// Apply a single [`Action`] to the runtime state.
+    ///
+    /// Returns `true` if the action was [`Action::Done`] and the machine should stop.
+    async fn apply(
+        &self,
+        action: Action,
+        ctx: &mut Context,
+        env: &mut Environment,
+        resources: &mut Resources,
+        inbox: &mut Inbox,
+        round: &mut u32,
+    ) -> bool {
+        match action {
+            Action::Append(frag) => {
+                let id = ctx.append(frag);
+                let frag = ctx.get(id).expect("just appended");
+                hook!(
+                    event = "appended",
+                    id,
+                    role = ?frag.role,
+                    preview = %preview(frag),
+                );
+            }
+            Action::Insert { after, fragment } => {
+                let id = ctx.insert(after, fragment);
+                let frag = ctx.get(id).expect("just inserted");
+                hook!(
+                    event = "inserted",
+                    id,
+                    role = ?frag.role,
+                    preview = %preview(frag),
+                );
+            }
+            Action::Replace { id, fragment } => {
+                ctx.replace(id, fragment);
+                let frag = ctx.get(id).expect("just replaced");
+                hook!(
+                    event = "replaced",
+                    id,
+                    role = ?frag.role,
+                    preview = %preview(frag),
+                );
+            }
+            Action::Remove(id) => {
+                ctx.remove(id);
+                hook!(event = "removed", id);
+            }
+            Action::Swap(id1, id2) => {
+                ctx.swap(id1, id2);
+                hook!(event = "swapped", id1, id2);
+            }
+            Action::Model(name) => {
+                hook!(event = "model", name);
+                resources.use_model(name);
+            }
+            Action::Activate(name) => {
+                hook!(event = "activate", name);
+                resources.enable(name);
+            }
+            Action::Deactivate(name) => {
+                hook!(event = "deactivate", name);
+                resources.disable(name);
+            }
+            Action::Take => {
+                if let Some(frag) = inbox.pop() {
+                    let id = ctx.append(frag);
+                    let frag = ctx.get(id).expect("just appended");
+                    hook!(
+                        event = "taken",
+                        id,
+                        role = ?frag.role,
+                        preview = %preview(frag),
+                    );
+                }
+            }
+            Action::Done => {
+                hook!(event = "done");
+                return true;
+            }
+            Action::Halt => {
+                *round += 1;
+                hook!(
+                    event = "halt",
+                    round = *round,
+                    model = %resources.active_model().name,
+                    messages = ctx.fragments().len(),
+                    tools = resources.active_tools.len(),
+                );
+                reactor::react(ctx, env, resources, inbox).await;
+            }
+        }
+        false
     }
 }

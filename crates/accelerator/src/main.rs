@@ -38,7 +38,7 @@ async fn main() {
                 match frag.role {
                     Role::System if !text.is_empty() => println!("[system] {}", text),
                     Role::User => println!("[user] {}", text),
-                    Role::Assistant => println!("[assistant] {}", text),
+                    Role::Assistant if !text.is_empty() => println!("[assistant] {}", text),
                     _ => {}
                 }
             }

@@ -2,29 +2,32 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-use machine::hook;
-use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources, Role};
-use tracing::{debug, trace, warn};
+use machine::{Action, Context, Environment, Inbox, Phase, Policy, Purpose, Resources, Role};
+use tracing::{trace, warn};
+
+use super::phases::{BootstrapAgent, InjectPurpose};
 
 /// Captain — the default steering policy.
 ///
-/// `Bootstrap → Inject → Halt → Drain → [loop] → Done`
+/// Core state machine: **Halt → Drain → [loop] → Done**
 ///
-/// - **Bootstrap**: replace or inject the `tag == "agent"` system prompt.
-/// - **Inject**: append the user's purpose as a user fragment.
-/// - **Halt**: call the LLM.
+/// - **Halt**: trigger the LLM.
 /// - **Drain**: take inbox into context. If any [`Role::Tool`] fragments were
 ///   taken, halt again so the LLM can see results and call more tools.
 /// - **Done**: final answer is in context.
+///
+/// Preparation (pre phases):
+/// - [`BootstrapAgent`]: ensure the `tag == "agent"` system prompt is present.
+/// - [`InjectPurpose`]: append the user's purpose as a user fragment.
 pub struct Captain {
-    phase: AtomicU8,
+    state: AtomicU8,
     tool_seen: AtomicBool,
 }
 
 impl Clone for Captain {
     fn clone(&self) -> Self {
         Self {
-            phase: AtomicU8::new(self.phase.load(Ordering::Relaxed)),
+            state: AtomicU8::new(self.state.load(Ordering::Relaxed)),
             tool_seen: AtomicBool::new(self.tool_seen.load(Ordering::Relaxed)),
         }
     }
@@ -32,25 +35,19 @@ impl Clone for Captain {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-enum Phase {
-    Bootstrap = 1,
-    Inject = 2,
-    Halt = 3,
-    Drain = 4,
-    Done = 5,
+enum State {
+    Halt = 1,
+    Drain = 2,
 }
 
-impl Phase {
+impl State {
     fn from_u8(v: u8) -> Self {
         match v {
-            1 => Self::Bootstrap,
-            2 => Self::Inject,
-            3 => Self::Halt,
-            4 => Self::Drain,
-            5 => Self::Done,
+            1 => Self::Halt,
+            2 => Self::Drain,
             other => {
-                warn!(phase = other, "captain: unknown phase, forcing done");
-                Self::Done
+                warn!(state = other, "captain: unknown state, forcing drain");
+                Self::Drain
             }
         }
     }
@@ -59,7 +56,7 @@ impl Phase {
 impl Default for Captain {
     fn default() -> Self {
         Self {
-            phase: AtomicU8::new(Phase::Bootstrap as u8),
+            state: AtomicU8::new(State::Halt as u8),
             tool_seen: AtomicBool::new(false),
         }
     }
@@ -76,93 +73,47 @@ impl Policy for Captain {
         Box::new(self.clone())
     }
 
+    fn pre(&self) -> Vec<Box<dyn Phase>> {
+        vec![
+            Box::new(BootstrapAgent::new("captain")),
+            Box::new(InjectPurpose),
+        ]
+    }
+
     fn decide<'a>(
         &'a self,
-        purpose: &'a Purpose,
-        ctx: &'a Context,
+        _purpose: &'a Purpose,
+        _ctx: &'a Context,
         _env: &'a Environment,
-        resources: &'a Resources,
+        _resources: &'a Resources,
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            let phase = Phase::from_u8(self.phase.load(Ordering::Relaxed));
-            let phase_name = format!("{:?}", phase).to_lowercase();
-            hook!(event = "phase", phase = phase_name);
+            let state = State::from_u8(self.state.load(Ordering::Relaxed));
 
-            let (next, action) = match phase {
-                Phase::Bootstrap => bootstrap(purpose, ctx, resources),
-                Phase::Inject => inject(purpose),
-                Phase::Halt => {
+            let (next, action) = match state {
+                State::Halt => {
                     self.tool_seen.store(false, Ordering::Relaxed);
-                    (Phase::Drain, Action::Halt)
+                    (State::Drain, Action::Halt)
                 }
-                Phase::Drain => self.drain(inbox),
-                Phase::Done => (Phase::Done, Action::Done),
+                State::Drain => {
+                    if let Some(frag) = inbox.peek() {
+                        if frag.role == Role::Tool {
+                            self.tool_seen.store(true, Ordering::Relaxed);
+                        }
+                        (State::Drain, Action::Take)
+                    } else if self.tool_seen.load(Ordering::Relaxed) {
+                        trace!("drain: tool results seen, halting again");
+                        (State::Halt, Action::Halt)
+                    } else {
+                        trace!("drain: final answer ready");
+                        (State::Drain, Action::Done)
+                    }
+                }
             };
-            self.phase.store(next as u8, Ordering::Relaxed);
-            trace!(?phase, ?next, "captain decide");
+
+            self.state.store(next as u8, Ordering::Relaxed);
             action
         })
-    }
-}
-
-/// Ensure the `tag == "agent"` system prompt is in scope.
-///
-/// - Exists → **Replace** with the default prompt (preserves position).
-/// - Missing → **Append** the default prompt.
-fn bootstrap(_purpose: &Purpose, ctx: &Context, resources: &Resources) -> (Phase, Action) {
-    let prompt = resources
-        .prompts
-        .get("captain")
-        .cloned()
-        .unwrap_or_default();
-
-    if let Some(frag) = ctx
-        .fragments()
-        .iter()
-        .find(|f| f.role == Role::System && f.tag == "agent")
-    {
-        debug!("bootstrap: replacing agent prompt");
-        (
-            Phase::Inject,
-            Action::Replace {
-                id: frag.id(),
-                fragment: Fragment::system(prompt).with_tag("agent"),
-            },
-        )
-    } else {
-        debug!("bootstrap: injecting new agent prompt");
-        (
-            Phase::Inject,
-            Action::Append(Fragment::system(prompt).with_tag("agent")),
-        )
-    }
-}
-
-/// Append the user's purpose as a [`Role::User`] fragment.
-fn inject(purpose: &Purpose) -> (Phase, Action) {
-    if purpose.is_empty() {
-        debug!("inject: no purpose, skipping");
-        (Phase::Halt, Action::Halt)
-    } else {
-        debug!(purpose = purpose.text, "inject: appending purpose");
-        (Phase::Halt, Action::Append(Fragment::user(&purpose.text)))
-    }
-}
-
-impl Captain {
-    fn drain(&self, inbox: &Inbox) -> (Phase, Action) {
-        if let Some(frag) = inbox.peek() {
-            if frag.role == Role::Tool {
-                self.tool_seen.store(true, Ordering::Relaxed);
-            }
-            (Phase::Drain, Action::Take)
-        } else if self.tool_seen.load(Ordering::Relaxed) {
-            trace!("drain: tool results seen, halting again");
-            (Phase::Halt, Action::Halt)
-        } else {
-            trace!("drain: final answer ready");
-            (Phase::Done, Action::Done)
-        }
     }
 }

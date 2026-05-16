@@ -11,7 +11,6 @@ use crate::resources::Resources;
 /// Atomic, discrete operations composed by Policy across decision steps.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
-    // ── Context ──
     /// Append a fragment to the end of the context.
     Append(Fragment),
 
@@ -27,17 +26,15 @@ pub enum Action {
     /// Swap the positions of two fragments by id.
     Swap(u64, u64),
 
-    // ── Resources ──
     /// Set the active model. Only one model can be active.
     Model(String),
 
-    /// Catch a tool — add it to the active set.
+    /// Add a tool to the active set.
     Activate(String),
 
-    /// Drop a tool — remove it from the active set.
+    /// Remove a tool from the active set.
     Deactivate(String),
 
-    // ── Control ──
     /// Pop the head of the inbox and append it to context.
     Take,
 
@@ -48,12 +45,56 @@ pub enum Action {
     Done,
 }
 
+/// The outcome of a single Phase decision step.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PhaseOutcome {
+    /// Execute this Action and call the Phase again.
+    Action(Action),
+    /// This Phase is complete — proceed to the next Phase or the core Policy.
+    Done,
+}
+
+/// Phase — a reusable context-preparation step.
+///
+/// Executed by Machine before or after the core Policy. Each call produces
+/// a [`PhaseOutcome`]: either an Action to apply (followed by another call)
+/// or Done to signal completion.
+pub trait Phase: Send + Sync {
+    fn clone_box(&self) -> Box<dyn Phase>;
+    fn name(&self) -> &str;
+
+    fn decide(
+        &self,
+        purpose: &Purpose,
+        ctx: &Context,
+        env: &Environment,
+        resources: &Resources,
+    ) -> PhaseOutcome;
+}
+
+impl Clone for Box<dyn Phase> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
 /// Policy — the context engineering function π.
 ///
 /// Observes the current context, environment, resources, and inbox,
 /// and decides the next [`Action`]. This is the primary extension point.
 pub trait Policy: Send + Sync {
     fn clone_box(&self) -> Box<dyn Policy>;
+
+    /// Preparation phases executed before the core loop.
+    fn pre(&self) -> Vec<Box<dyn Phase>> {
+        Vec::new()
+    }
+
+    /// Post-processing phases executed after the core loop returns Done.
+    fn post(&self) -> Vec<Box<dyn Phase>> {
+        Vec::new()
+    }
+
     fn decide<'a>(
         &'a self,
         purpose: &'a Purpose,
