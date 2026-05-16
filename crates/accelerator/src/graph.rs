@@ -27,10 +27,6 @@ impl Graph {
         AcceleratorRef { id }
     }
 
-    pub fn spawn_default(&mut self, purpose: impl Into<String>) -> AcceleratorRef {
-        self.spawn(purpose, State::default())
-    }
-
     pub fn weave(&mut self, arity: usize, mode: FluxMode) -> FluxRef {
         let id = self.fluxes.len();
         let channel = mode.channel();

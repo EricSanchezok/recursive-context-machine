@@ -1,4 +1,4 @@
-use accelerator::Graph;
+use accelerator::{Graph, State};
 use machine::Role;
 
 #[tokio::main]
@@ -14,7 +14,7 @@ async fn main() {
     };
 
     let mut graph = Graph::new();
-    let _agent = graph.spawn_default(intent);
+    let _agent = graph.spawn(intent, State::default());
 
     let assembly = graph.build().unwrap();
     let outputs = assembly.run().await;

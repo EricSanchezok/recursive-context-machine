@@ -19,10 +19,6 @@ impl Accelerator {
         }
     }
 
-    pub fn with_defaults(purpose: impl Into<String>) -> Self {
-        Self::new(purpose, State::default())
-    }
-
     pub fn run(self) -> Pin<Box<dyn Future<Output = Output> + Send>> {
         Box::pin(async move { fire(self.purpose, self.state).await })
     }
