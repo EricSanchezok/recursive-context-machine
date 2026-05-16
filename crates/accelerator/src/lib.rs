@@ -5,7 +5,7 @@ pub mod assembly;
 pub mod flux;
 pub mod graph;
 pub mod logging;
-mod model;
+pub mod model;
 pub mod policy;
 pub mod state;
 pub mod tools;
@@ -16,39 +16,3 @@ pub use assembly::Assembly;
 pub use flux::{ContextFlux, EnvFlux, FluxMode, FluxRef, PurposeFlux, ResFlux};
 pub use graph::{BuildError, Graph};
 pub use state::State;
-
-use std::collections::HashMap;
-use std::path::PathBuf;
-
-use machine::Environment;
-
-/// Create an environment with `cwd` and `root` set to the current directory.
-pub fn local() -> Environment {
-    Environment {
-        cwd: PathBuf::from("."),
-        vars: HashMap::new(),
-        root: Some(PathBuf::from(".")),
-    }
-}
-
-/// Build the default resource kit — built-in tools, prompts, and model.
-pub fn kit() -> machine::Resources {
-    use crate::tools::builtin_tools;
-
-    let mut resources = machine::Resources::new();
-
-    for tool in builtin_tools() {
-        let name = tool.name().to_string();
-        resources = resources.with_tool(tool);
-        resources.enable(name);
-    }
-
-    resources.prompts.insert(
-        "captain".to_string(),
-        include_str!("prompts/captain.txt").to_string(),
-    );
-
-    resources = resources.with_model(model::gpt4_1());
-
-    resources
-}
