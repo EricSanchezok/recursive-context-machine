@@ -1,7 +1,8 @@
-//! RICA Accelerator — lightweight entry for the Context Machine.
+//! RICA Accelerator — composable agent execution.
 //!
-//! The [`accelerate`] function wires together a user intent, context,
-//! resources, environment, and policy, then runs the [`Machine`].
+//! The [`Accelerator`] enum is the only entry point. Use
+//! [`Accelerator::agent`] to create an agent, then chain with
+//! `.then()` and `.and()` to build execution trees.
 
 pub mod agent;
 mod model;
@@ -11,42 +12,11 @@ pub mod tools;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use machine::{Context, Environment, Machine, Policy, Resources};
-use tracing::debug;
+use machine::Environment;
 
 pub use agent::Accelerator;
 pub use model::{gpt4_1, nex_n1};
 pub use policy::Captain;
-
-/// Run the context machine with a purpose and optional overrides.
-///
-/// Sets `ctx.purpose` so the policy can read the steering intention
-/// during its boot phase.
-///
-/// `resources` defaults to [`kit()`] (tools + prompts + GPT-4.1 model).
-/// `env` defaults to [`local()`] (cwd and root set to `.`).
-/// `policy` defaults to [`Captain`].
-pub async fn accelerate(
-    purpose: impl Into<String>,
-    ctx: Option<Context>,
-    resources: Option<Resources>,
-    env: Option<Environment>,
-    policy: Option<Box<dyn Policy>>,
-) -> Context {
-    let mut ctx = ctx.unwrap_or_default();
-    let purpose = purpose.into();
-    ctx.purpose.clone_from(&purpose);
-
-    let mut env = env.unwrap_or_else(local);
-    let mut resources = resources.unwrap_or_else(kit);
-
-    let policy = policy.unwrap_or_else(|| Box::new(Captain::new()));
-    let machine = Machine::new(policy);
-
-    machine.run(&mut ctx, &mut env, &mut resources).await;
-    debug!(fragments = ctx.len(), "accelerate done");
-    ctx
-}
 
 /// Create an environment with `cwd` and `root` set to the current directory.
 ///
@@ -70,10 +40,10 @@ pub fn local() -> Environment {
 /// use accelerator::kit;
 /// let resources = kit();
 /// ```
-pub fn kit() -> Resources {
+pub fn kit() -> machine::Resources {
     use crate::tools::builtin_tools;
 
-    let mut resources = Resources::new();
+    let mut resources = machine::Resources::new();
 
     for tool in builtin_tools() {
         let name = tool.name().to_string();
