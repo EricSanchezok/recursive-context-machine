@@ -2,6 +2,7 @@ use crate::completion;
 use crate::context::Context;
 use crate::env::Environment;
 use crate::fragment::{Content, Fragment};
+use crate::hook;
 use crate::inbox::Inbox;
 use crate::resources::Resources;
 use tokio::time::{Duration, timeout};
@@ -19,8 +20,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
         if let Content::ToolCall(tc) = &frag.content {
             debug!(tool = tc.name, args = %tc.arguments, "tool call");
 
-            tracing::debug!(
-                target: "hook",
+            hook!(
                 event = "tool_call",
                 tool = tc.name,
                 arguments = %tc.arguments,
@@ -37,8 +37,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                                 result = tool_result.content,
                                 "tool executed"
                             );
-                            tracing::debug!(
-                                target: "hook",
+                            hook!(
                                 event = "tool_result",
                                 tool = tc.name,
                                 result = %tool_result.content,
@@ -47,12 +46,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                         }
                         Ok(Err(msg)) => {
                             warn!(tool = tc.name, msg, "tool failed");
-                            tracing::debug!(
-                                target: "hook",
-                                event = "tool_error",
-                                tool = tc.name,
-                                error = %msg,
-                            );
+                            hook!(event = "tool_error", tool = tc.name, error = %msg);
                             Fragment::hitch(format!("tool '{}' error: {}", tc.name, msg))
                         }
                         Err(_) => {
@@ -61,8 +55,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                                 timeout = tool.timeout().as_secs(),
                                 "tool timed out"
                             );
-                            tracing::debug!(
-                                target: "hook",
+                            hook!(
                                 event = "tool_timeout",
                                 tool = tc.name,
                                 timeout = tool.timeout().as_secs(),

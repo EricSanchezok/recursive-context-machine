@@ -1,6 +1,7 @@
 use crate::context::Context;
 use crate::env::Environment;
 use crate::event::preview;
+use crate::hook;
 use crate::inbox::Inbox;
 use crate::policy::{Action, Policy};
 use crate::purpose::Purpose;
@@ -39,8 +40,7 @@ impl Machine {
                 Action::Append(frag) => {
                     let id = ctx.append(frag);
                     let frag = ctx.get(id).expect("just appended");
-                    tracing::debug!(
-                        target: "hook",
+                    hook!(
                         event = "appended",
                         id,
                         role = ?frag.role,
@@ -50,8 +50,7 @@ impl Machine {
                 Action::Insert { after, fragment } => {
                     let id = ctx.insert(after, fragment);
                     let frag = ctx.get(id).expect("just inserted");
-                    tracing::debug!(
-                        target: "hook",
+                    hook!(
                         event = "inserted",
                         id,
                         role = ?frag.role,
@@ -61,8 +60,7 @@ impl Machine {
                 Action::Replace { id, fragment } => {
                     ctx.replace(id, fragment);
                     let frag = ctx.get(id).expect("just replaced");
-                    tracing::debug!(
-                        target: "hook",
+                    hook!(
                         event = "replaced",
                         id,
                         role = ?frag.role,
@@ -71,30 +69,29 @@ impl Machine {
                 }
                 Action::Remove(id) => {
                     ctx.remove(id);
-                    tracing::debug!(target: "hook", event = "removed", id);
+                    hook!(event = "removed", id);
                 }
                 Action::Swap(id1, id2) => {
                     ctx.swap(id1, id2);
-                    tracing::debug!(target: "hook", event = "swapped", id1, id2);
+                    hook!(event = "swapped", id1, id2);
                 }
                 Action::Model(name) => {
-                    tracing::debug!(target: "hook", event = "model", name);
+                    hook!(event = "model", name);
                     resources.use_model(name);
                 }
                 Action::Activate(name) => {
-                    tracing::debug!(target: "hook", event = "activate", name);
+                    hook!(event = "activate", name);
                     resources.enable(name);
                 }
                 Action::Deactivate(name) => {
-                    tracing::debug!(target: "hook", event = "deactivate", name);
+                    hook!(event = "deactivate", name);
                     resources.disable(name);
                 }
                 Action::Take => {
                     if let Some(frag) = inbox.pop() {
                         let id = ctx.append(frag);
                         let frag = ctx.get(id).expect("just appended");
-                        tracing::debug!(
-                            target: "hook",
+                        hook!(
                             event = "taken",
                             id,
                             role = ?frag.role,
@@ -103,12 +100,11 @@ impl Machine {
                     }
                 }
                 Action::Done => {
-                    tracing::debug!(target: "hook", event = "done");
+                    hook!(event = "done");
                     return;
                 }
                 Action::Halt => {
-                    tracing::debug!(
-                        target: "hook",
+                    hook!(
                         event = "halt",
                         model = %resources.active_model().name,
                         messages = ctx.fragments().len(),

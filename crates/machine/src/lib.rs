@@ -16,6 +16,7 @@ pub mod context;
 pub mod env;
 pub mod event;
 pub mod fragment;
+pub mod hook;
 pub mod inbox;
 pub mod machine;
 pub mod model;

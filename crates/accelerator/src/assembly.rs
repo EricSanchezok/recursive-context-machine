@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 
+use machine::hook;
 use machine::{Context, Environment, Resources};
 use tracing::trace;
 
@@ -48,7 +49,7 @@ impl Assembly {
             while let Some(id) = queue.pop_front() {
                 trace!(slot = id, "running");
 
-                tracing::debug!(target: "hook", event = "slot_started", slot = id);
+                hook!(event = "slot_started", slot = id);
 
                 let mut s = self.slots[id].input.clone();
                 s.purpose = self.resolve_purpose(id);
@@ -59,7 +60,7 @@ impl Assembly {
                 let output = fire(s).await;
                 self.slots[id].output = Some(output);
 
-                tracing::debug!(target: "hook", event = "slot_finished", slot = id);
+                hook!(event = "slot_finished", slot = id);
 
                 for next in &self.downstream[id] {
                     self.pending[*next] -= 1;
