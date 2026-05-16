@@ -109,7 +109,7 @@ impl Policy for Captain {
 fn bootstrap(_purpose: &Purpose, ctx: &Context, resources: &Resources) -> (Phase, Action) {
     let prompt = resources
         .prompts
-        .get("default")
+        .get("captain")
         .cloned()
         .unwrap_or_default();
 

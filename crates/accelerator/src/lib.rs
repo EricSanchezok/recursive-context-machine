@@ -43,8 +43,8 @@ pub fn kit() -> machine::Resources {
     }
 
     resources.prompts.insert(
-        "default".to_string(),
-        include_str!("prompts/default.txt").to_string(),
+        "captain".to_string(),
+        include_str!("prompts/captain.txt").to_string(),
     );
 
     resources = resources.with_model(model::gpt4_1());
