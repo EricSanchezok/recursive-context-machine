@@ -1,7 +1,7 @@
 //! RICA Accelerator — composable agent execution via dataflow graphs.
 
 pub mod accelerator;
-pub mod core;
+pub mod assembly;
 pub mod flux;
 pub mod graph;
 mod model;
@@ -9,7 +9,8 @@ pub mod policy;
 pub mod tools;
 
 pub use accelerator::Accelerator;
-pub use core::{CoreRef, InPin, NodeId, OutPin};
+pub use accelerator::{AcceleratorRef, InPin, NodeId, OutPin};
+pub use assembly::Assembly;
 pub use flux::FluxRef;
 pub use graph::{BuildError, Graph};
 pub use model::{gpt4_1, nex_n1};

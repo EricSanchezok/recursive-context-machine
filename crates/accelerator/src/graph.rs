@@ -2,13 +2,13 @@ use std::collections::VecDeque;
 
 use machine::{Context, Environment, Policy, Resources};
 
-use crate::accelerator::{Accelerator, CoreRuntime};
-use crate::core::{Core, CoreRef, InPin, NodeId, OutPin};
+use crate::accelerator::{Accelerator, AcceleratorRef, InPin, NodeId, OutPin};
+use crate::assembly::{Assembly, Slot};
 use crate::flux::{Flux, FluxKind, FluxRef};
 
 /// Build a multi-agent execution graph.
 pub struct Graph {
-    cores: Vec<Core>,
+    accelerators: Vec<Accelerator>,
     fluxes: Vec<Flux>,
     wires: Vec<(OutPin, InPin)>,
 }
@@ -16,7 +16,7 @@ pub struct Graph {
 impl Graph {
     pub fn new() -> Self {
         Self {
-            cores: Vec::new(),
+            accelerators: Vec::new(),
             fluxes: Vec::new(),
             wires: Vec::new(),
         }
@@ -29,16 +29,11 @@ impl Graph {
         env: Environment,
         policy: Box<dyn Policy>,
         res: Resources,
-    ) -> CoreRef {
-        let id = self.cores.len();
-        self.cores.push(Core {
-            purpose: purpose.into(),
-            ctx,
-            env,
-            policy: Some(policy),
-            res,
-        });
-        CoreRef { id }
+    ) -> AcceleratorRef {
+        let id = self.accelerators.len();
+        self.accelerators
+            .push(Accelerator::new(purpose, ctx, env, policy, res));
+        AcceleratorRef { id }
     }
 
     pub fn weave_purpose(&mut self, arity: usize) -> FluxRef {
@@ -90,30 +85,33 @@ impl Graph {
         self.wires.push((from, to));
     }
 
-    pub fn build(self) -> Result<Accelerator, BuildError> {
+    pub fn build(self) -> Result<Assembly, BuildError> {
         self.validate_acyclic()?;
 
-        let num_cores = self.cores.len();
-        let mut downstream = vec![Vec::new(); num_cores];
-        let mut pending = vec![0usize; num_cores];
+        let num = self.accelerators.len();
+        let mut downstream = vec![Vec::new(); num];
+        let mut pending = vec![0usize; num];
 
         for (from, to) in &self.wires {
-            if let (OutPin::Pulse(NodeId::Core(src)), InPin::Pulse(NodeId::Core(dst))) = (from, to)
+            if let (
+                OutPin::Pulse(NodeId::Accelerator(src)),
+                InPin::Pulse(NodeId::Accelerator(dst)),
+            ) = (from, to)
             {
                 downstream[*src].push(*dst);
                 pending[*dst] += 1;
             }
         }
 
-        let cores = self
-            .cores
+        let slots = self
+            .accelerators
             .into_iter()
-            .map(|core| CoreRuntime {
-                purpose: core.purpose,
-                ctx: core.ctx,
-                env: core.env,
-                policy: core.policy,
-                res: core.res,
+            .map(|a| Slot {
+                purpose: a.purpose,
+                ctx: a.ctx,
+                env: a.env,
+                policy: a.policy,
+                res: a.res,
                 out_purpose: None,
                 out_ctx: None,
                 out_env: None,
@@ -121,8 +119,8 @@ impl Graph {
             })
             .collect();
 
-        Ok(Accelerator {
-            cores,
+        Ok(Assembly {
+            slots,
             fluxes: self.fluxes,
             wires: self.wires,
             downstream,
@@ -131,7 +129,7 @@ impl Graph {
     }
 
     fn validate_acyclic(&self) -> Result<(), BuildError> {
-        let total = self.cores.len() + self.fluxes.len();
+        let total = self.accelerators.len() + self.fluxes.len();
         let mut adj = vec![Vec::new(); total];
 
         for (from, to) in &self.wires {
@@ -180,10 +178,10 @@ impl Graph {
             | OutPin::Policy(id)
             | OutPin::Resources(id)
             | OutPin::Pulse(id) => match id {
-                NodeId::Core(i) => *i,
-                NodeId::Flux(i) => self.cores.len() + i,
+                NodeId::Accelerator(i) => *i,
+                NodeId::Flux(i) => self.accelerators.len() + i,
             },
-            OutPin::FluxOut(i) => self.cores.len() + i,
+            OutPin::FluxOut(i) => self.accelerators.len() + i,
         }
     }
 
@@ -195,10 +193,10 @@ impl Graph {
             | InPin::Policy(id)
             | InPin::Resources(id)
             | InPin::Pulse(id) => match id {
-                NodeId::Core(i) => *i,
-                NodeId::Flux(i) => self.cores.len() + i,
+                NodeId::Accelerator(i) => *i,
+                NodeId::Flux(i) => self.accelerators.len() + i,
             },
-            InPin::FluxSlot(i, _) => self.cores.len() + i,
+            InPin::FluxSlot(i, _) => self.accelerators.len() + i,
         }
     }
 

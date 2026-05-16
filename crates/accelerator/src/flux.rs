@@ -1,4 +1,4 @@
-use crate::core::InPin;
+use crate::accelerator::InPin;
 
 #[derive(Clone, Copy, Debug)]
 pub struct FluxRef {
@@ -9,8 +9,8 @@ impl FluxRef {
     pub fn slot(&self, idx: usize) -> InPin {
         InPin::FluxSlot(self.id, idx)
     }
-    pub fn out(&self) -> crate::core::OutPin {
-        crate::core::OutPin::FluxOut(self.id)
+    pub fn out(&self) -> crate::accelerator::OutPin {
+        crate::accelerator::OutPin::FluxOut(self.id)
     }
 }
 

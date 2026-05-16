@@ -23,8 +23,8 @@ async fn main() {
         accelerator::kit(),
     );
 
-    let accel = graph.build().unwrap();
-    let outputs = accel.run().await;
+    let assembly = graph.build().unwrap();
+    let outputs = assembly.run().await;
 
     let (_, ctx, _, _) = outputs.into_iter().next().expect("no output");
 
