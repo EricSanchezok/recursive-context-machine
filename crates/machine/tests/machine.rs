@@ -1,6 +1,7 @@
 mod common;
 
-use machine::{Action, Context, Environment, Fragment, Machine, Purpose};
+use machine::{Action, Content, Context, Environment, Fragment, Inbox, Machine, Purpose};
+use serde_json::json;
 
 #[tokio::test]
 async fn done_stops_immediately() {
@@ -151,4 +152,48 @@ async fn remove_unknown_panics() {
     machine
         .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
         .await;
+}
+
+// ── Mixed-content response flow ──
+
+#[test]
+fn context_holds_mixed_assistant_fragments() {
+    let mut ctx = Context::new();
+    let id1 = ctx.append(Fragment::assistant("我来计算"));
+    let id2 = ctx.append(Fragment::tool_call(
+        "call_1",
+        "add",
+        json!({"a": 3, "b": 2}),
+    ));
+
+    assert_eq!(ctx.len(), 2);
+    assert_eq!(ctx.get(id1).unwrap().as_text(), Some("我来计算"));
+    assert!(matches!(
+        ctx.get(id2).unwrap().content,
+        Content::ToolCall(_)
+    ));
+}
+
+#[test]
+fn inbox_drain_order_with_mixed_response() {
+    let mut inbox = Inbox::new();
+
+    // Simulate reactor output for a mixed LLM response:
+    // assistant text → tool call → tool result
+    inbox.push(Fragment::assistant("我来计算"));
+    inbox.push(Fragment::tool_call("1", "add", json!({"a": 3, "b": 2})));
+    inbox.push(Fragment::tool_result("1", "5"));
+
+    // Simulate Drain (Take) behavior
+    let mut ctx = Context::new();
+    while inbox.peek().is_some() {
+        if let Some(frag) = inbox.pop() {
+            ctx.append(frag);
+        }
+    }
+
+    assert_eq!(ctx.len(), 3);
+    assert_eq!(ctx.fragments()[0].as_text(), Some("我来计算"));
+    assert!(matches!(ctx.fragments()[1].content, Content::ToolCall(_)));
+    assert!(matches!(ctx.fragments()[2].content, Content::ToolResult(_)));
 }
