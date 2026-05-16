@@ -1,10 +1,9 @@
 use std::collections::{HashMap, VecDeque};
 
-use machine::{Context, Environment, Policy, Resources};
-
 use crate::accelerator::{Accelerator, AcceleratorRef, Channel, NodeId, Port};
-use crate::assembly::Assembly;
+use crate::assembly::{Assembly, Slot};
 use crate::flux::{Flux, FluxMode, FluxRef};
+use crate::state::State;
 
 /// Build a multi-agent execution graph.
 pub struct Graph {
@@ -22,18 +21,14 @@ impl Graph {
         }
     }
 
-    pub fn spawn(
-        &mut self,
-        purpose: impl Into<String>,
-        ctx: Context,
-        env: Environment,
-        policy: Box<dyn Policy>,
-        res: Resources,
-    ) -> AcceleratorRef {
+    pub fn spawn(&mut self, purpose: impl Into<String>, state: State) -> AcceleratorRef {
         let id = self.accelerators.len();
-        self.accelerators
-            .push(Accelerator::new(purpose, ctx, env, policy, res));
+        self.accelerators.push(Accelerator::new(purpose, state));
         AcceleratorRef { id }
+    }
+
+    pub fn spawn_default(&mut self, purpose: impl Into<String>) -> AcceleratorRef {
+        self.spawn(purpose, State::default())
     }
 
     pub fn weave(&mut self, arity: usize, mode: FluxMode) -> FluxRef {
@@ -96,15 +91,14 @@ impl Graph {
         let slots = self
             .accelerators
             .into_iter()
-            .map(|a| crate::assembly::Slot {
-                purpose: a.purpose,
-                ctx: a.ctx,
-                env: a.env,
-                policy: Some(a.policy),
-                res: a.res,
-                out_ctx: None,
-                out_env: None,
-                out_res: None,
+            .map(|a| {
+                Slot::new(
+                    a.purpose,
+                    a.state.ctx,
+                    a.state.env,
+                    a.state.policy,
+                    a.state.res,
+                )
             })
             .collect();
 

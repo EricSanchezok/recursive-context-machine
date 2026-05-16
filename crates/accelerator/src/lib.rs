@@ -6,6 +6,7 @@ pub mod flux;
 pub mod graph;
 mod model;
 pub mod policy;
+pub mod state;
 pub mod tools;
 
 pub use accelerator::Accelerator;
@@ -13,6 +14,7 @@ pub use accelerator::{AcceleratorRef, Channel, NodeId, Output, Port};
 pub use assembly::Assembly;
 pub use flux::{ContextFlux, EnvFlux, FluxMode, FluxRef, PurposeFlux, ResFlux};
 pub use graph::{BuildError, Graph};
+pub use state::State;
 
 use std::collections::HashMap;
 use std::path::PathBuf;

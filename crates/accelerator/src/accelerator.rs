@@ -1,36 +1,30 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use machine::{Context, Environment, Machine, Policy, Resources};
+use machine::{Context, Machine};
+
+use crate::state::State;
 
 /// A single agent — runs the Context Machine.
 pub struct Accelerator {
     pub(crate) purpose: String,
-    pub(crate) ctx: Context,
-    pub(crate) env: Environment,
-    pub(crate) policy: Box<dyn Policy>,
-    pub(crate) res: Resources,
+    pub(crate) state: State,
 }
 
 impl Accelerator {
-    pub fn new(
-        purpose: impl Into<String>,
-        ctx: Context,
-        env: Environment,
-        policy: Box<dyn Policy>,
-        res: Resources,
-    ) -> Self {
+    pub fn new(purpose: impl Into<String>, state: State) -> Self {
         Self {
             purpose: purpose.into(),
-            ctx,
-            env,
-            policy,
-            res,
+            state,
         }
     }
 
+    pub fn with_defaults(purpose: impl Into<String>) -> Self {
+        Self::new(purpose, State::default())
+    }
+
     pub fn run(self) -> Pin<Box<dyn Future<Output = Output> + Send>> {
-        Box::pin(async move { fire(self.purpose, self.ctx, self.env, self.policy, self.res).await })
+        Box::pin(async move { fire(self.purpose, self.state).await })
     }
 }
 
@@ -38,19 +32,17 @@ impl Accelerator {
 pub struct Output {
     pub purpose: String,
     pub context: Context,
-    pub environment: Environment,
-    pub resources: Resources,
+    pub environment: machine::Environment,
+    pub resources: machine::Resources,
 }
 
-pub(crate) async fn fire(
-    purpose: String,
-    mut ctx: Context,
-    mut env: Environment,
-    policy: Box<dyn Policy>,
-    mut res: Resources,
-) -> Output {
+pub(crate) async fn fire(purpose: String, state: State) -> Output {
+    let mut ctx = state.ctx;
+    let mut env = state.env;
+    let mut res = state.res;
+
     ctx.purpose = purpose;
-    let machine = Machine::new(policy);
+    let machine = Machine::new(state.policy);
     machine.run(&mut ctx, &mut env, &mut res).await;
     let purpose = std::mem::take(&mut ctx.purpose);
     Output {
@@ -155,12 +147,12 @@ impl Port {
     }
 
     pub(crate) fn node_index(&self, num_accelerators: usize) -> usize {
-        let flux_offset = |id: usize| num_accelerators + id;
+        let offset = |id: usize| num_accelerators + id;
         match self {
             Port::Node(NodeId::Accelerator(id), _) => *id,
-            Port::Node(NodeId::Flux(id), _) => flux_offset(*id),
-            Port::FluxOut(id, _) => flux_offset(*id),
-            Port::FluxSlot(id, _, _) => flux_offset(*id),
+            Port::Node(NodeId::Flux(id), _) => offset(*id),
+            Port::FluxOut(id, _) => offset(*id),
+            Port::FluxSlot(id, _, _) => offset(*id),
         }
     }
 }

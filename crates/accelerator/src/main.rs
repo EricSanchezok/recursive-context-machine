@@ -1,6 +1,5 @@
 use accelerator::Graph;
-use accelerator::policy::Captain;
-use machine::{Content, Role};
+use machine::Role;
 
 #[tokio::main]
 async fn main() {
@@ -15,13 +14,7 @@ async fn main() {
     };
 
     let mut graph = Graph::new();
-    let _agent = graph.spawn(
-        intent,
-        machine::Context::new(),
-        accelerator::local(),
-        Box::new(Captain::new()),
-        accelerator::kit(),
-    );
+    let _agent = graph.spawn_default(intent);
 
     let assembly = graph.build().unwrap();
     let outputs = assembly.run().await;
@@ -30,7 +23,7 @@ async fn main() {
 
     for frag in output.context.fragments() {
         match &frag.content {
-            Content::Hitch {
+            machine::Content::Hitch {
                 message,
                 retryable,
                 code,

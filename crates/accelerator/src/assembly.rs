@@ -31,6 +31,27 @@ pub(crate) struct Slot {
     pub out_res: Option<Resources>,
 }
 
+impl Slot {
+    pub fn new(
+        purpose: String,
+        ctx: Context,
+        env: Environment,
+        policy: Box<dyn machine::Policy>,
+        res: Resources,
+    ) -> Self {
+        Self {
+            purpose,
+            ctx,
+            env,
+            policy: Some(policy),
+            res,
+            out_ctx: None,
+            out_env: None,
+            out_res: None,
+        }
+    }
+}
+
 impl Assembly {
     pub fn run(mut self) -> Pin<Box<dyn Future<Output = Vec<Output>> + Send>> {
         Box::pin(async move {
@@ -50,7 +71,7 @@ impl Assembly {
                 let policy = self.slots[id].policy.take().expect("policy missing");
                 let res = self.resolve_res(id);
 
-                let output = fire(purpose, ctx, env, policy, res).await;
+                let output = fire(purpose, crate::state::State::new(ctx, env, policy, res)).await;
 
                 let slot = &mut self.slots[id];
                 slot.out_ctx = Some(output.context);
