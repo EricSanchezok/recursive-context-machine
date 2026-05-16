@@ -17,6 +17,12 @@ pub use model::{gpt4_1, nex_n1};
 pub use policy::Captain;
 
 /// Run the context machine with a user intent and optional overrides.
+///
+/// When `ctx` is `None` or empty, a fresh context is created and `intent`
+/// is appended as a user fragment. Existing contexts are used as-is.
+/// `resources` defaults to [`kit()`] (tools + prompts + GPT-4.1 model).
+/// `env` defaults to [`local()`] (cwd and root set to `.`).
+/// `policy` defaults to [`Captain`].
 pub async fn accelerate(
     intent: impl Into<String>,
     ctx: Option<Context>,
@@ -71,7 +77,6 @@ pub fn local() -> Environment {
 /// let resources = kit();
 /// ```
 pub fn kit() -> Resources {
-    use crate::model::nex_n1;
     use crate::tools::builtin_tools;
 
     let mut resources = Resources::new();
@@ -87,7 +92,7 @@ pub fn kit() -> Resources {
         include_str!("prompts/default.txt").to_string(),
     );
 
-    resources = resources.with_model(nex_n1());
+    resources = resources.with_model(gpt4_1());
 
     resources
 }

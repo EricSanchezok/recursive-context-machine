@@ -2,7 +2,9 @@ use machine::{Cost, Limit, Modalities, Modality, Model, Protocol};
 
 /// Nex N1 — DeepSeek-based model hosted on the Nex platform.
 ///
-/// Credentials are read from the `NEX_API_KEY` environment variable.
+/// Credentials (`NEX_API_KEY`) are read from the environment at call time.
+/// If unset, `credentials` is `None` — the HTTP request will fail with a
+/// 401 or similar auth error at runtime.
 pub fn nex_n1() -> Model {
     Model {
         name: "nex-agi/nex-n1".into(),
@@ -30,7 +32,8 @@ pub fn nex_n1() -> Model {
 
 /// GPT-4.1 — OpenAI model hosted on the SII platform.
 ///
-/// Supports text and image input. Credentials are read from `SII_API_KEY`.
+/// Supports text and image input. Credentials (`SII_API_KEY`) are read
+/// from the environment at call time; `credentials` is `None` if unset.
 pub fn gpt4_1() -> Model {
     Model {
         name: "gpt-4.1".into(),

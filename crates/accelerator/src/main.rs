@@ -17,8 +17,14 @@ async fn main() {
 
     for frag in ctx.fragments() {
         match &frag.content {
-            Content::Hitch { message, .. } => {
-                eprintln!("[hitch] {}", message);
+            Content::Hitch {
+                message,
+                retryable,
+                code,
+            } => {
+                let retry = if *retryable { " (retryable)" } else { "" };
+                let status = code.map(|c| format!(" HTTP {c}")).unwrap_or_default();
+                eprintln!("[hitch]{}{} {message}", status, retry);
             }
             _ => {
                 let text = frag.as_text().unwrap_or("");

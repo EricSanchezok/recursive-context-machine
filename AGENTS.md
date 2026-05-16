@@ -48,9 +48,6 @@ must follow these conventions. Do not override unless explicitly instructed by t
   or `eprintln!` for operational output.
 - Every failed outcome must log at `warn!` with structured fields (`?error` or named
   fields), not a bare string.
-- Hot-path components (`completion`, `reactor`, `machine`, `policy`) must log at
-  `debug!` on entry/exit with enough context to reconstruct what happened.
-- `trace!` is reserved for the per-step machine loop — use sparingly.
 
 ## Execution
 

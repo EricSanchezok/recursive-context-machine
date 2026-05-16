@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Resources, Role};
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 /// Captain — the default steering policy.
 ///
@@ -27,22 +27,26 @@ impl State {
             1 => Self::Boot,
             2 => Self::Halt,
             3 => Self::Drain,
-            _ => Self::Done,
+            4 => Self::Done,
+            other => {
+                warn!(state = other, "captain: unknown state, forcing done");
+                Self::Done
+            }
         }
     }
 }
 
 impl Default for Captain {
     fn default() -> Self {
-        Self::new()
+        Self {
+            state: AtomicU8::new(State::Boot as u8),
+        }
     }
 }
 
 impl Captain {
     pub fn new() -> Self {
-        Self {
-            state: AtomicU8::new(State::Boot as u8),
-        }
+        Self::default()
     }
 }
 
@@ -77,7 +81,7 @@ fn boot(ctx: &Context, resources: &Resources) -> (State, Action) {
     let prompt = resources
         .prompts
         .get("default")
-        .cloned()
+        .map(|s| s.to_owned())
         .unwrap_or_default();
     debug!("boot: injecting system prompt");
     (State::Halt, Action::Append(Fragment::system(prompt)))

@@ -12,17 +12,17 @@ impl Tool for AddTool {
     }
 
     fn description(&self) -> &str {
-        "Add two integers together. Input: { a: int, b: int }."
+        "Add two integers together."
     }
 
     fn parameters(&self) -> Value {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "a": { "type": "integer", "description": "First integer" },
-                "b": { "type": "integer", "description": "Second integer" }
+                "first": { "type": "integer", "description": "First integer" },
+                "second": { "type": "integer", "description": "Second integer" }
             },
-            "required": ["a", "b"]
+            "required": ["first", "second"]
         })
     }
 
@@ -32,12 +32,16 @@ impl Tool for AddTool {
         _env: &'a Environment,
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
         Box::pin(async move {
-            let a = args["a"].as_i64().ok_or("missing or invalid 'a'")?;
-            let b = args["b"].as_i64().ok_or("missing or invalid 'b'")?;
+            let first = args["first"]
+                .as_i64()
+                .ok_or("invalid 'first': expected integer")?;
+            let second = args["second"]
+                .as_i64()
+                .ok_or("invalid 'second': expected integer")?;
             Ok(ToolResult {
                 call_id: String::new(),
-                content: format!("{}", a + b),
-                title: Some(format!("add({a}, {b})")),
+                content: format!("{}", first + second),
+                title: Some(format!("add({first}, {second})")),
             })
         })
     }
