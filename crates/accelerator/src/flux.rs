@@ -1,16 +1,17 @@
-use crate::accelerator::InPin;
+use crate::accelerator::{Channel, Port};
 
 #[derive(Clone, Copy, Debug)]
 pub struct FluxRef {
     pub(crate) id: usize,
+    pub(crate) channel: Channel,
 }
 
 impl FluxRef {
-    pub fn slot(&self, idx: usize) -> InPin {
-        InPin::FluxSlot(self.id, idx)
+    pub fn slot(&self, idx: usize) -> Port {
+        Port::FluxSlot(self.id, idx, self.channel)
     }
-    pub fn out(&self) -> crate::accelerator::OutPin {
-        crate::accelerator::OutPin::FluxOut(self.id)
+    pub fn out(&self) -> Port {
+        Port::FluxOut(self.id, self.channel)
     }
 }
 
@@ -33,41 +34,24 @@ pub enum ResFlux {
     Merge,
 }
 
-// ── Mode wrapper ──
-
-pub trait IntoFluxMode {
-    fn into_mode(self) -> FluxMode;
-}
-
-impl IntoFluxMode for PurposeFlux {
-    fn into_mode(self) -> FluxMode {
-        FluxMode::Purpose(self)
-    }
-}
-
-impl IntoFluxMode for ContextFlux {
-    fn into_mode(self) -> FluxMode {
-        FluxMode::Context(self)
-    }
-}
-
-impl IntoFluxMode for EnvFlux {
-    fn into_mode(self) -> FluxMode {
-        FluxMode::Environment(self)
-    }
-}
-
-impl IntoFluxMode for ResFlux {
-    fn into_mode(self) -> FluxMode {
-        FluxMode::Resources(self)
-    }
-}
+// ── Mode ──
 
 pub enum FluxMode {
     Purpose(PurposeFlux),
     Context(ContextFlux),
     Environment(EnvFlux),
     Resources(ResFlux),
+}
+
+impl FluxMode {
+    pub fn channel(&self) -> Channel {
+        match self {
+            FluxMode::Purpose(_) => Channel::Purpose,
+            FluxMode::Context(_) => Channel::Context,
+            FluxMode::Environment(_) => Channel::Environment,
+            FluxMode::Resources(_) => Channel::Resources,
+        }
+    }
 }
 
 pub(crate) struct Flux {

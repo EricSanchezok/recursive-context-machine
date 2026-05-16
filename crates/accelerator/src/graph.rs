@@ -1,16 +1,16 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use machine::{Context, Environment, Policy, Resources};
 
-use crate::accelerator::{Accelerator, AcceleratorRef, InPin, NodeId, OutPin};
-use crate::assembly::{Assembly, Slot};
-use crate::flux::{Flux, FluxMode, FluxRef, IntoFluxMode};
+use crate::accelerator::{Accelerator, AcceleratorRef, Channel, NodeId, Port};
+use crate::assembly::Assembly;
+use crate::flux::{Flux, FluxMode, FluxRef};
 
 /// Build a multi-agent execution graph.
 pub struct Graph {
     accelerators: Vec<Accelerator>,
     fluxes: Vec<Flux>,
-    wires: Vec<(OutPin, InPin)>,
+    wires: Vec<(Port, Port)>,
 }
 
 impl Graph {
@@ -36,21 +36,17 @@ impl Graph {
         AcceleratorRef { id }
     }
 
-    pub fn weave(&mut self, arity: usize, mode: impl IntoFluxMode) -> FluxRef {
+    pub fn weave(&mut self, arity: usize, mode: FluxMode) -> FluxRef {
         let id = self.fluxes.len();
-        self.fluxes.push(Flux {
-            mode: mode.into_mode(),
-            arity,
-        });
-        FluxRef { id }
+        let channel = mode.channel();
+        self.fluxes.push(Flux { mode, arity });
+        FluxRef { id, channel }
     }
 
-    pub fn wire(&mut self, from: OutPin, to: InPin) {
-        assert_eq!(
-            self.pin_type(&from),
-            self.pin_type(&to),
-            "pin type mismatch"
-        );
+    pub fn wire(&mut self, from: Port, to: Port) {
+        assert!(from.is_output(), "source must be an output pin");
+        assert!(to.is_input(), "target must be an input pin");
+        assert_eq!(from.channel(), to.channel(), "channel mismatch");
         assert!(
             !self.wires.iter().any(|(_, t)| *t == to),
             "input pin already wired"
@@ -67,8 +63,8 @@ impl Graph {
 
         for (from, to) in &self.wires {
             if let (
-                OutPin::Pulse(NodeId::Accelerator(src)),
-                InPin::Pulse(NodeId::Accelerator(dst)),
+                Port::Node(NodeId::Accelerator(src), Channel::Pulse),
+                Port::Node(NodeId::Accelerator(dst), Channel::Pulse),
             ) = (from, to)
             {
                 downstream[*src].push(*dst);
@@ -76,16 +72,36 @@ impl Graph {
             }
         }
 
+        let mut state_wires = HashMap::new();
+        let mut flux_slot_wires = HashMap::new();
+        for (from, to) in &self.wires {
+            match to {
+                Port::Node(NodeId::Accelerator(id), ch) if *ch != Channel::Pulse => {
+                    state_wires.insert(*to, *from);
+                }
+                Port::FluxSlot(flux_id, slot_idx, _) => {
+                    flux_slot_wires.insert((*flux_id, *slot_idx), *from);
+                }
+                _ => {}
+            }
+        }
+
+        let mut is_sink = vec![true; num];
+        for (from, _) in &self.wires {
+            if let Port::Node(NodeId::Accelerator(id), Channel::Pulse) = from {
+                is_sink[*id] = false;
+            }
+        }
+
         let slots = self
             .accelerators
             .into_iter()
-            .map(|a| Slot {
+            .map(|a| crate::assembly::Slot {
                 purpose: a.purpose,
                 ctx: a.ctx,
                 env: a.env,
                 policy: Some(a.policy),
                 res: a.res,
-                out_purpose: None,
                 out_ctx: None,
                 out_env: None,
                 out_res: None,
@@ -95,9 +111,11 @@ impl Graph {
         Ok(Assembly {
             slots,
             fluxes: self.fluxes,
-            wires: self.wires,
             downstream,
             pending,
+            state_wires,
+            flux_slot_wires,
+            is_sink,
         })
     }
 
@@ -106,8 +124,8 @@ impl Graph {
         let mut adj = vec![Vec::new(); total];
 
         for (from, to) in &self.wires {
-            let src = self.node_index_from_out(from);
-            let dst = self.node_index_from_in(to);
+            let src = from.node_index(self.accelerators.len());
+            let dst = to.node_index(self.accelerators.len());
             adj[src].push(dst);
         }
 
@@ -142,40 +160,6 @@ impl Graph {
             Err(BuildError::Cycle)
         }
     }
-
-    fn node_index_from_out(&self, pin: &OutPin) -> usize {
-        match pin {
-            OutPin::Purpose(id)
-            | OutPin::Context(id)
-            | OutPin::Environment(id)
-            | OutPin::Policy(id)
-            | OutPin::Resources(id)
-            | OutPin::Pulse(id) => match id {
-                NodeId::Accelerator(i) => *i,
-                NodeId::Flux(i) => self.accelerators.len() + i,
-            },
-            OutPin::FluxOut(i) => self.accelerators.len() + i,
-        }
-    }
-
-    fn node_index_from_in(&self, pin: &InPin) -> usize {
-        match pin {
-            InPin::Purpose(id)
-            | InPin::Context(id)
-            | InPin::Environment(id)
-            | InPin::Policy(id)
-            | InPin::Resources(id)
-            | InPin::Pulse(id) => match id {
-                NodeId::Accelerator(i) => *i,
-                NodeId::Flux(i) => self.accelerators.len() + i,
-            },
-            InPin::FluxSlot(i, _) => self.accelerators.len() + i,
-        }
-    }
-
-    fn pin_type(&self, pin: &dyn PinLike) -> PinType {
-        pin.ty(self)
-    }
 }
 
 impl Default for Graph {
@@ -187,58 +171,4 @@ impl Default for Graph {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuildError {
     Cycle,
-}
-
-// ── Pin type system ──
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PinType {
-    Purpose,
-    Context,
-    Environment,
-    Policy,
-    Resources,
-    Pulse,
-}
-
-trait PinLike {
-    fn ty(&self, graph: &Graph) -> PinType;
-}
-
-impl PinLike for OutPin {
-    fn ty(&self, graph: &Graph) -> PinType {
-        match self {
-            OutPin::Purpose(_) => PinType::Purpose,
-            OutPin::Context(_) => PinType::Context,
-            OutPin::Environment(_) => PinType::Environment,
-            OutPin::Policy(_) => PinType::Policy,
-            OutPin::Resources(_) => PinType::Resources,
-            OutPin::Pulse(_) => PinType::Pulse,
-            OutPin::FluxOut(id) => match &graph.fluxes[*id].mode {
-                FluxMode::Purpose(_) => PinType::Purpose,
-                FluxMode::Context(_) => PinType::Context,
-                FluxMode::Environment(_) => PinType::Environment,
-                FluxMode::Resources(_) => PinType::Resources,
-            },
-        }
-    }
-}
-
-impl PinLike for InPin {
-    fn ty(&self, graph: &Graph) -> PinType {
-        match self {
-            InPin::Purpose(_) => PinType::Purpose,
-            InPin::Context(_) => PinType::Context,
-            InPin::Environment(_) => PinType::Environment,
-            InPin::Policy(_) => PinType::Policy,
-            InPin::Resources(_) => PinType::Resources,
-            InPin::Pulse(_) => PinType::Pulse,
-            InPin::FluxSlot(id, _) => match &graph.fluxes[*id].mode {
-                FluxMode::Purpose(_) => PinType::Purpose,
-                FluxMode::Context(_) => PinType::Context,
-                FluxMode::Environment(_) => PinType::Environment,
-                FluxMode::Resources(_) => PinType::Resources,
-            },
-        }
-    }
 }

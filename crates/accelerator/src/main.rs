@@ -26,9 +26,9 @@ async fn main() {
     let assembly = graph.build().unwrap();
     let outputs = assembly.run().await;
 
-    let (_, ctx, _, _) = outputs.into_iter().next().expect("no output");
+    let output = outputs.into_iter().next().expect("no output");
 
-    for frag in ctx.fragments() {
+    for frag in output.context.fragments() {
         match &frag.content {
             Content::Hitch {
                 message,

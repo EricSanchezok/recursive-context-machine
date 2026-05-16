@@ -1,35 +1,5 @@
 use machine::{Cost, Limit, Modalities, Modality, Model, Protocol};
 
-/// Nex N1 — DeepSeek-based model hosted on the Nex platform.
-///
-/// Credentials (`NEX_API_KEY`) are read from the environment at call time.
-/// If unset, `credentials` is `None` — the HTTP request will fail with a
-/// 401 or similar auth error at runtime.
-pub fn nex_n1() -> Model {
-    Model {
-        name: "nex-agi/nex-n1".into(),
-        protocol: Protocol::OpenAI,
-        endpoint: Some("https://nex-deepseek.openapi-qb-ai.sii.edu.cn/v1".into()),
-        credentials: std::env::var("NEX_API_KEY").ok(),
-        limit: Some(Limit {
-            context: 128000,
-            input: None,
-            output: 32768,
-        }),
-        cost: Some(Cost {
-            input: 0.0,
-            output: 0.0,
-            cache_read: None,
-            cache_write: None,
-        }),
-        modalities: Some(Modalities {
-            input: vec![Modality::Text],
-            output: vec![Modality::Text],
-        }),
-        ..Default::default()
-    }
-}
-
 /// GPT-4.1 — OpenAI model hosted on the SII platform.
 ///
 /// Supports text and image input. Credentials (`SII_API_KEY`) are read

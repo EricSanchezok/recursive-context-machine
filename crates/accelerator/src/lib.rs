@@ -9,12 +9,10 @@ pub mod policy;
 pub mod tools;
 
 pub use accelerator::Accelerator;
-pub use accelerator::{AcceleratorRef, InPin, NodeId, OutPin};
+pub use accelerator::{AcceleratorRef, Channel, NodeId, Output, Port};
 pub use assembly::Assembly;
-pub use flux::{ContextFlux, EnvFlux, FluxRef, IntoFluxMode, PurposeFlux, ResFlux};
+pub use flux::{ContextFlux, EnvFlux, FluxMode, FluxRef, PurposeFlux, ResFlux};
 pub use graph::{BuildError, Graph};
-pub use model::{gpt4_1, nex_n1};
-pub use policy::Captain;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -47,7 +45,7 @@ pub fn kit() -> machine::Resources {
         include_str!("prompts/default.txt").to_string(),
     );
 
-    resources = resources.with_model(gpt4_1());
+    resources = resources.with_model(model::gpt4_1());
 
     resources
 }

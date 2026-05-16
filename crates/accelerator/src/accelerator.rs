@@ -29,11 +29,17 @@ impl Accelerator {
         }
     }
 
-    pub fn run(
-        self,
-    ) -> Pin<Box<dyn Future<Output = (String, Context, Environment, Resources)> + Send>> {
+    pub fn run(self) -> Pin<Box<dyn Future<Output = Output> + Send>> {
         Box::pin(async move { fire(self.purpose, self.ctx, self.env, self.policy, self.res).await })
     }
+}
+
+/// The result of running an agent.
+pub struct Output {
+    pub purpose: String,
+    pub context: Context,
+    pub environment: Environment,
+    pub resources: Resources,
 }
 
 pub(crate) async fn fire(
@@ -42,13 +48,20 @@ pub(crate) async fn fire(
     mut env: Environment,
     policy: Box<dyn Policy>,
     mut res: Resources,
-) -> (String, Context, Environment, Resources) {
+) -> Output {
     ctx.purpose = purpose;
     let machine = Machine::new(policy);
     machine.run(&mut ctx, &mut env, &mut res).await;
-    let out_purpose = ctx.purpose.clone();
-    (out_purpose, ctx, env, res)
+    let purpose = std::mem::take(&mut ctx.purpose);
+    Output {
+        purpose,
+        context: ctx,
+        environment: env,
+        resources: res,
+    }
 }
+
+// ── Graph wiring ──
 
 #[derive(Clone, Copy, Debug)]
 pub struct AcceleratorRef {
@@ -56,69 +69,98 @@ pub struct AcceleratorRef {
 }
 
 impl AcceleratorRef {
-    pub fn purpose_out(&self) -> OutPin {
-        OutPin::Purpose(NodeId::Accelerator(self.id))
+    pub fn purpose_out(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Purpose)
     }
-    pub fn ctx_out(&self) -> OutPin {
-        OutPin::Context(NodeId::Accelerator(self.id))
+    pub fn ctx_out(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Context)
     }
-    pub fn env_out(&self) -> OutPin {
-        OutPin::Environment(NodeId::Accelerator(self.id))
+    pub fn env_out(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Environment)
     }
-    pub fn policy_out(&self) -> OutPin {
-        OutPin::Policy(NodeId::Accelerator(self.id))
+    pub fn policy_out(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Policy)
     }
-    pub fn res_out(&self) -> OutPin {
-        OutPin::Resources(NodeId::Accelerator(self.id))
+    pub fn res_out(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Resources)
     }
-    pub fn done(&self) -> OutPin {
-        OutPin::Pulse(NodeId::Accelerator(self.id))
+    pub fn done(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Pulse)
     }
 
-    pub fn purpose_in(&self) -> InPin {
-        InPin::Purpose(NodeId::Accelerator(self.id))
+    pub fn purpose_in(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Purpose)
     }
-    pub fn ctx_in(&self) -> InPin {
-        InPin::Context(NodeId::Accelerator(self.id))
+    pub fn ctx_in(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Context)
     }
-    pub fn env_in(&self) -> InPin {
-        InPin::Environment(NodeId::Accelerator(self.id))
+    pub fn env_in(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Environment)
     }
-    pub fn policy_in(&self) -> InPin {
-        InPin::Policy(NodeId::Accelerator(self.id))
+    pub fn policy_in(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Policy)
     }
-    pub fn res_in(&self) -> InPin {
-        InPin::Resources(NodeId::Accelerator(self.id))
+    pub fn res_in(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Resources)
     }
-    pub fn run(&self) -> InPin {
-        InPin::Pulse(NodeId::Accelerator(self.id))
+    pub fn run(&self) -> Port {
+        Port::Node(NodeId::Accelerator(self.id), Channel::Pulse)
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NodeId {
     Accelerator(usize),
     Flux(usize),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OutPin {
-    Purpose(NodeId),
-    Context(NodeId),
-    Environment(NodeId),
-    Policy(NodeId),
-    Resources(NodeId),
-    Pulse(NodeId),
-    FluxOut(usize),
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Channel {
+    Purpose,
+    Context,
+    Environment,
+    Policy,
+    Resources,
+    Pulse,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InPin {
-    Purpose(NodeId),
-    Context(NodeId),
-    Environment(NodeId),
-    Policy(NodeId),
-    Resources(NodeId),
-    Pulse(NodeId),
-    FluxSlot(usize, usize),
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Port {
+    Node(NodeId, Channel),
+    FluxOut(usize, Channel),
+    FluxSlot(usize, usize, Channel),
+}
+
+impl Port {
+    pub fn is_output(&self) -> bool {
+        matches!(
+            self,
+            Port::Node(NodeId::Accelerator(_), _) | Port::FluxOut(_, _)
+        )
+    }
+
+    pub fn is_input(&self) -> bool {
+        matches!(
+            self,
+            Port::Node(NodeId::Accelerator(_), _) | Port::FluxSlot(_, _, _)
+        )
+    }
+
+    pub fn channel(&self) -> Channel {
+        match self {
+            Port::Node(_, ch) => *ch,
+            Port::FluxOut(_, ch) => *ch,
+            Port::FluxSlot(_, _, ch) => *ch,
+        }
+    }
+
+    pub(crate) fn node_index(&self, num_accelerators: usize) -> usize {
+        let flux_offset = |id: usize| num_accelerators + id;
+        match self {
+            Port::Node(NodeId::Accelerator(id), _) => *id,
+            Port::Node(NodeId::Flux(id), _) => flux_offset(*id),
+            Port::FluxOut(id, _) => flux_offset(*id),
+            Port::FluxSlot(id, _, _) => flux_offset(*id),
+        }
+    }
 }
