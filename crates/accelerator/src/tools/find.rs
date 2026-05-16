@@ -55,8 +55,10 @@ struct RawMatch {
 enum MatchCategory {
     FunctionDefinition,
     StructDefinition,
+    ClassDefinition,
     EnumDefinition,
     TraitDefinition,
+    InterfaceDefinition,
     ImplBlock,
     TypeAlias,
     Constant,
@@ -67,7 +69,6 @@ enum MatchCategory {
     FunctionCall,
     VariableAssignment,
     FieldAccess,
-    DocComment,
     Comment,
     StringLiteral,
     Attribute,
@@ -84,6 +85,51 @@ struct ClassifiedMatch {
     context: Vec<(usize, String)>,
 }
 
+// ── Language Detection ──
+
+#[derive(Clone, Copy, Debug)]
+enum Lang {
+    Rust,
+    Python,
+    JavaScript,
+    TypeScript,
+    Tsx,
+    Go,
+    Java,
+    Unknown,
+}
+
+impl Lang {
+    fn from_ext(ext: &str) -> Self {
+        match ext {
+            "rs" => Lang::Rust,
+            "py" | "pyi" => Lang::Python,
+            "js" | "jsx" | "mjs" | "cjs" => Lang::JavaScript,
+            "ts" | "cts" | "mts" => Lang::TypeScript,
+            "tsx" => Lang::Tsx,
+            "go" => Lang::Go,
+            "java" => Lang::Java,
+            _ => Lang::Unknown,
+        }
+    }
+
+    fn parser(self) -> Option<tree_sitter::Parser> {
+        let mut parser = tree_sitter::Parser::new();
+        let language: tree_sitter::Language = match self {
+            Lang::Rust => tree_sitter_rust::LANGUAGE.into(),
+            Lang::Python => tree_sitter_python::LANGUAGE.into(),
+            Lang::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+            Lang::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            Lang::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
+            Lang::Go => tree_sitter_go::LANGUAGE.into(),
+            Lang::Java => tree_sitter_java::LANGUAGE.into(),
+            Lang::Unknown => return None,
+        };
+        parser.set_language(&language).ok()?;
+        Some(parser)
+    }
+}
+
 // ── Tool Implementation ──
 
 pub struct FindTool;
@@ -95,8 +141,9 @@ impl Tool for FindTool {
 
     fn description(&self) -> &str {
         "Search for text across files in a directory. \
-         Returns matches grouped by type — function definitions, call sites, comments, string literals, etc. — \
-         with contextual previews. Use this to locate content before reading it in detail with the `read` tool."
+         Returns matches grouped by semantic type — function definitions, call sites, comments, string literals, etc. — \
+         with contextual previews. Classification uses AST parsing for supported languages (Rust, Python, JS/TS, Go, Java) \
+         and falls back to text heuristics for others. Use this to locate content before reading it in detail with the `read` tool."
     }
 
     fn parameters(&self) -> Value {
@@ -105,20 +152,20 @@ impl Tool for FindTool {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Text to search for. Treated as a literal string, not a regex."
+                    "description": "Text to search for. Treated as a literal string (regex special characters are escaped). Matches anywhere in a line, not whole-word."
                 },
                 "dir": {
                     "type": "string",
-                    "description": "Directory to search in. Defaults to the current working directory."
+                    "description": "Absolute path of the directory to search in. Defaults to the current working directory. Must be within the project root boundary."
                 },
                 "include": {
                     "type": "string",
-                    "description": "File type filter, e.g. '*.rs' or '*.{ts,tsx}'. Only files matching this pattern are searched."
+                    "description": "File extension filter. Supported patterns: '*.rs', '*.{ts,tsx}'. Only these exact forms are supported; complex glob patterns are ignored."
                 },
                 "depth": {
                     "type": "string",
                     "enum": ["names", "preview", "full"],
-                    "description": "How much detail to return. 'names' returns file paths only. 'preview' (default) returns matches with a few surrounding lines. 'full' attempts to return the complete block (e.g. an entire function body)."
+                    "description": "How much detail to return. 'names' returns file:line with no context. 'preview' (default) returns matches with surrounding lines. 'full' returns the complete semantic block when detectable (e.g. an entire function body). 'full' may fall back to 'preview' for indentation-based languages like Python."
                 }
             },
             "required": ["query"]
@@ -190,14 +237,18 @@ fn resolve_dir(dir: Option<&str>, cwd: &Path, root: Option<&Path>) -> Result<Pat
         None => cwd.to_path_buf(),
     };
 
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
-
-    if !canonical.exists() {
-        return Err(format!("dir does not exist: {}", canonical.display()));
+    if !path.exists() {
+        return Err(format!("dir does not exist: {}", path.display()));
     }
 
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("failed to resolve dir '{}': {e}", path.display()))?;
+
     if let Some(root) = root {
-        let root_canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let root_canonical = root
+            .canonicalize()
+            .map_err(|e| format!("failed to resolve root '{}': {e}", root.display()))?;
         if !canonical.starts_with(&root_canonical) {
             return Err(format!(
                 "dir {} is outside the allowed root {}",
@@ -245,7 +296,7 @@ fn build_include_filter(pattern: &str) -> Result<Arc<dyn Fn(&Path) -> bool + Sen
         }));
     }
 
-    warn!("complex include pattern '{pattern}' not fully supported, allowing all files");
+    warn!("complex include pattern '{pattern}' not supported, allowing all files");
     Ok(Arc::new(|_| true))
 }
 
@@ -302,10 +353,14 @@ fn search_directory(
 fn search_file(path: &Path, regex: &Regex, matches: &mut Vec<RawMatch>) -> Result<(), String> {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
-        Err(_) => return Ok(()),
+        Err(e) => {
+            warn!("skipping unreadable file {}: {e}", path.display());
+            return Ok(());
+        }
     };
 
     if content.as_bytes().contains(&0) {
+        warn!("skipping binary file {}", path.display());
         return Ok(());
     }
 
@@ -351,9 +406,19 @@ fn classify_all(
         };
         let lines: Vec<&str> = content.lines().collect();
 
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let lang = Lang::from_ext(ext);
+        let ast_tree = parse_file(&content, lang);
+
         for m in file_matches {
-            let category = classify_line(&m.line_text, query);
-            let context = extract_context(&lines, m.line_num, depth, category);
+            let category = match &ast_tree {
+                Some(tree) => deepest_node_at_line(tree.root_node(), m.line_num)
+                    .and_then(|node| classify_node(node, lang))
+                    .unwrap_or_else(|| classify_line_fallback(&m.line_text, query)),
+                None => classify_line_fallback(&m.line_text, query),
+            };
+
+            let context = extract_context(&lines, m.line_num, depth, category, lang);
 
             classified.push(ClassifiedMatch {
                 path: path.clone(),
@@ -368,11 +433,163 @@ fn classify_all(
     Ok(classified)
 }
 
-fn classify_line(line: &str, query: &str) -> MatchCategory {
+fn parse_file(source: &str, lang: Lang) -> Option<tree_sitter::Tree> {
+    let mut parser = lang.parser()?;
+    parser.parse(source, None)
+}
+
+fn deepest_node_at_line(node: tree_sitter::Node, line: usize) -> Option<tree_sitter::Node> {
+    let target = line.saturating_sub(1);
+    if node.start_position().row > target || node.end_position().row < target {
+        return None;
+    }
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i as u32) {
+            if child.start_position().row <= target && child.end_position().row >= target {
+                return deepest_node_at_line(child, line).or(Some(node));
+            }
+        }
+    }
+    Some(node)
+}
+
+fn classify_node(node: tree_sitter::Node, lang: Lang) -> Option<MatchCategory> {
+    let mut current = node;
+    loop {
+        if let Some(cat) = category_for_kind(current.kind(), lang) {
+            return Some(cat);
+        }
+        if let Some(parent) = current.parent() {
+            current = parent;
+        } else {
+            return None;
+        }
+    }
+}
+
+fn category_for_kind(kind: &str, lang: Lang) -> Option<MatchCategory> {
+    match lang {
+        Lang::Rust => rust_category(kind),
+        Lang::Python => python_category(kind),
+        Lang::JavaScript | Lang::TypeScript | Lang::Tsx => js_ts_category(kind),
+        Lang::Go => go_category(kind),
+        Lang::Java => java_category(kind),
+        Lang::Unknown => None,
+    }
+}
+
+fn rust_category(kind: &str) -> Option<MatchCategory> {
+    match kind {
+        "function_item" => Some(MatchCategory::FunctionDefinition),
+        "struct_item" => Some(MatchCategory::StructDefinition),
+        "enum_item" => Some(MatchCategory::EnumDefinition),
+        "trait_item" => Some(MatchCategory::TraitDefinition),
+        "impl_item" => Some(MatchCategory::ImplBlock),
+        "type_item" => Some(MatchCategory::TypeAlias),
+        "const_item" => Some(MatchCategory::Constant),
+        "static_item" => Some(MatchCategory::StaticValue),
+        "macro_definition" | "macro_rules_definition" => Some(MatchCategory::MacroDefinition),
+        "mod_item" => Some(MatchCategory::ModuleDeclaration),
+        "use_declaration" | "extern_crate_declaration" => Some(MatchCategory::Import),
+        "call_expression" => Some(MatchCategory::FunctionCall),
+        "field_expression" => Some(MatchCategory::FieldAccess),
+        "let_declaration" => Some(MatchCategory::VariableAssignment),
+        "line_comment" | "block_comment" | "doc_comment" => Some(MatchCategory::Comment),
+        "string_literal" | "raw_string_literal" => Some(MatchCategory::StringLiteral),
+        "attribute_item" => Some(MatchCategory::Attribute),
+        "closure_expression" => Some(MatchCategory::FunctionDefinition),
+        "macro_invocation" => Some(MatchCategory::FunctionCall),
+        _ => None,
+    }
+}
+
+fn python_category(kind: &str) -> Option<MatchCategory> {
+    match kind {
+        "function_definition" => Some(MatchCategory::FunctionDefinition),
+        "class_definition" => Some(MatchCategory::ClassDefinition),
+        "import_statement" | "import_from_statement" => Some(MatchCategory::Import),
+        "call" => Some(MatchCategory::FunctionCall),
+        "comment" => Some(MatchCategory::Comment),
+        "string" | "string_content" => Some(MatchCategory::StringLiteral),
+        "assignment" | "augmented_assignment" => Some(MatchCategory::VariableAssignment),
+        "attribute" => Some(MatchCategory::FieldAccess),
+        "lambda" => Some(MatchCategory::FunctionDefinition),
+        "decorated_definition" => Some(MatchCategory::Attribute),
+        _ => None,
+    }
+}
+
+fn js_ts_category(kind: &str) -> Option<MatchCategory> {
+    match kind {
+        "function_declaration"
+        | "function_expression"
+        | "arrow_function"
+        | "generator_function_declaration"
+        | "generator_function"
+        | "method_definition" => Some(MatchCategory::FunctionDefinition),
+        "class_declaration" | "class_expression" => Some(MatchCategory::ClassDefinition),
+        "interface_declaration" => Some(MatchCategory::InterfaceDefinition),
+        "enum_declaration" => Some(MatchCategory::EnumDefinition),
+        "import_statement" | "import_declaration" | "export_statement" => {
+            Some(MatchCategory::Import)
+        }
+        "call_expression" | "new_expression" => Some(MatchCategory::FunctionCall),
+        "member_expression" | "property_identifier" => Some(MatchCategory::FieldAccess),
+        "assignment_expression" => Some(MatchCategory::VariableAssignment),
+        "variable_declarator" => Some(MatchCategory::VariableAssignment),
+        "comment" | "jsx_text" => Some(MatchCategory::Comment),
+        "string" | "string_fragment" | "template_string" => Some(MatchCategory::StringLiteral),
+        "decorator" => Some(MatchCategory::Attribute),
+        "type_alias_declaration" => Some(MatchCategory::TypeAlias),
+        _ => None,
+    }
+}
+
+fn go_category(kind: &str) -> Option<MatchCategory> {
+    match kind {
+        "function_declaration" | "method_declaration" => Some(MatchCategory::FunctionDefinition),
+        "type_declaration" => Some(MatchCategory::TypeAlias),
+        "struct_type" => Some(MatchCategory::StructDefinition),
+        "interface_type" | "interface_declaration" => Some(MatchCategory::InterfaceDefinition),
+        "import_declaration" => Some(MatchCategory::Import),
+        "call_expression" => Some(MatchCategory::FunctionCall),
+        "selector_expression" => Some(MatchCategory::FieldAccess),
+        "short_var_declaration" | "assignment_statement" => Some(MatchCategory::VariableAssignment),
+        "var_declaration" => Some(MatchCategory::VariableAssignment),
+        "const_declaration" => Some(MatchCategory::Constant),
+        "comment" => Some(MatchCategory::Comment),
+        "interpreted_string_literal" | "raw_string_literal" => Some(MatchCategory::StringLiteral),
+        _ => None,
+    }
+}
+
+fn java_category(kind: &str) -> Option<MatchCategory> {
+    match kind {
+        "method_declaration" | "constructor_declaration" => Some(MatchCategory::FunctionDefinition),
+        "class_declaration" => Some(MatchCategory::ClassDefinition),
+        "interface_declaration" => Some(MatchCategory::InterfaceDefinition),
+        "enum_declaration" => Some(MatchCategory::EnumDefinition),
+        "import_declaration" => Some(MatchCategory::Import),
+        "method_invocation" => Some(MatchCategory::FunctionCall),
+        "field_access" => Some(MatchCategory::FieldAccess),
+        "variable_declarator" => Some(MatchCategory::VariableAssignment),
+        "field_declaration" | "local_variable_declaration" => {
+            Some(MatchCategory::VariableAssignment)
+        }
+        "line_comment" | "block_comment" => Some(MatchCategory::Comment),
+        "string_literal" => Some(MatchCategory::StringLiteral),
+        "annotation" => Some(MatchCategory::Attribute),
+        _ => None,
+    }
+}
+
+// ── Text Fallback Classification ──
+
+fn classify_line_fallback(line: &str, query: &str) -> MatchCategory {
     let trimmed = line.trim_start();
 
     if trimmed.starts_with("///") || trimmed.starts_with("//!") || trimmed.starts_with("/*!") {
-        return MatchCategory::DocComment;
+        return MatchCategory::Comment;
     }
 
     if trimmed.starts_with("//")
@@ -386,12 +603,8 @@ fn classify_line(line: &str, query: &str) -> MatchCategory {
         return MatchCategory::StringLiteral;
     }
 
-    if trimmed.starts_with("#[") || trimmed.starts_with("#![") {
+    if trimmed.starts_with("#") {
         return MatchCategory::Attribute;
-    }
-
-    if let Some(cat) = detect_rust_keyword(trimmed) {
-        return cat;
     }
 
     let Some(pos) = line.find(query) else {
@@ -430,45 +643,6 @@ fn classify_line(line: &str, query: &str) -> MatchCategory {
     MatchCategory::Other
 }
 
-fn detect_rust_keyword(trimmed: &str) -> Option<MatchCategory> {
-    let keywords: &[(&str, MatchCategory)] = &[
-        ("pub async fn ", MatchCategory::FunctionDefinition),
-        ("pub fn ", MatchCategory::FunctionDefinition),
-        ("async fn ", MatchCategory::FunctionDefinition),
-        ("const fn ", MatchCategory::FunctionDefinition),
-        ("unsafe fn ", MatchCategory::FunctionDefinition),
-        ("fn ", MatchCategory::FunctionDefinition),
-        ("pub struct ", MatchCategory::StructDefinition),
-        ("struct ", MatchCategory::StructDefinition),
-        ("pub enum ", MatchCategory::EnumDefinition),
-        ("enum ", MatchCategory::EnumDefinition),
-        ("pub trait ", MatchCategory::TraitDefinition),
-        ("trait ", MatchCategory::TraitDefinition),
-        ("unsafe trait ", MatchCategory::TraitDefinition),
-        ("impl ", MatchCategory::ImplBlock),
-        ("pub type ", MatchCategory::TypeAlias),
-        ("type ", MatchCategory::TypeAlias),
-        ("pub const ", MatchCategory::Constant),
-        ("const ", MatchCategory::Constant),
-        ("pub static ", MatchCategory::StaticValue),
-        ("static ", MatchCategory::StaticValue),
-        ("macro_rules! ", MatchCategory::MacroDefinition),
-        ("pub mod ", MatchCategory::ModuleDeclaration),
-        ("mod ", MatchCategory::ModuleDeclaration),
-        ("pub use ", MatchCategory::Import),
-        ("use ", MatchCategory::Import),
-        ("extern crate ", MatchCategory::Import),
-    ];
-
-    for (prefix, cat) in keywords {
-        if trimmed.starts_with(prefix) {
-            return Some(*cat);
-        }
-    }
-
-    None
-}
-
 fn is_in_string_literal(line: &str, query: &str) -> bool {
     let Some(pos) = line.find(query) else {
         return false;
@@ -477,6 +651,7 @@ fn is_in_string_literal(line: &str, query: &str) -> bool {
     let before = &line[..pos];
     let mut in_double = false;
     let mut in_single = false;
+    let mut in_backtick = false;
     let mut escaped = false;
 
     for ch in before.chars() {
@@ -486,13 +661,14 @@ fn is_in_string_literal(line: &str, query: &str) -> bool {
         }
         match ch {
             '\\' => escaped = true,
-            '"' if !in_single => in_double = !in_double,
-            '\'' if !in_double => in_single = !in_single,
+            '`' if !in_double && !in_single => in_backtick = !in_backtick,
+            '"' if !in_single && !in_backtick => in_double = !in_double,
+            '\'' if !in_double && !in_backtick => in_single = !in_single,
             _ => {}
         }
     }
 
-    in_double || in_single
+    in_double || in_single || in_backtick
 }
 
 // ── Context Extraction ──
@@ -502,12 +678,13 @@ fn extract_context(
     match_line: usize,
     depth: FindDepth,
     category: MatchCategory,
+    lang: Lang,
 ) -> Vec<(usize, String)> {
     match depth {
         FindDepth::Names => Vec::new(),
         FindDepth::Preview => extract_line_window(lines, match_line, PREVIEW_CONTEXT_LINES),
         FindDepth::Full => {
-            if let Some(end) = try_extract_block(lines, match_line, category) {
+            if let Some(end) = try_extract_block(lines, match_line, category, lang) {
                 let start = match_line.saturating_sub(1);
                 (start..end)
                     .map(|i| (i + 1, lines[i].to_string()))
@@ -528,13 +705,24 @@ fn extract_line_window(lines: &[&str], match_line: usize, radius: usize) -> Vec<
         .collect()
 }
 
-fn try_extract_block(lines: &[&str], match_line: usize, category: MatchCategory) -> Option<usize> {
+fn try_extract_block(
+    lines: &[&str],
+    match_line: usize,
+    category: MatchCategory,
+    lang: Lang,
+) -> Option<usize> {
+    if matches!(lang, Lang::Python) {
+        return try_extract_indent_block(lines, match_line);
+    }
+
     if !matches!(
         category,
         MatchCategory::FunctionDefinition
             | MatchCategory::StructDefinition
+            | MatchCategory::ClassDefinition
             | MatchCategory::EnumDefinition
             | MatchCategory::TraitDefinition
+            | MatchCategory::InterfaceDefinition
             | MatchCategory::ImplBlock
             | MatchCategory::MacroDefinition
     ) {
@@ -576,7 +764,7 @@ fn try_extract_block(lines: &[&str], match_line: usize, category: MatchCategory)
                 }
                 continue;
             }
-            if ch == '"' || ch == '\'' {
+            if ch == '"' || ch == '\'' || ch == '`' {
                 in_string = true;
                 string_char = ch;
                 continue;
@@ -595,6 +783,47 @@ fn try_extract_block(lines: &[&str], match_line: usize, category: MatchCategory)
     }
 
     None
+}
+
+fn try_extract_indent_block(lines: &[&str], match_line: usize) -> Option<usize> {
+    let start_idx = match_line.saturating_sub(1);
+    if start_idx >= lines.len() {
+        return None;
+    }
+
+    let base_indent = leading_spaces(lines[start_idx]);
+
+    let mut body_start = None;
+    for i in (start_idx + 1)..lines.len() {
+        let line = lines[i];
+        if line.trim().is_empty() {
+            continue;
+        }
+        let indent = leading_spaces(line);
+        if indent > base_indent {
+            body_start = Some(i);
+            break;
+        }
+    }
+    let body_start = body_start?;
+    let _body_indent = leading_spaces(lines[body_start]);
+
+    for i in (body_start + 1)..lines.len() {
+        let line = lines[i];
+        if line.trim().is_empty() {
+            continue;
+        }
+        let indent = leading_spaces(line);
+        if indent <= base_indent {
+            return Some(i);
+        }
+    }
+
+    Some(lines.len())
+}
+
+fn leading_spaces(line: &str) -> usize {
+    line.chars().take_while(|c| c.is_whitespace()).count()
 }
 
 // ── Output Formatting ──
@@ -682,8 +911,10 @@ fn category_priority_order() -> Vec<MatchCategory> {
     vec![
         MatchCategory::FunctionDefinition,
         MatchCategory::StructDefinition,
+        MatchCategory::ClassDefinition,
         MatchCategory::EnumDefinition,
         MatchCategory::TraitDefinition,
+        MatchCategory::InterfaceDefinition,
         MatchCategory::ImplBlock,
         MatchCategory::TypeAlias,
         MatchCategory::Constant,
@@ -694,7 +925,6 @@ fn category_priority_order() -> Vec<MatchCategory> {
         MatchCategory::FunctionCall,
         MatchCategory::VariableAssignment,
         MatchCategory::FieldAccess,
-        MatchCategory::DocComment,
         MatchCategory::Comment,
         MatchCategory::StringLiteral,
         MatchCategory::Attribute,
@@ -707,8 +937,10 @@ fn category_label(cat: MatchCategory) -> &'static str {
     match cat {
         MatchCategory::FunctionDefinition => "Function Definition",
         MatchCategory::StructDefinition => "Struct Definition",
+        MatchCategory::ClassDefinition => "Class Definition",
         MatchCategory::EnumDefinition => "Enum Definition",
         MatchCategory::TraitDefinition => "Trait Definition",
+        MatchCategory::InterfaceDefinition => "Interface Definition",
         MatchCategory::ImplBlock => "Impl Block",
         MatchCategory::TypeAlias => "Type Alias",
         MatchCategory::Constant => "Constant",
@@ -719,7 +951,6 @@ fn category_label(cat: MatchCategory) -> &'static str {
         MatchCategory::FunctionCall => "Function Call",
         MatchCategory::VariableAssignment => "Variable Assignment",
         MatchCategory::FieldAccess => "Field Access",
-        MatchCategory::DocComment => "Doc Comment",
         MatchCategory::Comment => "Comment",
         MatchCategory::StringLiteral => "String Literal",
         MatchCategory::Attribute => "Attribute",
