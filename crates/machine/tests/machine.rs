@@ -1,6 +1,6 @@
 mod common;
 
-use machine::{Action, Context, Environment, Fragment, Machine};
+use machine::{Action, Context, Environment, Fragment, Machine, Purpose};
 
 #[tokio::test]
 async fn done_stops_immediately() {
@@ -10,7 +10,9 @@ async fn done_stops_immediately() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
 
-    machine.run(&mut ctx, &mut env, &mut resources).await;
+    machine
+        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
+        .await;
     assert!(ctx.is_empty());
 }
 
@@ -26,7 +28,9 @@ async fn append_and_take_flow() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
 
-    machine.run(&mut ctx, &mut env, &mut resources).await;
+    machine
+        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
+        .await;
     assert_eq!(ctx.len(), 2);
     assert_eq!(ctx.fragments()[0].as_text(), Some("sys"));
     assert_eq!(ctx.fragments()[1].as_text(), Some("hello"));
@@ -40,7 +44,9 @@ async fn take_empty_inbox_is_noop() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
 
-    machine.run(&mut ctx, &mut env, &mut resources).await;
+    machine
+        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
+        .await;
     assert!(ctx.is_empty());
 }
 
@@ -57,7 +63,9 @@ async fn swap_preserves_count() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
 
-    machine.run(&mut ctx, &mut env, &mut resources).await;
+    machine
+        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
+        .await;
     assert_eq!(ctx.len(), 2);
     assert_eq!(ctx.fragments()[0].as_text(), Some("second"));
     assert_eq!(ctx.fragments()[1].as_text(), Some("first"));
@@ -78,7 +86,9 @@ async fn replace_preserves_id() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
 
-    machine.run(&mut ctx, &mut env, &mut resources).await;
+    machine
+        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
+        .await;
     assert_eq!(ctx.len(), 1);
     assert_eq!(ctx.fragments()[0].as_text(), Some("new"));
     assert_eq!(ctx.fragments()[0].id, 1);
@@ -100,7 +110,9 @@ async fn insert_after_id() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
 
-    machine.run(&mut ctx, &mut env, &mut resources).await;
+    machine
+        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
+        .await;
     assert_eq!(ctx.len(), 3);
     assert_eq!(ctx.fragments()[0].as_text(), Some("first"));
     assert_eq!(ctx.fragments()[1].as_text(), Some("second"));
@@ -120,7 +132,9 @@ async fn remove_and_check_context() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
 
-    machine.run(&mut ctx, &mut env, &mut resources).await;
+    machine
+        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
+        .await;
     assert_eq!(ctx.len(), 1);
     assert_eq!(ctx.fragments()[0].as_text(), Some("b"));
 }
@@ -134,5 +148,7 @@ async fn remove_unknown_panics() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
 
-    machine.run(&mut ctx, &mut env, &mut resources).await;
+    machine
+        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
+        .await;
 }

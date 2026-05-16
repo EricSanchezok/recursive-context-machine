@@ -2,6 +2,7 @@ use crate::context::Context;
 use crate::env::Environment;
 use crate::inbox::Inbox;
 use crate::policy::{Action, Policy};
+use crate::purpose::Purpose;
 use crate::reactor;
 use crate::resources::Resources;
 use tracing::trace;
@@ -17,11 +18,20 @@ impl Machine {
     }
 
     /// Run the machine until [`Action::Done`].
-    pub async fn run(&self, ctx: &mut Context, env: &mut Environment, resources: &mut Resources) {
+    pub async fn run(
+        &self,
+        purpose: &Purpose,
+        ctx: &mut Context,
+        env: &mut Environment,
+        resources: &mut Resources,
+    ) {
         let mut inbox = Inbox::new();
 
         loop {
-            let action = self.policy.decide(ctx, env, resources, &inbox).await;
+            let action = self
+                .policy
+                .decide(purpose, ctx, env, resources, &inbox)
+                .await;
             trace!(?action, "machine step");
 
             match action {

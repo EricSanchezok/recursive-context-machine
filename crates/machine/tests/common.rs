@@ -1,13 +1,22 @@
+use machine::Purpose;
 use machine::{Action, Context, Environment, Inbox, Model, Policy, Resources};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A policy that replays a fixed sequence of actions, then Done.
-#[derive(Clone)]
 pub struct SeqPolicy {
     actions: Vec<Action>,
     pos: AtomicUsize,
+}
+
+impl Clone for SeqPolicy {
+    fn clone(&self) -> Self {
+        Self {
+            actions: self.actions.clone(),
+            pos: AtomicUsize::new(self.pos.load(Ordering::SeqCst)),
+        }
+    }
 }
 
 impl SeqPolicy {
@@ -25,8 +34,8 @@ impl Policy for SeqPolicy {
     }
 
     fn decide<'a>(
-    fn decide<'a>(
         &'a self,
+        _purpose: &'a Purpose,
         _ctx: &'a Context,
         _env: &'a Environment,
         _resources: &'a Resources,

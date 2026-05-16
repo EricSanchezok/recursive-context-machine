@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Resources, Role};
+use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources, Role};
 use tracing::{debug, trace, warn};
 
 /// Captain — the default steering policy.
@@ -65,6 +65,7 @@ impl Policy for Captain {
 
     fn decide<'a>(
         &'a self,
+        purpose: &'a Purpose,
         ctx: &'a Context,
         _env: &'a Environment,
         resources: &'a Resources,
@@ -73,7 +74,7 @@ impl Policy for Captain {
         Box::pin(async move {
             let state = State::from_u8(self.state.load(Ordering::Relaxed));
             let (next, action) = match state {
-                State::Boot => boot(ctx, resources),
+                State::Boot => boot(purpose, ctx, resources),
                 State::Halt => halt(),
                 State::Drain => drain(inbox),
                 State::Done => done(),
@@ -85,15 +86,15 @@ impl Policy for Captain {
     }
 }
 
-fn boot(ctx: &Context, resources: &Resources) -> (State, Action) {
+fn boot(purpose: &Purpose, ctx: &Context, resources: &Resources) -> (State, Action) {
     if ctx.fragments().iter().any(|f| f.role == Role::System) {
-        if ctx.purpose.is_empty() {
+        if purpose.is_empty() {
             debug!("boot: system present, skipping");
             return (State::Halt, Action::Halt);
         }
         // System already injected but purpose is new → just inject purpose
-        debug!(purpose = ctx.purpose, "boot: injecting purpose");
-        return (State::Halt, Action::Append(Fragment::user(&ctx.purpose)));
+        debug!(purpose = purpose.text, "boot: injecting purpose");
+        return (State::Halt, Action::Append(Fragment::user(&purpose.text)));
     }
 
     let prompt = resources
@@ -101,12 +102,12 @@ fn boot(ctx: &Context, resources: &Resources) -> (State, Action) {
         .get("default")
         .map(|s| s.to_owned())
         .unwrap_or_default();
-    let content = if ctx.purpose.is_empty() {
+    let content = if purpose.is_empty() {
         debug!("boot: injecting system prompt");
         prompt
     } else {
-        debug!(purpose = ctx.purpose, "boot: injecting system + purpose");
-        format!("{}\n\nUser intent: {}", prompt, ctx.purpose)
+        debug!(purpose = purpose.text, "boot: injecting system + purpose");
+        format!("{}\n\nUser intent: {}", prompt, purpose.text)
     };
     (State::Halt, Action::Append(Fragment::system(content)))
 }

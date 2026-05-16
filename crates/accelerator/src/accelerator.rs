@@ -1,7 +1,6 @@
+use machine::{Machine, Purpose};
 use std::future::Future;
 use std::pin::Pin;
-
-use machine::Machine;
 
 use crate::state::State;
 
@@ -21,10 +20,10 @@ impl Accelerator {
 }
 
 pub(crate) async fn fire(mut state: State) -> State {
-    state.ctx.purpose.clone_from(&state.purpose);
+    let purpose = Purpose::new(&state.purpose);
     let machine = Machine::new(state.policy.clone());
     machine
-        .run(&mut state.ctx, &mut state.env, &mut state.res)
+        .run(&purpose, &mut state.ctx, &mut state.env, &mut state.res)
         .await;
     state
 }

@@ -4,6 +4,7 @@
 //! |-----------|------|
 //! | [`Fragment`] | Tape symbol |
 //! | [`Context`] | Tape |
+//! | [`Purpose`] | Steering intention |
 //! | [`Environment`] | External world |
 //! | [`Resources`] | Available pool |
 //! | [`Inbox`] | Pending queue |
@@ -20,6 +21,7 @@ pub mod logging;
 pub mod machine;
 pub mod model;
 pub mod policy;
+pub mod purpose;
 pub mod reactor;
 pub mod resources;
 pub mod tool;
@@ -33,5 +35,6 @@ pub use inbox::Inbox;
 pub use machine::Machine;
 pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
 pub use policy::{Action, Policy};
+pub use purpose::Purpose;
 pub use resources::Resources;
 pub use tool::Tool;

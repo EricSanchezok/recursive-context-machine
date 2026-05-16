@@ -5,6 +5,7 @@ use crate::context::Context;
 use crate::env::Environment;
 use crate::fragment::Fragment;
 use crate::inbox::Inbox;
+use crate::purpose::Purpose;
 use crate::resources::Resources;
 
 /// Atomic, discrete operations composed by Policy across decision steps.
@@ -55,6 +56,7 @@ pub trait Policy: Send + Sync {
     fn clone_box(&self) -> Box<dyn Policy>;
     fn decide<'a>(
         &'a self,
+        purpose: &'a Purpose,
         ctx: &'a Context,
         env: &'a Environment,
         resources: &'a Resources,
