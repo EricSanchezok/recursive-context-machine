@@ -19,14 +19,14 @@ impl Default for State {
         Self {
             purpose: String::new(),
             ctx: Context::new(),
-            env: local_env(),
+            env: local(),
             policy: Box::new(crate::policy::Captain::new()),
-            res: default_resources(),
+            res: kit(),
         }
     }
 }
 
-fn local_env() -> Environment {
+fn local() -> Environment {
     Environment {
         cwd: PathBuf::from("."),
         vars: HashMap::new(),
@@ -34,7 +34,7 @@ fn local_env() -> Environment {
     }
 }
 
-fn default_resources() -> Resources {
+fn kit() -> Resources {
     use crate::tools::builtin_tools;
 
     let mut resources = Resources::new();
