@@ -8,6 +8,6 @@ mod add;
 pub use add::AddTool;
 
 /// All built-in tools registered by default.
-pub fn builtin_tools() -> Vec<Box<dyn machine::Tool>> {
-    vec![Box::new(AddTool)]
+pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
+    vec![std::sync::Arc::new(AddTool)]
 }

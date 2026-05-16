@@ -1,22 +1,24 @@
-//! RICA Accelerator — composable agent execution.
+//! RICA Accelerator — composable agent execution via dataflow graphs.
 
 pub mod accelerator;
-pub mod agent;
-pub mod compound;
+pub mod core;
 pub mod flux;
+pub mod graph;
 mod model;
 pub mod policy;
 pub mod tools;
+
+pub use accelerator::Accelerator;
+pub use core::{CoreRef, InPin, NodeId, OutPin};
+pub use flux::FluxRef;
+pub use graph::{BuildError, Graph};
+pub use model::{gpt4_1, nex_n1};
+pub use policy::Captain;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use machine::Environment;
-
-pub use accelerator::Accelerator;
-pub use flux::Flux;
-pub use model::{gpt4_1, nex_n1};
-pub use policy::Captain;
 
 /// Create an environment with `cwd` and `root` set to the current directory.
 pub fn local() -> Environment {

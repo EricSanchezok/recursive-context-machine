@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::model::Model;
 use crate::tool::Tool;
@@ -7,8 +8,9 @@ use crate::tool::Tool;
 ///
 /// The Policy switches models and toggles tools via [`Action`](crate::Action).
 /// The completion reads the active state directly.
+#[derive(Clone)]
 pub struct Resources {
-    pub tools: HashMap<String, Box<dyn Tool>>,
+    pub tools: HashMap<String, Arc<dyn Tool>>,
     pub models: HashMap<String, Model>,
     pub active_model: String,
     pub active_tools: HashSet<String>,
@@ -33,7 +35,7 @@ impl Resources {
     }
 
     /// Register a tool. Overwrites any tool with the same name.
-    pub fn with_tool(mut self, tool: Box<dyn Tool>) -> Self {
+    pub fn with_tool(mut self, tool: Arc<dyn Tool>) -> Self {
         let name = tool.name().to_string();
         self.tools.insert(name, tool);
         self

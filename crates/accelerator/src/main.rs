@@ -1,4 +1,4 @@
-use accelerator::Accelerator;
+use accelerator::Graph;
 use accelerator::policy::Captain;
 use machine::{Content, Role};
 
@@ -14,14 +14,19 @@ async fn main() {
         std::process::exit(1);
     };
 
-    let agent = Accelerator::agent(
-        &intent,
+    let mut graph = Graph::new();
+    let _agent = graph.spawn(
+        intent,
         machine::Context::new(),
-        accelerator::kit(),
         accelerator::local(),
         Box::new(Captain::new()),
+        accelerator::kit(),
     );
-    let (ctx, _, _) = agent.run().await;
+
+    let accel = graph.build().unwrap();
+    let outputs = accel.run().await;
+
+    let (_, ctx, _, _) = outputs.into_iter().next().expect("no output");
 
     for frag in ctx.fragments() {
         match &frag.content {
