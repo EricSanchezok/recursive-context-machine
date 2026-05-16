@@ -75,16 +75,28 @@ impl Policy for Captain {
 
 fn boot(ctx: &Context, resources: &Resources) -> (State, Action) {
     if ctx.fragments().iter().any(|f| f.role == Role::System) {
-        debug!("boot: system prompt present, skipping");
-        return (State::Halt, Action::Halt);
+        if ctx.purpose.is_empty() {
+            debug!("boot: system present, skipping");
+            return (State::Halt, Action::Halt);
+        }
+        // System already injected but purpose is new → just inject purpose
+        debug!(purpose = ctx.purpose, "boot: injecting purpose");
+        return (State::Halt, Action::Append(Fragment::user(&ctx.purpose)));
     }
+
     let prompt = resources
         .prompts
         .get("default")
         .map(|s| s.to_owned())
         .unwrap_or_default();
-    debug!("boot: injecting system prompt");
-    (State::Halt, Action::Append(Fragment::system(prompt)))
+    let content = if ctx.purpose.is_empty() {
+        debug!("boot: injecting system prompt");
+        prompt
+    } else {
+        debug!(purpose = ctx.purpose, "boot: injecting system + purpose");
+        format!("{}\n\nUser intent: {}", prompt, ctx.purpose)
+    };
+    (State::Halt, Action::Append(Fragment::system(content)))
 }
 
 fn halt() -> (State, Action) {

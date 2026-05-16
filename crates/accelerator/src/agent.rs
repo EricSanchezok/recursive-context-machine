@@ -95,6 +95,7 @@ impl Accelerator {
 async fn execute(acc: Accelerator) -> (Context, Resources, Environment) {
     match acc {
         Accelerator::Agent {
+            purpose,
             ctx,
             resources,
             env,
@@ -104,6 +105,13 @@ async fn execute(acc: Accelerator) -> (Context, Resources, Environment) {
             let mut ctx = *ctx;
             let mut env = *env;
             let mut resources = *resources;
+
+            // Stamp the purpose onto the context before machine starts,
+            // so every policy can read it during its decide cycle.
+            if !purpose.is_empty() && ctx.purpose.is_empty() {
+                ctx.purpose.clone_from(&purpose);
+            }
+
             let machine = Machine::new(policy);
             machine.run(&mut ctx, &mut env, &mut resources).await;
             (ctx, resources, env)

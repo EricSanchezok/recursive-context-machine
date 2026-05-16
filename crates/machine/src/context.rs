@@ -3,10 +3,12 @@ use crate::fragment::Fragment;
 /// The machine's context — an ordered sequence of fragments.
 ///
 /// Each fragment is assigned a unique `id` when stored.
+/// `purpose` is the steering intention set by the agent that created this context.
 #[derive(Clone, Debug)]
 pub struct Context {
     cells: Vec<Fragment>,
     next_id: u64,
+    pub purpose: String,
 }
 
 impl Default for Context {
@@ -21,6 +23,7 @@ impl Context {
         Self {
             cells: Vec::new(),
             next_id: 1,
+            purpose: String::new(),
         }
     }
 

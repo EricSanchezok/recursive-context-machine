@@ -3,10 +3,10 @@
 //! The [`accelerate`] function wires together a user intent, context,
 //! resources, environment, and policy, then runs the [`Machine`].
 
+pub mod agent;
 mod model;
 pub mod policy;
 pub mod tools;
-pub mod unit;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -14,29 +14,28 @@ use std::path::PathBuf;
 use machine::{Context, Environment, Machine, Policy, Resources};
 use tracing::debug;
 
+pub use agent::Accelerator;
 pub use model::{gpt4_1, nex_n1};
 pub use policy::Captain;
-pub use unit::Accelerator;
 
-/// Run the context machine with a user intent and optional overrides.
+/// Run the context machine with a purpose and optional overrides.
 ///
-/// When `ctx` is `None` or empty, a fresh context is created.
+/// Sets `ctx.purpose` so the policy can read the steering intention
+/// during its boot phase.
+///
 /// `resources` defaults to [`kit()`] (tools + prompts + GPT-4.1 model).
 /// `env` defaults to [`local()`] (cwd and root set to `.`).
 /// `policy` defaults to [`Captain`].
 pub async fn accelerate(
-    intent: impl Into<String> + std::fmt::Display,
+    purpose: impl Into<String>,
     ctx: Option<Context>,
     resources: Option<Resources>,
     env: Option<Environment>,
     policy: Option<Box<dyn Policy>>,
 ) -> Context {
     let mut ctx = ctx.unwrap_or_default();
-    debug!(
-        intent = %intent,
-        ctx_empty = ctx.is_empty(),
-        "accelerate"
-    );
+    let purpose = purpose.into();
+    ctx.purpose.clone_from(&purpose);
 
     let mut env = env.unwrap_or_else(local);
     let mut resources = resources.unwrap_or_else(kit);
