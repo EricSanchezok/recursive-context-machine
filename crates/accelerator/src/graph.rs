@@ -4,7 +4,7 @@ use machine::{Context, Environment, Policy, Resources};
 
 use crate::accelerator::{Accelerator, AcceleratorRef, InPin, NodeId, OutPin};
 use crate::assembly::{Assembly, Slot};
-use crate::flux::{Flux, FluxKind, FluxRef};
+use crate::flux::{Flux, FluxMode, FluxRef, IntoFluxMode};
 
 /// Build a multi-agent execution graph.
 pub struct Graph {
@@ -36,37 +36,10 @@ impl Graph {
         AcceleratorRef { id }
     }
 
-    pub fn weave_purpose(&mut self, arity: usize) -> FluxRef {
+    pub fn weave(&mut self, arity: usize, mode: impl IntoFluxMode) -> FluxRef {
         let id = self.fluxes.len();
         self.fluxes.push(Flux {
-            kind: FluxKind::Purpose,
-            arity,
-        });
-        FluxRef { id }
-    }
-
-    pub fn weave_ctx(&mut self, arity: usize) -> FluxRef {
-        let id = self.fluxes.len();
-        self.fluxes.push(Flux {
-            kind: FluxKind::Context,
-            arity,
-        });
-        FluxRef { id }
-    }
-
-    pub fn weave_env(&mut self, arity: usize) -> FluxRef {
-        let id = self.fluxes.len();
-        self.fluxes.push(Flux {
-            kind: FluxKind::Environment,
-            arity,
-        });
-        FluxRef { id }
-    }
-
-    pub fn weave_res(&mut self, arity: usize) -> FluxRef {
-        let id = self.fluxes.len();
-        self.fluxes.push(Flux {
-            kind: FluxKind::Resources,
+            mode: mode.into_mode(),
             arity,
         });
         FluxRef { id }
@@ -241,11 +214,11 @@ impl PinLike for OutPin {
             OutPin::Policy(_) => PinType::Policy,
             OutPin::Resources(_) => PinType::Resources,
             OutPin::Pulse(_) => PinType::Pulse,
-            OutPin::FluxOut(id) => match graph.fluxes[*id].kind {
-                FluxKind::Purpose => PinType::Purpose,
-                FluxKind::Context => PinType::Context,
-                FluxKind::Environment => PinType::Environment,
-                FluxKind::Resources => PinType::Resources,
+            OutPin::FluxOut(id) => match &graph.fluxes[*id].mode {
+                FluxMode::Purpose(_) => PinType::Purpose,
+                FluxMode::Context(_) => PinType::Context,
+                FluxMode::Environment(_) => PinType::Environment,
+                FluxMode::Resources(_) => PinType::Resources,
             },
         }
     }
@@ -260,11 +233,11 @@ impl PinLike for InPin {
             InPin::Policy(_) => PinType::Policy,
             InPin::Resources(_) => PinType::Resources,
             InPin::Pulse(_) => PinType::Pulse,
-            InPin::FluxSlot(id, _) => match graph.fluxes[*id].kind {
-                FluxKind::Purpose => PinType::Purpose,
-                FluxKind::Context => PinType::Context,
-                FluxKind::Environment => PinType::Environment,
-                FluxKind::Resources => PinType::Resources,
+            InPin::FluxSlot(id, _) => match &graph.fluxes[*id].mode {
+                FluxMode::Purpose(_) => PinType::Purpose,
+                FluxMode::Context(_) => PinType::Context,
+                FluxMode::Environment(_) => PinType::Environment,
+                FluxMode::Resources(_) => PinType::Resources,
             },
         }
     }

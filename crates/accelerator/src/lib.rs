@@ -11,7 +11,7 @@ pub mod tools;
 pub use accelerator::Accelerator;
 pub use accelerator::{AcceleratorRef, InPin, NodeId, OutPin};
 pub use assembly::Assembly;
-pub use flux::FluxRef;
+pub use flux::{ContextFlux, EnvFlux, FluxRef, IntoFluxMode, PurposeFlux, ResFlux};
 pub use graph::{BuildError, Graph};
 pub use model::{gpt4_1, nex_n1};
 pub use policy::Captain;
