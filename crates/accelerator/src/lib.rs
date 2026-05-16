@@ -6,42 +6,37 @@
 mod model;
 pub mod policy;
 pub mod tools;
+pub mod unit;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use machine::{Context, Environment, Fragment, Machine, Policy, Resources};
+use machine::{Context, Environment, Machine, Policy, Resources};
 use tracing::debug;
 
 pub use model::{gpt4_1, nex_n1};
 pub use policy::Captain;
+pub use unit::Accelerator;
 
 /// Run the context machine with a user intent and optional overrides.
 ///
-/// When `ctx` is `None` or empty, a fresh context is created and `intent`
-/// is appended as a user fragment. Existing contexts are used as-is.
+/// When `ctx` is `None` or empty, a fresh context is created.
 /// `resources` defaults to [`kit()`] (tools + prompts + GPT-4.1 model).
 /// `env` defaults to [`local()`] (cwd and root set to `.`).
 /// `policy` defaults to [`Captain`].
 pub async fn accelerate(
-    intent: impl Into<String>,
+    intent: impl Into<String> + std::fmt::Display,
     ctx: Option<Context>,
     resources: Option<Resources>,
     env: Option<Environment>,
     policy: Option<Box<dyn Policy>>,
 ) -> Context {
-    let intent = intent.into();
-
     let mut ctx = ctx.unwrap_or_default();
     debug!(
         intent = %intent,
         ctx_empty = ctx.is_empty(),
         "accelerate"
     );
-
-    if ctx.is_empty() {
-        ctx.append(Fragment::user(intent));
-    }
 
     let mut env = env.unwrap_or_else(local);
     let mut resources = resources.unwrap_or_else(kit);

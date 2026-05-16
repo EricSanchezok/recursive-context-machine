@@ -1,4 +1,5 @@
-use accelerator::accelerate;
+use accelerator::Accelerator;
+use accelerator::policy::Captain;
 use machine::{Content, Role};
 
 #[tokio::main]
@@ -13,7 +14,14 @@ async fn main() {
         std::process::exit(1);
     };
 
-    let ctx = accelerate(&intent, None, None, None, None).await;
+    let agent = Accelerator::agent(
+        &intent,
+        machine::Context::new(),
+        accelerator::kit(),
+        accelerator::local(),
+        Box::new(Captain::new()),
+    );
+    let (ctx, _, _) = agent.run().await;
 
     for frag in ctx.fragments() {
         match &frag.content {
