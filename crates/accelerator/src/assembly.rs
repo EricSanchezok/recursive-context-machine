@@ -6,8 +6,10 @@ use std::pin::Pin;
 use machine::{Context, Environment, Resources};
 use tracing::trace;
 
-use crate::accelerator::{Channel, NodeId, Output, Port, fire};
+use crate::accelerator::fire;
+use crate::accelerator::{Channel, NodeId, Port};
 use crate::flux::{ContextFlux, EnvFlux, Flux, FluxMode, PurposeFlux, ResFlux};
+use crate::state::State;
 
 /// A frozen multi-agent graph ready to run.
 pub struct Assembly {
@@ -32,19 +34,13 @@ pub(crate) struct Slot {
 }
 
 impl Slot {
-    pub fn new(
-        purpose: String,
-        ctx: Context,
-        env: Environment,
-        policy: Box<dyn machine::Policy>,
-        res: Resources,
-    ) -> Self {
+    pub fn new(state: State) -> Self {
         Self {
-            purpose,
-            ctx,
-            env,
-            policy: Some(policy),
-            res,
+            purpose: state.purpose,
+            ctx: state.ctx,
+            env: state.env,
+            policy: state.policy,
+            res: state.res,
             out_ctx: None,
             out_env: None,
             out_res: None,
@@ -53,7 +49,7 @@ impl Slot {
 }
 
 impl Assembly {
-    pub fn run(mut self) -> Pin<Box<dyn Future<Output = Vec<Output>> + Send>> {
+    pub fn run(mut self) -> Pin<Box<dyn Future<Output = Vec<State>> + Send>> {
         Box::pin(async move {
             let mut queue = VecDeque::new();
             for (id, count) in self.pending.iter().enumerate() {
@@ -65,18 +61,20 @@ impl Assembly {
             while let Some(id) = queue.pop_front() {
                 trace!(slot = id, "running");
 
-                let purpose = self.resolve_purpose(id);
-                let ctx = self.resolve_ctx(id);
-                let env = self.resolve_env(id);
-                let policy = self.slots[id].policy.take().expect("policy missing");
-                let res = self.resolve_res(id);
+                let state = State {
+                    purpose: self.resolve_purpose(id),
+                    ctx: self.resolve_ctx(id),
+                    env: self.resolve_env(id),
+                    policy: self.slots[id].policy.take(),
+                    res: self.resolve_res(id),
+                };
 
-                let output = fire(purpose, crate::state::State::new(ctx, env, policy, res)).await;
+                let output = fire(state).await;
 
                 let slot = &mut self.slots[id];
-                slot.out_ctx = Some(output.context);
-                slot.out_env = Some(output.environment);
-                slot.out_res = Some(output.resources);
+                slot.out_ctx = Some(output.ctx);
+                slot.out_env = Some(output.env);
+                slot.out_res = Some(output.res);
 
                 for next in &self.downstream[id] {
                     self.pending[*next] -= 1;
@@ -90,19 +88,20 @@ impl Assembly {
         })
     }
 
-    fn sink_outputs(&self) -> Vec<Output> {
+    fn sink_outputs(&self) -> Vec<State> {
         let mut sinks = Vec::new();
         for (id, slot) in self.slots.iter().enumerate() {
             if self.is_sink[id] {
                 let ctx = slot.out_ctx.clone().unwrap_or_default();
-                sinks.push(Output {
+                sinks.push(State {
                     purpose: ctx.purpose.clone(),
-                    context: ctx,
-                    environment: slot
+                    ctx,
+                    env: slot
                         .out_env
                         .clone()
                         .unwrap_or_else(|| Environment::new(".")),
-                    resources: slot.out_res.clone().unwrap_or_default(),
+                    res: slot.out_res.clone().unwrap_or_default(),
+                    policy: None,
                 });
             }
         }

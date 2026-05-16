@@ -1,52 +1,33 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use machine::{Context, Machine};
+use machine::Machine;
 
 use crate::state::State;
 
 /// A single agent — runs the Context Machine.
 pub struct Accelerator {
-    pub(crate) purpose: String,
     pub(crate) state: State,
 }
 
 impl Accelerator {
-    pub fn new(purpose: impl Into<String>, state: State) -> Self {
-        Self {
-            purpose: purpose.into(),
-            state,
-        }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 
-    pub fn run(self) -> Pin<Box<dyn Future<Output = Output> + Send>> {
-        Box::pin(async move { fire(self.purpose, self.state).await })
+    pub fn run(self) -> Pin<Box<dyn Future<Output = State> + Send>> {
+        Box::pin(async move { fire(self.state).await })
     }
 }
 
-/// The result of running an agent.
-pub struct Output {
-    pub purpose: String,
-    pub context: Context,
-    pub environment: machine::Environment,
-    pub resources: machine::Resources,
-}
-
-pub(crate) async fn fire(purpose: String, state: State) -> Output {
-    let mut ctx = state.ctx;
-    let mut env = state.env;
-    let mut res = state.res;
-
-    ctx.purpose = purpose;
-    let machine = Machine::new(state.policy);
-    machine.run(&mut ctx, &mut env, &mut res).await;
-    let purpose = std::mem::take(&mut ctx.purpose);
-    Output {
-        purpose,
-        context: ctx,
-        environment: env,
-        resources: res,
-    }
+pub(crate) async fn fire(mut state: State) -> State {
+    let policy = state.policy.take().expect("state already spent");
+    state.ctx.purpose.clone_from(&state.purpose);
+    let machine = Machine::new(policy);
+    machine
+        .run(&mut state.ctx, &mut state.env, &mut state.res)
+        .await;
+    state
 }
 
 // ── Graph wiring ──

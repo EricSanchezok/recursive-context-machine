@@ -14,14 +14,15 @@ async fn main() {
     };
 
     let mut graph = Graph::new();
-    let _agent = graph.spawn(intent, State::default());
+    let _agent = graph.spawn(State {
+        purpose: intent,
+        ..State::default()
+    });
 
-    let assembly = graph.build().unwrap();
-    let outputs = assembly.run().await;
-
+    let outputs = graph.build().unwrap().run().await;
     let output = outputs.into_iter().next().expect("no output");
 
-    for frag in output.context.fragments() {
+    for frag in output.ctx.fragments() {
         match &frag.content {
             machine::Content::Hitch {
                 message,

@@ -21,9 +21,9 @@ impl Graph {
         }
     }
 
-    pub fn spawn(&mut self, purpose: impl Into<String>, state: State) -> AcceleratorRef {
+    pub fn spawn(&mut self, state: State) -> AcceleratorRef {
         let id = self.accelerators.len();
-        self.accelerators.push(Accelerator::new(purpose, state));
+        self.accelerators.push(Accelerator::new(state));
         AcceleratorRef { id }
     }
 
@@ -87,15 +87,7 @@ impl Graph {
         let slots = self
             .accelerators
             .into_iter()
-            .map(|a| {
-                Slot::new(
-                    a.purpose,
-                    a.state.ctx,
-                    a.state.env,
-                    a.state.policy,
-                    a.state.res,
-                )
-            })
+            .map(|a| Slot::new(a.state))
             .collect();
 
         Ok(Assembly {
