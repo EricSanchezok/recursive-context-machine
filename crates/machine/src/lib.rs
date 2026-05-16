@@ -14,6 +14,7 @@
 pub(crate) mod completion;
 pub mod context;
 pub mod env;
+pub mod event;
 pub mod fragment;
 pub mod inbox;
 pub mod machine;

@@ -19,17 +19,40 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
         if let Content::ToolCall(tc) = &frag.content {
             debug!(tool = tc.name, args = %tc.arguments, "tool call");
 
+            tracing::debug!(
+                target: "hook",
+                event = "tool_call",
+                tool = tc.name,
+                arguments = %tc.arguments,
+            );
+
             result = Some(match resources.lookup(&tc.name) {
                 None => Fragment::hitch(format!("tool '{}' not found", tc.name)),
                 Some(tool) => {
                     let deadline = Duration::from_secs(tool.timeout().as_secs());
                     match timeout(deadline, tool.execute(tc.arguments.clone(), env)).await {
-                        Ok(Ok(result)) => {
-                            info!(tool = tc.name, result = result.content, "tool executed");
-                            Fragment::tool_result(tc.id.clone(), result.content)
+                        Ok(Ok(tool_result)) => {
+                            info!(
+                                tool = tc.name,
+                                result = tool_result.content,
+                                "tool executed"
+                            );
+                            tracing::debug!(
+                                target: "hook",
+                                event = "tool_result",
+                                tool = tc.name,
+                                result = %tool_result.content,
+                            );
+                            Fragment::tool_result(tc.id.clone(), tool_result.content)
                         }
                         Ok(Err(msg)) => {
                             warn!(tool = tc.name, msg, "tool failed");
+                            tracing::debug!(
+                                target: "hook",
+                                event = "tool_error",
+                                tool = tc.name,
+                                error = %msg,
+                            );
                             Fragment::hitch(format!("tool '{}' error: {}", tc.name, msg))
                         }
                         Err(_) => {
@@ -37,6 +60,12 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                                 tool = tc.name,
                                 timeout = tool.timeout().as_secs(),
                                 "tool timed out"
+                            );
+                            tracing::debug!(
+                                target: "hook",
+                                event = "tool_timeout",
+                                tool = tc.name,
+                                timeout = tool.timeout().as_secs(),
                             );
                             Fragment::hitch(format!(
                                 "tool '{}' timed out after {}s",

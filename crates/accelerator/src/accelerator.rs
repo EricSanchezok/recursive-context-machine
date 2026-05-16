@@ -54,7 +54,6 @@ impl AcceleratorRef {
     pub fn done(&self) -> Port {
         Port::Accel(self.id, Channel::Pulse)
     }
-
     pub fn purpose_in(&self) -> Port {
         Port::Accel(self.id, Channel::Purpose)
     }
@@ -96,17 +95,14 @@ impl Port {
     pub fn is_output(&self) -> bool {
         matches!(self, Port::Accel(_, _) | Port::FluxOut(_, _))
     }
-
     pub fn is_input(&self) -> bool {
         matches!(self, Port::Accel(_, _) | Port::FluxSlot(_, _, _))
     }
-
     pub fn channel(&self) -> Channel {
         match self {
             Port::Accel(_, ch) | Port::FluxOut(_, ch) | Port::FluxSlot(_, _, ch) => *ch,
         }
     }
-
     pub(crate) fn node_index(&self, num_accelerators: usize) -> usize {
         let offset = |id: usize| num_accelerators + id;
         match self {

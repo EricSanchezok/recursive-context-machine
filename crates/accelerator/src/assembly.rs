@@ -48,6 +48,8 @@ impl Assembly {
             while let Some(id) = queue.pop_front() {
                 trace!(slot = id, "running");
 
+                tracing::debug!(target: "hook", event = "slot_started", slot = id);
+
                 let mut s = self.slots[id].input.clone();
                 s.purpose = self.resolve_purpose(id);
                 s.ctx = self.resolve_ctx(id);
@@ -56,6 +58,8 @@ impl Assembly {
 
                 let output = fire(s).await;
                 self.slots[id].output = Some(output);
+
+                tracing::debug!(target: "hook", event = "slot_finished", slot = id);
 
                 for next in &self.downstream[id] {
                     self.pending[*next] -= 1;
