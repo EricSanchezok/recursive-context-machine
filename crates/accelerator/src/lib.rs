@@ -5,6 +5,7 @@
 //! `.then()` and `.and()` to build execution trees.
 
 pub mod agent;
+pub mod flux;
 mod model;
 pub mod policy;
 pub mod tools;

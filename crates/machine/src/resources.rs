@@ -10,8 +10,8 @@ use crate::tool::Tool;
 pub struct Resources {
     pub tools: HashMap<String, Box<dyn Tool>>,
     pub models: HashMap<String, Model>,
-    active_model: String,
-    active_tools: HashSet<String>,
+    pub active_model: String,
+    pub active_tools: HashSet<String>,
     pub prompts: HashMap<String, String>,
 }
 
