@@ -110,7 +110,7 @@ impl Graph {
                 purpose: a.purpose,
                 ctx: a.ctx,
                 env: a.env,
-                policy: a.policy,
+                policy: Some(a.policy),
                 res: a.res,
                 out_purpose: None,
                 out_ctx: None,

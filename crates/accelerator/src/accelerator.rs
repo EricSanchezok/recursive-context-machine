@@ -8,7 +8,7 @@ pub struct Accelerator {
     pub(crate) purpose: String,
     pub(crate) ctx: Context,
     pub(crate) env: Environment,
-    pub(crate) policy: Option<Box<dyn Policy>>,
+    pub(crate) policy: Box<dyn Policy>,
     pub(crate) res: Resources,
 }
 
@@ -24,7 +24,7 @@ impl Accelerator {
             purpose: purpose.into(),
             ctx,
             env,
-            policy: Some(policy),
+            policy,
             res,
         }
     }
@@ -32,16 +32,7 @@ impl Accelerator {
     pub fn run(
         self,
     ) -> Pin<Box<dyn Future<Output = (String, Context, Environment, Resources)> + Send>> {
-        Box::pin(async move {
-            fire(
-                self.purpose,
-                self.ctx,
-                self.env,
-                self.policy.expect("policy required"),
-                self.res,
-            )
-            .await
-        })
+        Box::pin(async move { fire(self.purpose, self.ctx, self.env, self.policy, self.res).await })
     }
 }
 
