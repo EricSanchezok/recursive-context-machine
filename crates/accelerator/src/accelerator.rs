@@ -37,48 +37,42 @@ pub struct AcceleratorRef {
 
 impl AcceleratorRef {
     pub fn purpose_out(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Purpose)
+        Port::Accel(self.id, Channel::Purpose)
     }
     pub fn ctx_out(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Context)
+        Port::Accel(self.id, Channel::Context)
     }
     pub fn env_out(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Environment)
+        Port::Accel(self.id, Channel::Environment)
     }
     pub fn policy_out(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Policy)
+        Port::Accel(self.id, Channel::Policy)
     }
     pub fn res_out(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Resources)
+        Port::Accel(self.id, Channel::Resources)
     }
     pub fn done(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Pulse)
+        Port::Accel(self.id, Channel::Pulse)
     }
 
     pub fn purpose_in(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Purpose)
+        Port::Accel(self.id, Channel::Purpose)
     }
     pub fn ctx_in(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Context)
+        Port::Accel(self.id, Channel::Context)
     }
     pub fn env_in(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Environment)
+        Port::Accel(self.id, Channel::Environment)
     }
     pub fn policy_in(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Policy)
+        Port::Accel(self.id, Channel::Policy)
     }
     pub fn res_in(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Resources)
+        Port::Accel(self.id, Channel::Resources)
     }
     pub fn trigger(&self) -> Port {
-        Port::Node(NodeId::Accelerator(self.id), Channel::Pulse)
+        Port::Accel(self.id, Channel::Pulse)
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum NodeId {
-    Accelerator(usize),
-    Flux(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -93,39 +87,30 @@ pub enum Channel {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Port {
-    Node(NodeId, Channel),
+    Accel(usize, Channel),
     FluxOut(usize, Channel),
     FluxSlot(usize, usize, Channel),
 }
 
 impl Port {
     pub fn is_output(&self) -> bool {
-        matches!(
-            self,
-            Port::Node(NodeId::Accelerator(_), _) | Port::FluxOut(_, _)
-        )
+        matches!(self, Port::Accel(_, _) | Port::FluxOut(_, _))
     }
 
     pub fn is_input(&self) -> bool {
-        matches!(
-            self,
-            Port::Node(NodeId::Accelerator(_), _) | Port::FluxSlot(_, _, _)
-        )
+        matches!(self, Port::Accel(_, _) | Port::FluxSlot(_, _, _))
     }
 
     pub fn channel(&self) -> Channel {
         match self {
-            Port::Node(_, ch) => *ch,
-            Port::FluxOut(_, ch) => *ch,
-            Port::FluxSlot(_, _, ch) => *ch,
+            Port::Accel(_, ch) | Port::FluxOut(_, ch) | Port::FluxSlot(_, _, ch) => *ch,
         }
     }
 
     pub(crate) fn node_index(&self, num_accelerators: usize) -> usize {
         let offset = |id: usize| num_accelerators + id;
         match self {
-            Port::Node(NodeId::Accelerator(id), _) => *id,
-            Port::Node(NodeId::Flux(id), _) => offset(*id),
+            Port::Accel(id, _) => *id,
             Port::FluxOut(id, _) => offset(*id),
             Port::FluxSlot(id, _, _) => offset(*id),
         }

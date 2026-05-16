@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::accelerator::{Accelerator, AcceleratorRef, Channel, NodeId, Port};
+use crate::accelerator::{Accelerator, AcceleratorRef, Channel, Port};
 use crate::assembly::{Assembly, Slot};
 use crate::flux::{Flux, FluxMode, FluxRef};
 use crate::state::State;
@@ -53,10 +53,7 @@ impl Graph {
         let mut pending = vec![0usize; num];
 
         for (from, to) in &self.wires {
-            if let (
-                Port::Node(NodeId::Accelerator(src), Channel::Pulse),
-                Port::Node(NodeId::Accelerator(dst), Channel::Pulse),
-            ) = (from, to)
+            if let (Port::Accel(src, Channel::Pulse), Port::Accel(dst, Channel::Pulse)) = (from, to)
             {
                 downstream[*src].push(*dst);
                 pending[*dst] += 1;
@@ -67,7 +64,7 @@ impl Graph {
         let mut flux_slot_wires = HashMap::new();
         for (from, to) in &self.wires {
             match to {
-                Port::Node(NodeId::Accelerator(id), ch) if *ch != Channel::Pulse => {
+                Port::Accel(id, ch) if *ch != Channel::Pulse => {
                     state_wires.insert(*to, *from);
                 }
                 Port::FluxSlot(flux_id, slot_idx, _) => {
@@ -79,7 +76,7 @@ impl Graph {
 
         let mut is_sink = vec![true; num];
         for (from, _) in &self.wires {
-            if let Port::Node(NodeId::Accelerator(id), Channel::Pulse) = from {
+            if let Port::Accel(id, Channel::Pulse) = from {
                 is_sink[*id] = false;
             }
         }

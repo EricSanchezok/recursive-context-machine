@@ -6,7 +6,7 @@ use std::pin::Pin;
 use machine::{Context, Environment, Resources};
 use tracing::trace;
 
-use crate::accelerator::{Channel, NodeId, Port, fire};
+use crate::accelerator::{Channel, Port, fire};
 use crate::flux::Flux;
 use crate::state::State;
 
@@ -80,7 +80,7 @@ impl Assembly {
     }
 
     fn resolve_purpose(&self, slot_id: usize) -> String {
-        let pin = Port::Node(NodeId::Accelerator(slot_id), Channel::Purpose);
+        let pin = Port::Accel(slot_id, Channel::Purpose);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_purpose(*from),
             None => self.slots[slot_id].input.purpose.clone(),
@@ -89,7 +89,7 @@ impl Assembly {
 
     fn read_purpose(&self, pin: Port) -> String {
         match pin {
-            Port::Node(NodeId::Accelerator(id), Channel::Purpose) => self.slots[id]
+            Port::Accel(id, Channel::Purpose) => self.slots[id]
                 .output
                 .as_ref()
                 .expect("upstream not ready")
@@ -107,7 +107,7 @@ impl Assembly {
     }
 
     fn resolve_ctx(&self, slot_id: usize) -> Context {
-        let pin = Port::Node(NodeId::Accelerator(slot_id), Channel::Context);
+        let pin = Port::Accel(slot_id, Channel::Context);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_ctx(*from),
             None => self.slots[slot_id].input.ctx.clone(),
@@ -116,7 +116,7 @@ impl Assembly {
 
     fn read_ctx(&self, pin: Port) -> Context {
         match pin {
-            Port::Node(NodeId::Accelerator(id), Channel::Context) => self.slots[id]
+            Port::Accel(id, Channel::Context) => self.slots[id]
                 .output
                 .as_ref()
                 .expect("upstream not ready")
@@ -134,7 +134,7 @@ impl Assembly {
     }
 
     fn resolve_env(&self, slot_id: usize) -> Environment {
-        let pin = Port::Node(NodeId::Accelerator(slot_id), Channel::Environment);
+        let pin = Port::Accel(slot_id, Channel::Environment);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_env(*from),
             None => self.slots[slot_id].input.env.clone(),
@@ -143,7 +143,7 @@ impl Assembly {
 
     fn read_env(&self, pin: Port) -> Environment {
         match pin {
-            Port::Node(NodeId::Accelerator(id), Channel::Environment) => self.slots[id]
+            Port::Accel(id, Channel::Environment) => self.slots[id]
                 .output
                 .as_ref()
                 .expect("upstream not ready")
@@ -161,7 +161,7 @@ impl Assembly {
     }
 
     fn resolve_res(&self, slot_id: usize) -> Resources {
-        let pin = Port::Node(NodeId::Accelerator(slot_id), Channel::Resources);
+        let pin = Port::Accel(slot_id, Channel::Resources);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_res(*from),
             None => self.slots[slot_id].input.res.clone(),
@@ -170,7 +170,7 @@ impl Assembly {
 
     fn read_res(&self, pin: Port) -> Resources {
         match pin {
-            Port::Node(NodeId::Accelerator(id), Channel::Resources) => self.slots[id]
+            Port::Accel(id, Channel::Resources) => self.slots[id]
                 .output
                 .as_ref()
                 .expect("upstream not ready")

@@ -10,7 +10,7 @@ pub mod state;
 pub mod tools;
 
 pub use accelerator::Accelerator;
-pub use accelerator::{AcceleratorRef, Channel, NodeId, Port};
+pub use accelerator::{AcceleratorRef, Channel, Port};
 pub use assembly::Assembly;
 pub use flux::{ContextFlux, EnvFlux, FluxMode, FluxRef, PurposeFlux, ResFlux};
 pub use graph::{BuildError, Graph};
