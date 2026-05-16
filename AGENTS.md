@@ -58,6 +58,9 @@ must follow these conventions. Do not override unless explicitly instructed by t
   topic. Do not accumulate uncommitted work.
 - Commits must be atomic per logical change. Do not squash unrelated
   refactors into a single commit.
+- Only commit changes you authored. Do not include, revert, or modify
+  other people's work (e.g., Cargo.lock updates, dependency bumps,
+  files created by other agents or users) unless explicitly instructed.
 
 ## Testing
 
