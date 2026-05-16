@@ -6,8 +6,7 @@ use std::pin::Pin;
 use machine::{Context, Environment, Resources};
 use tracing::trace;
 
-use crate::accelerator::fire;
-use crate::accelerator::{Channel, NodeId, Port};
+use crate::accelerator::{Channel, NodeId, Port, fire};
 use crate::flux::{ContextFlux, EnvFlux, Flux, FluxMode, PurposeFlux, ResFlux};
 use crate::state::State;
 
@@ -23,27 +22,15 @@ pub struct Assembly {
 }
 
 pub(crate) struct Slot {
-    pub purpose: String,
-    pub ctx: Context,
-    pub env: Environment,
-    pub policy: Option<Box<dyn machine::Policy>>,
-    pub res: Resources,
-    pub out_ctx: Option<Context>,
-    pub out_env: Option<Environment>,
-    pub out_res: Option<Resources>,
+    pub input: State,
+    pub output: Option<State>,
 }
 
 impl Slot {
     pub fn new(state: State) -> Self {
         Self {
-            purpose: state.purpose,
-            ctx: state.ctx,
-            env: state.env,
-            policy: state.policy,
-            res: state.res,
-            out_ctx: None,
-            out_env: None,
-            out_res: None,
+            input: state,
+            output: None,
         }
     }
 }
@@ -65,16 +52,13 @@ impl Assembly {
                     purpose: self.resolve_purpose(id),
                     ctx: self.resolve_ctx(id),
                     env: self.resolve_env(id),
-                    policy: self.slots[id].policy.take(),
+                    policy: self.slots[id].input.policy.take(),
                     res: self.resolve_res(id),
                 };
 
                 let output = fire(state).await;
 
-                let slot = &mut self.slots[id];
-                slot.out_ctx = Some(output.ctx);
-                slot.out_env = Some(output.env);
-                slot.out_res = Some(output.res);
+                self.slots[id].output = Some(output);
 
                 for next in &self.downstream[id] {
                     self.pending[*next] -= 1;
@@ -88,21 +72,17 @@ impl Assembly {
         })
     }
 
-    fn sink_outputs(&self) -> Vec<State> {
+    fn sink_outputs(&mut self) -> Vec<State> {
         let mut sinks = Vec::new();
-        for (id, slot) in self.slots.iter().enumerate() {
+        for (id, slot) in self.slots.iter_mut().enumerate() {
             if self.is_sink[id] {
-                let ctx = slot.out_ctx.clone().unwrap_or_default();
-                sinks.push(State {
-                    purpose: ctx.purpose.clone(),
-                    ctx,
-                    env: slot
-                        .out_env
-                        .clone()
-                        .unwrap_or_else(|| Environment::new(".")),
-                    res: slot.out_res.clone().unwrap_or_default(),
+                sinks.push(slot.output.take().unwrap_or_else(|| State {
+                    purpose: String::new(),
+                    ctx: Context::new(),
+                    env: Environment::new("."),
                     policy: None,
-                });
+                    res: Resources::new(),
+                }));
             }
         }
         sinks
@@ -112,14 +92,14 @@ impl Assembly {
         let pin = Port::Node(NodeId::Accelerator(slot_id), Channel::Purpose);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_purpose(*from),
-            None => self.slots[slot_id].purpose.clone(),
+            None => self.slots[slot_id].input.purpose.clone(),
         }
     }
 
     fn read_purpose(&self, pin: Port) -> String {
         match pin {
             Port::Node(NodeId::Accelerator(id), Channel::Purpose) => self.slots[id]
-                .out_ctx
+                .output
                 .as_ref()
                 .expect("upstream not ready")
                 .purpose
@@ -148,16 +128,17 @@ impl Assembly {
         let pin = Port::Node(NodeId::Accelerator(slot_id), Channel::Context);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_ctx(*from),
-            None => self.slots[slot_id].ctx.clone(),
+            None => self.slots[slot_id].input.ctx.clone(),
         }
     }
 
     fn read_ctx(&self, pin: Port) -> Context {
         match pin {
             Port::Node(NodeId::Accelerator(id), Channel::Context) => self.slots[id]
-                .out_ctx
+                .output
                 .as_ref()
                 .expect("upstream not ready")
+                .ctx
                 .clone(),
             Port::FluxOut(id, Channel::Context) => self.eval_flux_ctx(id),
             _ => panic!("type mismatch in ctx wire"),
@@ -197,16 +178,17 @@ impl Assembly {
         let pin = Port::Node(NodeId::Accelerator(slot_id), Channel::Environment);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_env(*from),
-            None => self.slots[slot_id].env.clone(),
+            None => self.slots[slot_id].input.env.clone(),
         }
     }
 
     fn read_env(&self, pin: Port) -> Environment {
         match pin {
             Port::Node(NodeId::Accelerator(id), Channel::Environment) => self.slots[id]
-                .out_env
+                .output
                 .as_ref()
                 .expect("upstream not ready")
+                .env
                 .clone(),
             Port::FluxOut(id, Channel::Environment) => self.eval_flux_env(id),
             _ => panic!("type mismatch in env wire"),
@@ -237,16 +219,17 @@ impl Assembly {
         let pin = Port::Node(NodeId::Accelerator(slot_id), Channel::Resources);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_res(*from),
-            None => self.slots[slot_id].res.clone(),
+            None => self.slots[slot_id].input.res.clone(),
         }
     }
 
     fn read_res(&self, pin: Port) -> Resources {
         match pin {
             Port::Node(NodeId::Accelerator(id), Channel::Resources) => self.slots[id]
-                .out_res
+                .output
                 .as_ref()
                 .expect("upstream not ready")
+                .res
                 .clone(),
             Port::FluxOut(id, Channel::Resources) => self.eval_flux_res(id),
             _ => panic!("type mismatch in res wire"),
