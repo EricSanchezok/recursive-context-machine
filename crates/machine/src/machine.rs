@@ -28,6 +28,9 @@ impl Machine {
         resources: &mut Resources,
     ) {
         let mut inbox = Inbox::new();
+        let mut round = 0u32;
+
+        hook!(event = "machine_start", purpose = %purpose.text);
 
         loop {
             let action = self
@@ -104,8 +107,10 @@ impl Machine {
                     return;
                 }
                 Action::Halt => {
+                    round += 1;
                     hook!(
                         event = "halt",
+                        round,
                         model = %resources.active_model().name,
                         messages = ctx.fragments().len(),
                         tools = resources.active_tools.len(),

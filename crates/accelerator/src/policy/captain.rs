@@ -2,6 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
+use machine::hook;
 use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources, Role};
 use tracing::{debug, trace, warn};
 
@@ -85,6 +86,9 @@ impl Policy for Captain {
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
             let phase = Phase::from_u8(self.phase.load(Ordering::Relaxed));
+            let phase_name = format!("{:?}", phase).to_lowercase();
+            hook!(event = "phase", phase = phase_name);
+
             let (next, action) = match phase {
                 Phase::Bootstrap => bootstrap(purpose, ctx, resources),
                 Phase::Inject => inject(purpose),
