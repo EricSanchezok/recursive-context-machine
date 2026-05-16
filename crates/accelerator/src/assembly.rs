@@ -48,16 +48,13 @@ impl Assembly {
             while let Some(id) = queue.pop_front() {
                 trace!(slot = id, "running");
 
-                let state = State {
-                    purpose: self.resolve_purpose(id),
-                    ctx: self.resolve_ctx(id),
-                    env: self.resolve_env(id),
-                    policy: self.slots[id].input.policy.take(),
-                    res: self.resolve_res(id),
-                };
+                let mut s = self.slots[id].input.clone();
+                s.purpose = self.resolve_purpose(id);
+                s.ctx = self.resolve_ctx(id);
+                s.env = self.resolve_env(id);
+                s.res = self.resolve_res(id);
 
-                let output = fire(state).await;
-
+                let output = fire(s).await;
                 self.slots[id].output = Some(output);
 
                 for next in &self.downstream[id] {
@@ -76,13 +73,7 @@ impl Assembly {
         let mut sinks = Vec::new();
         for (id, slot) in self.slots.iter_mut().enumerate() {
             if self.is_sink[id] {
-                sinks.push(slot.output.take().unwrap_or_else(|| State {
-                    purpose: String::new(),
-                    ctx: Context::new(),
-                    env: Environment::new("."),
-                    policy: None,
-                    res: Resources::new(),
-                }));
+                sinks.push(slot.output.take().unwrap_or_default());
             }
         }
         sinks

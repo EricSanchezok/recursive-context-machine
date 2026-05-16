@@ -21,9 +21,8 @@ impl Accelerator {
 }
 
 pub(crate) async fn fire(mut state: State) -> State {
-    let policy = state.policy.take().expect("state already spent");
     state.ctx.purpose.clone_from(&state.purpose);
-    let machine = Machine::new(policy);
+    let machine = Machine::new(state.policy.clone());
     machine
         .run(&mut state.ctx, &mut state.env, &mut state.res)
         .await;

@@ -1,33 +1,14 @@
 use machine::{Context, Environment, Policy, Resources};
 
 /// The runtime state of an agent — both input and output.
-///
-/// After [`crate::accelerator::fire()`], `policy` is consumed (set to `None`).
-/// A spent state cannot be re-fired but its `ctx`, `env`, and `res` carry the results.
+/// Fully cloneable: policy is cloned before being consumed by Machine.
+#[derive(Clone)]
 pub struct State {
     pub purpose: String,
     pub ctx: Context,
     pub env: Environment,
-    pub policy: Option<Box<dyn Policy>>,
+    pub policy: Box<dyn Policy>,
     pub res: Resources,
-}
-
-impl State {
-    pub fn new(
-        purpose: impl Into<String>,
-        ctx: Context,
-        env: Environment,
-        policy: Box<dyn Policy>,
-        res: Resources,
-    ) -> Self {
-        Self {
-            purpose: purpose.into(),
-            ctx,
-            env,
-            policy: Some(policy),
-            res,
-        }
-    }
 }
 
 impl Default for State {
@@ -36,7 +17,7 @@ impl Default for State {
             purpose: String::new(),
             ctx: Context::new(),
             env: crate::local(),
-            policy: Some(Box::new(crate::policy::Captain::new())),
+            policy: Box::new(crate::policy::Captain::new()),
             res: crate::kit(),
         }
     }

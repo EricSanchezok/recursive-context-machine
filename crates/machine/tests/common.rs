@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A policy that replays a fixed sequence of actions, then Done.
+#[derive(Clone)]
 pub struct SeqPolicy {
     actions: Vec<Action>,
     pos: AtomicUsize,
@@ -19,6 +20,11 @@ impl SeqPolicy {
 }
 
 impl Policy for SeqPolicy {
+    fn clone_box(&self) -> Box<dyn Policy> {
+        Box::new(self.clone())
+    }
+
+    fn decide<'a>(
     fn decide<'a>(
         &'a self,
         _ctx: &'a Context,

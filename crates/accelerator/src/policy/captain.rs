@@ -12,6 +12,14 @@ pub struct Captain {
     state: AtomicU8,
 }
 
+impl Clone for Captain {
+    fn clone(&self) -> Self {
+        Self {
+            state: AtomicU8::new(self.state.load(Ordering::Relaxed)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 enum State {
@@ -51,6 +59,10 @@ impl Captain {
 }
 
 impl Policy for Captain {
+    fn clone_box(&self) -> Box<dyn Policy> {
+        Box::new(self.clone())
+    }
+
     fn decide<'a>(
         &'a self,
         ctx: &'a Context,

@@ -52,6 +52,7 @@ pub enum Action {
 /// Observes the current context, environment, resources, and inbox,
 /// and decides the next [`Action`]. This is the primary extension point.
 pub trait Policy: Send + Sync {
+    fn clone_box(&self) -> Box<dyn Policy>;
     fn decide<'a>(
         &'a self,
         ctx: &'a Context,
@@ -59,4 +60,10 @@ pub trait Policy: Send + Sync {
         resources: &'a Resources,
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>>;
+}
+
+impl Clone for Box<dyn Policy> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
 }
