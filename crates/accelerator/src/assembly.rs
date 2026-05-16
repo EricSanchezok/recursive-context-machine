@@ -7,7 +7,7 @@ use machine::{Context, Environment, Resources};
 use tracing::trace;
 
 use crate::accelerator::{Channel, NodeId, Port, fire};
-use crate::flux::{ContextFlux, EnvFlux, Flux, FluxMode, PurposeFlux, ResFlux};
+use crate::flux::Flux;
 use crate::state::State;
 
 /// A frozen multi-agent graph ready to run.
@@ -102,17 +102,10 @@ impl Assembly {
 
     fn eval_flux_purpose(&self, flux_id: usize) -> String {
         let flux = &self.fluxes[flux_id];
-        match &flux.mode {
-            FluxMode::Purpose(PurposeFlux::Concat) => {
-                let mut parts = Vec::with_capacity(flux.arity);
-                for slot in 0..flux.arity {
-                    let from = self.flux_slot_wires[&(flux_id, slot)];
-                    parts.push(self.read_purpose(from));
-                }
-                parts.concat()
-            }
-            _ => panic!("unexpected flux mode for purpose"),
-        }
+        crate::flux::eval_flux_purpose(flux, |slot| {
+            let from = self.flux_slot_wires[&(flux_id, slot)];
+            self.read_purpose(from)
+        })
     }
 
     fn resolve_ctx(&self, slot_id: usize) -> Context {
@@ -138,31 +131,10 @@ impl Assembly {
 
     fn eval_flux_ctx(&self, flux_id: usize) -> Context {
         let flux = &self.fluxes[flux_id];
-        match &flux.mode {
-            FluxMode::Context(ContextFlux::Append) => {
-                let mut result = Context::new();
-                for slot in 0..flux.arity {
-                    let from = self.flux_slot_wires[&(flux_id, slot)];
-                    let ctx = self.read_ctx(from);
-                    for frag in ctx.fragments().iter() {
-                        result.append(frag.clone());
-                    }
-                }
-                result
-            }
-            FluxMode::Context(ContextFlux::Replace) => {
-                let mut result = Context::new();
-                for slot in 0..flux.arity {
-                    let from = self.flux_slot_wires[&(flux_id, slot)];
-                    let ctx = self.read_ctx(from);
-                    if !ctx.is_empty() {
-                        result = ctx;
-                    }
-                }
-                result
-            }
-            _ => panic!("unexpected flux mode for context"),
-        }
+        crate::flux::eval_flux_ctx(flux, |slot| {
+            let from = self.flux_slot_wires[&(flux_id, slot)];
+            self.read_ctx(from)
+        })
     }
 
     fn resolve_env(&self, slot_id: usize) -> Environment {
@@ -188,22 +160,10 @@ impl Assembly {
 
     fn eval_flux_env(&self, flux_id: usize) -> Environment {
         let flux = &self.fluxes[flux_id];
-        match &flux.mode {
-            FluxMode::Environment(EnvFlux::Overlay) => {
-                let mut result = Environment::new(".");
-                for slot in 0..flux.arity {
-                    let from = self.flux_slot_wires[&(flux_id, slot)];
-                    let env = self.read_env(from);
-                    result.cwd.clone_from(&env.cwd);
-                    for (key, value) in &env.vars {
-                        result.vars.insert(key.clone(), value.clone());
-                    }
-                    result.root.clone_from(&env.root);
-                }
-                result
-            }
-            _ => panic!("unexpected flux mode for environment"),
-        }
+        crate::flux::eval_flux_env(flux, |slot| {
+            let from = self.flux_slot_wires[&(flux_id, slot)];
+            self.read_env(from)
+        })
     }
 
     fn resolve_res(&self, slot_id: usize) -> Resources {
@@ -229,34 +189,9 @@ impl Assembly {
 
     fn eval_flux_res(&self, flux_id: usize) -> Resources {
         let flux = &self.fluxes[flux_id];
-        match &flux.mode {
-            FluxMode::Resources(ResFlux::Merge) => {
-                let mut result = Resources::new();
-                for slot in 0..flux.arity {
-                    let from = self.flux_slot_wires[&(flux_id, slot)];
-                    let res = self.read_res(from);
-                    for (name, model) in &res.models {
-                        result
-                            .models
-                            .entry(name.clone())
-                            .or_insert_with(|| model.clone());
-                    }
-                    if result.active_model.is_empty() && !res.active_model.is_empty() {
-                        result.active_model.clone_from(&res.active_model);
-                    }
-                    for name in &res.active_tools {
-                        result.active_tools.insert(name.clone());
-                    }
-                    for (name, prompt) in &res.prompts {
-                        result
-                            .prompts
-                            .entry(name.clone())
-                            .or_insert_with(|| prompt.clone());
-                    }
-                }
-                result
-            }
-            _ => panic!("unexpected flux mode for resources"),
-        }
+        crate::flux::eval_flux_res(flux, |slot| {
+            let from = self.flux_slot_wires[&(flux_id, slot)];
+            self.read_res(from)
+        })
     }
 }
