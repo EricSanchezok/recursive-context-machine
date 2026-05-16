@@ -95,17 +95,15 @@ impl Assembly {
                 .expect("upstream not ready")
                 .purpose
                 .clone(),
-            Port::FluxOut(id, Channel::Purpose) => self.eval_flux_purpose(id),
+            Port::FluxOut(id, Channel::Purpose) => {
+                let flux = &self.fluxes[id];
+                crate::flux::apply_purpose(flux, |slot| {
+                    let from = self.flux_slot_wires[&(id, slot)];
+                    self.read_purpose(from)
+                })
+            }
             _ => panic!("type mismatch in purpose wire"),
         }
-    }
-
-    fn eval_flux_purpose(&self, flux_id: usize) -> String {
-        let flux = &self.fluxes[flux_id];
-        crate::flux::eval_flux_purpose(flux, |slot| {
-            let from = self.flux_slot_wires[&(flux_id, slot)];
-            self.read_purpose(from)
-        })
     }
 
     fn resolve_ctx(&self, slot_id: usize) -> Context {
@@ -124,17 +122,15 @@ impl Assembly {
                 .expect("upstream not ready")
                 .ctx
                 .clone(),
-            Port::FluxOut(id, Channel::Context) => self.eval_flux_ctx(id),
+            Port::FluxOut(id, Channel::Context) => {
+                let flux = &self.fluxes[id];
+                crate::flux::apply_ctx(flux, |slot| {
+                    let from = self.flux_slot_wires[&(id, slot)];
+                    self.read_ctx(from)
+                })
+            }
             _ => panic!("type mismatch in ctx wire"),
         }
-    }
-
-    fn eval_flux_ctx(&self, flux_id: usize) -> Context {
-        let flux = &self.fluxes[flux_id];
-        crate::flux::eval_flux_ctx(flux, |slot| {
-            let from = self.flux_slot_wires[&(flux_id, slot)];
-            self.read_ctx(from)
-        })
     }
 
     fn resolve_env(&self, slot_id: usize) -> Environment {
@@ -153,17 +149,15 @@ impl Assembly {
                 .expect("upstream not ready")
                 .env
                 .clone(),
-            Port::FluxOut(id, Channel::Environment) => self.eval_flux_env(id),
+            Port::FluxOut(id, Channel::Environment) => {
+                let flux = &self.fluxes[id];
+                crate::flux::apply_env(flux, |slot| {
+                    let from = self.flux_slot_wires[&(id, slot)];
+                    self.read_env(from)
+                })
+            }
             _ => panic!("type mismatch in env wire"),
         }
-    }
-
-    fn eval_flux_env(&self, flux_id: usize) -> Environment {
-        let flux = &self.fluxes[flux_id];
-        crate::flux::eval_flux_env(flux, |slot| {
-            let from = self.flux_slot_wires[&(flux_id, slot)];
-            self.read_env(from)
-        })
     }
 
     fn resolve_res(&self, slot_id: usize) -> Resources {
@@ -182,16 +176,14 @@ impl Assembly {
                 .expect("upstream not ready")
                 .res
                 .clone(),
-            Port::FluxOut(id, Channel::Resources) => self.eval_flux_res(id),
+            Port::FluxOut(id, Channel::Resources) => {
+                let flux = &self.fluxes[id];
+                crate::flux::apply_res(flux, |slot| {
+                    let from = self.flux_slot_wires[&(id, slot)];
+                    self.read_res(from)
+                })
+            }
             _ => panic!("type mismatch in res wire"),
         }
-    }
-
-    fn eval_flux_res(&self, flux_id: usize) -> Resources {
-        let flux = &self.fluxes[flux_id];
-        crate::flux::eval_flux_res(flux, |slot| {
-            let from = self.flux_slot_wires[&(flux_id, slot)];
-            self.read_res(from)
-        })
     }
 }

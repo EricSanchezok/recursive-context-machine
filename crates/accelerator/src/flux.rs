@@ -67,7 +67,7 @@ pub(crate) struct Flux {
 
 // ── Evaluation — pure functions called by Assembly ──
 
-pub(crate) fn eval_flux_purpose(flux: &Flux, mut read: impl FnMut(usize) -> String) -> String {
+pub(crate) fn apply_purpose(flux: &Flux, mut read: impl FnMut(usize) -> String) -> String {
     match &flux.mode {
         FluxMode::Purpose(PurposeFlux::Concat) => {
             let mut parts = Vec::with_capacity(flux.arity);
@@ -80,7 +80,7 @@ pub(crate) fn eval_flux_purpose(flux: &Flux, mut read: impl FnMut(usize) -> Stri
     }
 }
 
-pub(crate) fn eval_flux_ctx(flux: &Flux, mut read: impl FnMut(usize) -> Context) -> Context {
+pub(crate) fn apply_ctx(flux: &Flux, mut read: impl FnMut(usize) -> Context) -> Context {
     match &flux.mode {
         FluxMode::Context(ContextFlux::Append) => {
             let mut result = Context::new();
@@ -106,10 +106,7 @@ pub(crate) fn eval_flux_ctx(flux: &Flux, mut read: impl FnMut(usize) -> Context)
     }
 }
 
-pub(crate) fn eval_flux_env(
-    flux: &Flux,
-    mut read: impl FnMut(usize) -> Environment,
-) -> Environment {
+pub(crate) fn apply_env(flux: &Flux, mut read: impl FnMut(usize) -> Environment) -> Environment {
     match &flux.mode {
         FluxMode::Environment(EnvFlux::Overlay) => {
             let mut result = Environment::new(".");
@@ -127,7 +124,7 @@ pub(crate) fn eval_flux_env(
     }
 }
 
-pub(crate) fn eval_flux_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -> Resources {
+pub(crate) fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -> Resources {
     match &flux.mode {
         FluxMode::Resources(ResFlux::Merge) => {
             let mut result = Resources::new();
