@@ -118,7 +118,6 @@ impl Graph {
                 out_ctx: None,
                 out_env: None,
                 out_res: None,
-                done: false,
             })
             .collect();
 

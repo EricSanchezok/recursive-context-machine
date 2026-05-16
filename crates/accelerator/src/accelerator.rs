@@ -27,7 +27,6 @@ pub(crate) struct CoreRuntime {
     pub out_ctx: Option<Context>,
     pub out_env: Option<Environment>,
     pub out_res: Option<Resources>,
-    pub done: bool,
 }
 
 impl Accelerator {
@@ -64,7 +63,6 @@ impl Accelerator {
                 core.out_ctx = Some(ctx);
                 core.out_env = Some(env);
                 core.out_res = Some(res);
-                core.done = true;
 
                 for next in &self.downstream[id] {
                     self.pending[*next] -= 1;
