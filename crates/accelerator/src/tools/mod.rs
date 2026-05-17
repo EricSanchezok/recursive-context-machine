@@ -4,11 +4,13 @@
 //! Tools are registered into [`Resources`] before the machine runs.
 
 mod add;
+mod fs;
 mod shell;
 mod wait;
 // mod find; // TODO: find.rs missing
 
 pub use add::AddTool;
+pub use fs::FsTool;
 pub use shell::ShellTool;
 pub use wait::WaitTool;
 // pub use find::FindTool;
@@ -17,6 +19,7 @@ pub use wait::WaitTool;
 pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
     vec![
         std::sync::Arc::new(AddTool),
+        std::sync::Arc::new(FsTool),
         std::sync::Arc::new(ShellTool),
         std::sync::Arc::new(WaitTool),
     ]
