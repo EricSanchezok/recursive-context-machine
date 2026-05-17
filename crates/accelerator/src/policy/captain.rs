@@ -7,18 +7,6 @@ use tracing::{trace, warn};
 
 use super::phases::{BootstrapAgent, InjectEnv, InjectPurpose};
 
-/// Captain — the default steering policy.
-///
-/// Core state machine: **Halt → Drain → [loop] → Done**
-///
-/// - **Halt**: trigger the LLM.
-/// - **Drain**: take inbox into context. If any [`Role::Tool`] fragments were
-///   taken, halt again so the LLM can see results and call more tools.
-/// - **Done**: final answer is in context.
-///
-/// Preparation (pre phases):
-/// - [`BootstrapAgent`]: ensure the `tag == "agent"` system prompt is present.
-/// - [`InjectPurpose`]: append the user's purpose as a user fragment.
 pub struct Captain {
     state: AtomicU8,
     tool_seen: AtomicBool,
@@ -76,9 +64,12 @@ impl Policy for Captain {
     fn pre(&self) -> Vec<Box<dyn Phase>> {
         vec![
             Box::new(BootstrapAgent::new("captain")),
-            Box::new(InjectEnv),
             Box::new(InjectPurpose),
         ]
+    }
+
+    fn pre_halt(&self) -> Vec<Box<dyn Phase>> {
+        vec![Box::new(InjectEnv)]
     }
 
     fn decide<'a>(

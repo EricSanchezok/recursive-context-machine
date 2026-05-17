@@ -3,7 +3,6 @@ use machine::{
     Action, Context, Environment, Fragment, Phase, PhaseOutcome, Purpose, Resources, Role,
 };
 
-/// Append the user's purpose as a [`Role::User`] fragment with tag `"purpose"`.
 pub struct InjectPurpose;
 
 impl Phase for InjectPurpose {
@@ -40,7 +39,6 @@ impl Phase for InjectPurpose {
     }
 }
 
-/// Inject an environment snapshot as a system fragment with tag `"env"`.
 pub struct InjectEnv;
 
 impl Phase for InjectEnv {
@@ -59,22 +57,26 @@ impl Phase for InjectEnv {
         env: &Environment,
         _resources: &Resources,
     ) -> PhaseOutcome {
-        if ctx
-            .fragments()
-            .iter()
-            .any(|f| f.role == Role::System && f.tag == "env")
-        {
-            return PhaseOutcome::Done;
-        }
-
         let now = Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
-        let text = format!(
+        let fragment = Fragment::system(format!(
             "cwd: {}\nplatform: {}\ntime: {}",
             env.cwd.display(),
             env.platform,
             now,
-        );
+        ))
+        .with_tag("env");
 
-        PhaseOutcome::Action(Action::Append(Fragment::system(text).with_tag("env")))
+        if let Some(existing) = ctx
+            .fragments()
+            .iter()
+            .find(|f| f.role == Role::System && f.tag == "env")
+        {
+            PhaseOutcome::Action(Action::Replace {
+                id: existing.id(),
+                fragment,
+            })
+        } else {
+            PhaseOutcome::Action(Action::Append(fragment))
+        }
     }
 }

@@ -3,13 +3,12 @@ use crate::env::Environment;
 use crate::event::preview;
 use crate::hook;
 use crate::inbox::Inbox;
-use crate::policy::{Action, PhaseOutcome, Policy};
+use crate::policy::{Action, Phase, PhaseOutcome, Policy};
 use crate::purpose::Purpose;
 use crate::reactor;
 use crate::resources::Resources;
-use tracing::trace;
+use tracing::{trace, warn};
 
-/// Machine — the composition of a Policy and a Reactor.
 pub struct Machine {
     policy: Box<dyn Policy>,
 }
@@ -19,9 +18,6 @@ impl Machine {
         Self { policy }
     }
 
-    /// Run the machine until [`Action::Done`].
-    ///
-    /// Execution order: **pre phases → core policy loop → post phases**.
     pub async fn run(
         &self,
         purpose: &Purpose,
@@ -34,24 +30,21 @@ impl Machine {
 
         hook!(event = "machine_start", purpose = %purpose.text);
 
-        // ── Pre phases ──
-        for phase in self.policy.pre() {
-            loop {
-                match phase.decide(purpose, ctx, env, resources) {
-                    PhaseOutcome::Action(action) => {
-                        if self
-                            .apply(action, ctx, env, resources, &mut inbox, &mut round)
-                            .await
-                        {
-                            return;
-                        }
-                    }
-                    PhaseOutcome::Done => break,
-                }
-            }
+        if self
+            .run_phases(
+                purpose,
+                ctx,
+                env,
+                resources,
+                &mut inbox,
+                &mut round,
+                self.policy.pre(),
+            )
+            .await
+        {
+            return;
         }
 
-        // ── Core loop ──
         loop {
             let action = self
                 .policy
@@ -60,35 +53,112 @@ impl Machine {
             trace!(?action, "machine step");
 
             if self
-                .apply(action, ctx, env, resources, &mut inbox, &mut round)
+                .apply(action, purpose, ctx, env, resources, &mut inbox, &mut round)
                 .await
             {
                 break;
             }
         }
 
-        // ── Post phases ──
-        for phase in self.policy.post() {
+        self.run_phases(
+            purpose,
+            ctx,
+            env,
+            resources,
+            &mut inbox,
+            &mut round,
+            self.policy.post(),
+        )
+        .await;
+    }
+
+    async fn run_phases(
+        &self,
+        purpose: &Purpose,
+        ctx: &mut Context,
+        env: &mut Environment,
+        resources: &mut Resources,
+        inbox: &mut Inbox,
+        round: &mut u32,
+        phases: Vec<Box<dyn Phase>>,
+    ) -> bool {
+        for phase in phases {
             loop {
                 match phase.decide(purpose, ctx, env, resources) {
+                    PhaseOutcome::Action(Action::Halt) => {
+                        warn!(phase = phase.name(), "phase produced Halt, ignoring");
+                    }
                     PhaseOutcome::Action(action) => {
                         if self
-                            .apply(action, ctx, env, resources, &mut inbox, &mut round)
+                            .apply_action(action, ctx, env, resources, inbox, round)
                             .await
                         {
-                            return;
+                            return true;
                         }
                     }
                     PhaseOutcome::Done => break,
                 }
             }
         }
+        false
     }
 
-    /// Apply a single [`Action`] to the runtime state.
-    ///
-    /// Returns `true` if the action was [`Action::Done`] and the machine should stop.
     async fn apply(
+        &self,
+        action: Action,
+        purpose: &Purpose,
+        ctx: &mut Context,
+        env: &mut Environment,
+        resources: &mut Resources,
+        inbox: &mut Inbox,
+        round: &mut u32,
+    ) -> bool {
+        match action {
+            Action::Halt => {
+                if self
+                    .run_phases(
+                        purpose,
+                        ctx,
+                        env,
+                        resources,
+                        inbox,
+                        round,
+                        self.policy.pre_halt(),
+                    )
+                    .await
+                {
+                    return true;
+                }
+
+                *round += 1;
+                hook!(
+                    event = "halt",
+                    round = *round,
+                    model = %resources.active_model().name,
+                    messages = ctx.fragments().len(),
+                    tools = resources.active_tools.len(),
+                );
+                reactor::react(ctx, env, resources, inbox).await;
+
+                self.run_phases(
+                    purpose,
+                    ctx,
+                    env,
+                    resources,
+                    inbox,
+                    round,
+                    self.policy.post_halt(),
+                )
+                .await
+            }
+            other => {
+                self.apply_action(other, ctx, env, resources, inbox, round)
+                    .await
+            }
+        }
+    }
+
+    async fn apply_action(
         &self,
         action: Action,
         ctx: &mut Context,
@@ -165,15 +235,7 @@ impl Machine {
                 return true;
             }
             Action::Halt => {
-                *round += 1;
-                hook!(
-                    event = "halt",
-                    round = *round,
-                    model = %resources.active_model().name,
-                    messages = ctx.fragments().len(),
-                    tools = resources.active_tools.len(),
-                );
-                reactor::react(ctx, env, resources, inbox).await;
+                warn!("apply_action received Halt, this should be handled by apply()");
             }
         }
         false
