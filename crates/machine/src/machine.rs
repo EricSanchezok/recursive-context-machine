@@ -31,15 +31,7 @@ impl Machine {
         hook!(event = "machine_start", purpose = %purpose.text);
 
         if self
-            .run_phases(
-                purpose,
-                ctx,
-                env,
-                resources,
-                &mut inbox,
-                &mut round,
-                self.policy.pre(),
-            )
+            .run_phases(purpose, ctx, env, resources, &mut inbox, self.policy.pre())
             .await
         {
             return;
@@ -60,16 +52,8 @@ impl Machine {
             }
         }
 
-        self.run_phases(
-            purpose,
-            ctx,
-            env,
-            resources,
-            &mut inbox,
-            &mut round,
-            self.policy.post(),
-        )
-        .await;
+        self.run_phases(purpose, ctx, env, resources, &mut inbox, self.policy.post())
+            .await;
     }
 
     async fn run_phases(
@@ -79,7 +63,6 @@ impl Machine {
         env: &mut Environment,
         resources: &mut Resources,
         inbox: &mut Inbox,
-        round: &mut u32,
         phases: Vec<Box<dyn Phase>>,
     ) -> bool {
         for phase in phases {
@@ -89,10 +72,7 @@ impl Machine {
                         warn!(phase = phase.name(), "phase produced Halt, ignoring");
                     }
                     PhaseOutcome::Action(action) => {
-                        if self
-                            .apply_action(action, ctx, env, resources, inbox, round)
-                            .await
-                        {
+                        if self.apply_action(action, ctx, resources, inbox).await {
                             return true;
                         }
                     }
@@ -116,15 +96,7 @@ impl Machine {
         match action {
             Action::Halt => {
                 if self
-                    .run_phases(
-                        purpose,
-                        ctx,
-                        env,
-                        resources,
-                        inbox,
-                        round,
-                        self.policy.pre_halt(),
-                    )
+                    .run_phases(purpose, ctx, env, resources, inbox, self.policy.pre_halt())
                     .await
                 {
                     return true;
@@ -140,21 +112,10 @@ impl Machine {
                 );
                 reactor::react(ctx, env, resources, inbox).await;
 
-                self.run_phases(
-                    purpose,
-                    ctx,
-                    env,
-                    resources,
-                    inbox,
-                    round,
-                    self.policy.post_halt(),
-                )
-                .await
-            }
-            other => {
-                self.apply_action(other, ctx, env, resources, inbox, round)
+                self.run_phases(purpose, ctx, env, resources, inbox, self.policy.post_halt())
                     .await
             }
+            other => self.apply_action(other, ctx, resources, inbox).await,
         }
     }
 
@@ -162,10 +123,8 @@ impl Machine {
         &self,
         action: Action,
         ctx: &mut Context,
-        env: &mut Environment,
         resources: &mut Resources,
         inbox: &mut Inbox,
-        round: &mut u32,
     ) -> bool {
         match action {
             Action::Append(frag) => {
