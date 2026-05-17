@@ -69,9 +69,7 @@ impl Policy for Captain {
     }
 
     fn pre_halt(&self) -> Vec<Box<dyn Phase>> {
-        vec![
-            Box::new(InjectEnv),
-        ]
+        vec![Box::new(InjectEnv)]
     }
 
     fn decide<'a>(
