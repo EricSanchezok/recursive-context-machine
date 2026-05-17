@@ -58,25 +58,27 @@ impl Phase for InjectEnv {
         _resources: &Resources,
     ) -> PhaseOutcome {
         let now = Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
-        let fragment = Fragment::system(format!(
+        let text = format!(
             "cwd: {}\nplatform: {}\ntime: {}",
             env.cwd.display(),
             env.platform,
             now,
-        ))
-        .with_tag("env");
+        );
 
         if let Some(existing) = ctx
             .fragments()
             .iter()
             .find(|f| f.role == Role::System && f.tag == "env")
         {
-            PhaseOutcome::Action(Action::Replace {
+            if existing.as_text() == Some(&text) {
+                return PhaseOutcome::Done;
+            }
+            return PhaseOutcome::Action(Action::Replace {
                 id: existing.id(),
-                fragment,
-            })
-        } else {
-            PhaseOutcome::Action(Action::Append(fragment))
+                fragment: Fragment::system(text).with_tag("env"),
+            });
         }
+
+        PhaseOutcome::Action(Action::Append(Fragment::system(text).with_tag("env")))
     }
 }
