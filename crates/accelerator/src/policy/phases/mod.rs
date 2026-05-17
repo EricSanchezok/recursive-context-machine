@@ -2,4 +2,4 @@ mod bootstrap;
 mod inject;
 
 pub use bootstrap::BootstrapAgent;
-pub use inject::InjectPurpose;
+pub use inject::{InjectEnv, InjectPurpose};

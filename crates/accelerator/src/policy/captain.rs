@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use machine::{Action, Context, Environment, Inbox, Phase, Policy, Purpose, Resources, Role};
 use tracing::{trace, warn};
 
-use super::phases::{BootstrapAgent, InjectPurpose};
+use super::phases::{BootstrapAgent, InjectEnv, InjectPurpose};
 
 /// Captain — the default steering policy.
 ///
@@ -76,6 +76,7 @@ impl Policy for Captain {
     fn pre(&self) -> Vec<Box<dyn Phase>> {
         vec![
             Box::new(BootstrapAgent::new("captain")),
+            Box::new(InjectEnv),
             Box::new(InjectPurpose),
         ]
     }
