@@ -199,10 +199,11 @@ pub(crate) fn run_animation(
 
 fn reserve_animation_rows() -> u16 {
     let (_, before_y) = position().unwrap_or((0, 0));
-    println!();
-    println!();
-    let (_, after_y) = position().unwrap_or((0, before_y.saturating_add(2)));
-    after_y.saturating_sub(2)
+    for _ in 0..4 {
+        println!();
+    }
+    let (_, after_y) = position().unwrap_or((0, before_y.saturating_add(4)));
+    after_y.saturating_sub(4)
 }
 
 fn finish_animation(state: &mut State, step: Duration) {
@@ -212,7 +213,7 @@ fn finish_animation(state: &mut State, step: Duration) {
     state.status = "done".into();
     render_frame(state);
     thread::sleep(Duration::from_millis(250));
-    execute!(std::io::stdout(), Show, MoveTo(0, state.origin_y + 2)).ok();
+    execute!(std::io::stdout(), Show, MoveTo(0, state.origin_y + 4)).ok();
 }
 
 fn tick(state: &mut State, step: Duration) {
@@ -406,7 +407,8 @@ fn render_frame(state: &State) {
     let width = crossterm::terminal::size()
         .map(|(width, _)| width as usize)
         .unwrap_or(80);
-    let max_cells = (width / CELL_WIDTH).saturating_sub(1);
+    let inner = width.saturating_sub(4).max(20);
+    let max_cells = (inner / CELL_WIDTH).saturating_sub(1);
     let start = state.cells.len().saturating_sub(max_cells);
     let visible = &state.cells[start..];
     let pointer_index = state
@@ -417,32 +419,96 @@ fn render_frame(state: &State) {
 
     let mut out = std::io::stdout();
 
-    execute!(
+    draw_border(&mut out, state.origin_y, width, "accelerate tape");
+    draw_tape(&mut out, state.origin_y + 1, visible, inner);
+    draw_machine(&mut out, state.origin_y + 2, pointer_col, state, inner);
+    draw_footer(&mut out, state.origin_y + 3, width, state);
+
+    out.flush().ok();
+}
+
+fn draw_border(out: &mut std::io::Stdout, row: u16, width: usize, title: &str) {
+    execute!(out, MoveTo(0, row), Clear(ClearType::CurrentLine)).ok();
+    let label = format!(" {title} ");
+    let right = width.saturating_sub(label.chars().count() + 2);
+    write!(
         out,
-        MoveTo(0, state.origin_y),
-        Clear(ClearType::CurrentLine)
+        "{}{}{}{}",
+        "╭".with(Color::DarkGrey),
+        "─".repeat(1).with(Color::DarkGrey),
+        label.with(Color::DarkCyan),
+        format!("{}╮", "─".repeat(right.saturating_sub(1))).with(Color::DarkGrey),
     )
     .ok();
-    if visible.is_empty() {
+}
+
+fn draw_footer(out: &mut std::io::Stdout, row: u16, width: usize, state: &State) {
+    execute!(out, MoveTo(0, row), Clear(ClearType::CurrentLine)).ok();
+    let label = format!(
+        " {} cells · {} tools · {:.1}s ",
+        state.cells.len(),
+        state.summary.tool_calls,
+        state.summary.duration_s,
+    );
+    let right = width.saturating_sub(label.chars().count() + 2);
+    write!(
+        out,
+        "{}{}{}{}",
+        "╰".with(Color::DarkGrey),
+        "─".repeat(1).with(Color::DarkGrey),
+        label.with(Color::DarkCyan),
+        format!("{}╯", "─".repeat(right.saturating_sub(1))).with(Color::DarkGrey),
+    )
+    .ok();
+}
+
+fn draw_tape(out: &mut std::io::Stdout, row: u16, cells: &[TapeCell], inner: usize) {
+    execute!(out, MoveTo(0, row), Clear(ClearType::CurrentLine)).ok();
+    write!(out, "{} ", "│".with(Color::DarkGrey)).ok();
+    if cells.is_empty() {
         write!(out, "{}", "□".with(Color::DarkGrey)).ok();
     } else {
-        for cell in visible {
+        for cell in cells {
             write!(out, "{} ", cell_glyph(cell).with(cell_color(cell))).ok();
         }
     }
-
-    execute!(
+    let used = if cells.is_empty() {
+        1
+    } else {
+        cells.len() * CELL_WIDTH
+    };
+    write!(
         out,
-        MoveTo(0, state.origin_y + 1),
-        Clear(ClearType::CurrentLine)
+        "{}{}",
+        " ".repeat(inner.saturating_sub(used)),
+        "│".with(Color::DarkGrey)
     )
     .ok();
+}
+
+fn draw_machine(
+    out: &mut std::io::Stdout,
+    row: u16,
+    pointer_col: usize,
+    state: &State,
+    inner: usize,
+) {
+    execute!(out, MoveTo(0, row), Clear(ClearType::CurrentLine)).ok();
+    write!(out, "{} ", "│".with(Color::DarkGrey)).ok();
+    let status = status_line(state, inner);
     for _ in 0..pointer_col {
         write!(out, " ").ok();
     }
     write!(out, "{}", "⚙".with(Color::Cyan).bold()).ok();
-    write!(out, " {}", status_line(state, width).with(Color::DarkCyan)).ok();
-    out.flush().ok();
+    write!(out, " {}", status.as_str().with(Color::DarkCyan)).ok();
+    let used = pointer_col + 1 + 1 + status.chars().count();
+    write!(
+        out,
+        "{}{}",
+        " ".repeat(inner.saturating_sub(used)),
+        "│".with(Color::DarkGrey)
+    )
+    .ok();
 }
 
 fn status_line(state: &State, width: usize) -> String {
