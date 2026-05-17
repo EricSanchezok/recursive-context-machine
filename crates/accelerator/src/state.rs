@@ -27,10 +27,12 @@ impl Default for State {
 }
 
 fn local() -> Environment {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let root = cwd.clone();
     Environment {
-        cwd: PathBuf::from("."),
+        cwd,
         vars: HashMap::new(),
-        root: Some(PathBuf::from(".")),
+        root: Some(root),
     }
 }
 
