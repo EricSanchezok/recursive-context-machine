@@ -418,7 +418,7 @@ fn render_frame(state: &State) {
 
     let mut out = std::io::stdout();
 
-    draw_border(&mut out, state.origin_y, width, "accelerate tape");
+    draw_border(&mut out, state.origin_y, width, "Context Tape");
     draw_tape(&mut out, state.origin_y + 1, visible, inner);
     draw_machine(&mut out, state.origin_y + 2, pointer_col, state, inner);
     draw_footer(&mut out, state.origin_y + 3, width, state);
