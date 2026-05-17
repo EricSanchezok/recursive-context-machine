@@ -73,7 +73,19 @@ impl Tool for FsTool {
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "(read, list) Maximum entries to return. For read: max lines (default 2000). For list: max directory entries (default 200). Omit for the default."
+                    "description": "(read, list) Maximum entries to return. For read: max lines (default 2000). For list: total rendered entries across the tree (default 200). Omit for the default."
+                },
+                "maxDepth": {
+                    "type": "integer",
+                    "description": "(list) Maximum directory depth to traverse. Default: 4. Use a smaller value for a quick project overview."
+                },
+                "perDirectoryLimit": {
+                    "type": "integer",
+                    "description": "(list) Maximum entries rendered from each directory before showing an omitted-count line. Default: 20. Prevents one large directory from consuming the entire listing."
+                },
+                "showHidden": {
+                    "type": "boolean",
+                    "description": "(list) Whether to include hidden files and directories such as .git, .github, .vscode. Default: false. Set true only when you explicitly need hidden project metadata."
                 },
                 "content": {
                     "type": "string",

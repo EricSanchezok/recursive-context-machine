@@ -1,7 +1,7 @@
 //! mode=text — search file contents with regex.
 //!
 //! Uses `ignore::WalkBuilder` for traversal and `regex::Regex` for matching.
-//! Results grouped by file and sorted by modification time (newest first).
+//! Results are grouped by file and sorted by modification time (newest first).
 
 use std::pin::Pin;
 
@@ -9,11 +9,17 @@ use ignore::WalkBuilder;
 use machine::{Environment, ToolResult};
 use regex::Regex;
 use serde_json::Value;
+use tracing::warn;
 
 use super::{MAX_LINE_LENGTH, MAX_TEXT_RESULTS, relative_path, resolve_path};
 
-/// Maximum file size to read into memory for text search (10 MB).
 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
+struct MatchGroup {
+    path: std::path::PathBuf,
+    modified: Option<std::time::SystemTime>,
+    hits: Vec<(usize, String)>,
+}
 
 pub(crate) fn execute<'a>(
     args: &'a Value,
@@ -29,107 +35,95 @@ pub(crate) fn execute<'a>(
         } else {
             env.cwd.clone()
         };
+        let show_hidden = args["showHidden"].as_bool().unwrap_or(false);
 
-        let re = Regex::new(pattern).map_err(|e| format!("invalid regex pattern: {e}"))?;
+        let regex =
+            Regex::new(pattern).map_err(|error| format!("invalid regex pattern: {error}"))?;
+        let include_matcher = build_include_matcher(args["include"].as_str())?;
 
-        let include = args["include"].as_str();
-
-        let mut walker = WalkBuilder::new(&search_path);
-        walker
-            .hidden(false)
+        let walker = WalkBuilder::new(&search_path)
+            .hidden(!show_hidden)
             .follow_links(true)
             .git_ignore(true)
             .git_global(true)
             .git_exclude(true)
-            .ignore(true);
+            .ignore(true)
+            .build();
 
-        if let Some(inc) = include {
-            let inc_glob = globset::GlobBuilder::new(inc)
-                .literal_separator(false)
-                .build()
-                .map_err(|e| format!("invalid include glob: {e}"))?;
-            let inc_matcher = inc_glob.compile_matcher();
-            let cwd = search_path.clone();
-            walker.filter_entry(move |entry| {
-                if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                    entry
-                        .path()
-                        .strip_prefix(&cwd)
-                        .is_ok_and(|rel| inc_matcher.is_match(rel))
-                } else {
-                    true // always traverse directories
-                }
-            });
-        }
+        let mut results = Vec::new();
+        let mut total_hits = 0usize;
 
-        struct Match {
-            path: std::path::PathBuf,
-            mtime: Option<std::time::SystemTime>,
-            hits: Vec<(usize, String)>,
-        }
-
-        let mut results: Vec<Match> = Vec::new();
-        let mut total_hits = 0;
-
-        for result in walker.build() {
+        for result in walker {
             let entry = match result {
-                Ok(e) => e,
-                Err(e) => {
-                    tracing::warn!(?e, "find: walk error");
+                Ok(entry) => entry,
+                Err(error) => {
+                    warn!(?error, "find: walk error");
                     continue;
                 }
             };
 
-            if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            if !entry
+                .file_type()
+                .map(|file_type| file_type.is_file())
+                .unwrap_or(false)
+            {
                 continue;
             }
 
-            // Skip files that are too large to read into memory.
-            if entry.metadata().map(|m| m.len()).unwrap_or(0) > MAX_FILE_SIZE {
+            let Ok(relative) = entry.path().strip_prefix(&search_path) else {
+                continue;
+            };
+
+            if include_matcher
+                .as_ref()
+                .is_some_and(|matcher| !matcher.is_match(relative))
+            {
+                continue;
+            }
+
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    warn!(?error, path = %entry.path().display(), "find: cannot stat file");
+                    continue;
+                }
+            };
+
+            if metadata.len() > MAX_FILE_SIZE {
                 continue;
             }
 
             let content = match tokio::fs::read_to_string(entry.path()).await {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::warn!(?e, path = %entry.path().display(), "find: cannot read file");
+                Ok(content) => content,
+                Err(error) => {
+                    warn!(?error, path = %entry.path().display(), "find: cannot read file");
                     continue;
                 }
             };
 
-            let mut hits: Vec<(usize, String)> = Vec::new();
+            let mut hits = Vec::new();
             for (index, line) in content.lines().enumerate() {
-                let line_num = index + 1;
-                if re.is_match(line) {
-                    let text = if line.len() > MAX_LINE_LENGTH {
-                        format!("{}...", &line[..MAX_LINE_LENGTH])
-                    } else {
-                        line.to_string()
-                    };
-                    hits.push((line_num, text));
+                if regex.is_match(line) {
+                    hits.push((index + 1, truncate_line(line, MAX_LINE_LENGTH)));
                     total_hits += 1;
-                    if total_hits >= MAX_TEXT_RESULTS {
-                        break;
-                    }
                 }
             }
 
             if !hits.is_empty() {
-                let mtime = entry.metadata().ok().and_then(|m| m.modified().ok());
-                results.push(Match {
+                results.push(MatchGroup {
                     path: entry.path().to_path_buf(),
-                    mtime,
+                    modified: metadata.modified().ok(),
                     hits,
                 });
             }
-
-            if total_hits >= MAX_TEXT_RESULTS {
-                break;
-            }
         }
 
-        // Sort results by mtime desc (newest first), then by path for ties.
-        results.sort_by(|a, b| b.mtime.cmp(&a.mtime).then_with(|| a.path.cmp(&b.path)));
+        results.sort_by(|left, right| {
+            right
+                .modified
+                .cmp(&left.modified)
+                .then_with(|| left.path.cmp(&right.path))
+        });
 
         if results.is_empty() {
             return Ok(ToolResult {
@@ -139,21 +133,30 @@ pub(crate) fn execute<'a>(
             });
         }
 
+        let mut emitted = 0usize;
         let mut output = String::new();
-        output.push_str(&format!("Found {} matches\n\n", total_hits));
+        output.push_str(&format!("Found {total_hits} matches\n\n"));
 
-        for m in &results {
-            let display = relative_path(&m.path, &search_path);
+        for group in &results {
+            if emitted >= MAX_TEXT_RESULTS {
+                break;
+            }
+
+            let remaining = MAX_TEXT_RESULTS - emitted;
+            let hits_to_emit = group.hits.len().min(remaining);
+            let display = relative_path(&group.path, &search_path);
             output.push_str(&format!("{}:\n", display));
-            for (line_num, text) in &m.hits {
+
+            for (line_num, text) in group.hits.iter().take(hits_to_emit) {
                 output.push_str(&format!("{:>6}: {}\n", line_num, text));
             }
             output.push('\n');
+            emitted += hits_to_emit;
         }
 
-        if total_hits >= MAX_TEXT_RESULTS {
+        if total_hits > MAX_TEXT_RESULTS {
             output.push_str(&format!(
-                "(truncated at {MAX_TEXT_RESULTS} matches — narrow with 'include' or 'path')\n"
+                "(truncated at {MAX_TEXT_RESULTS} of {total_hits} matches — narrow with 'include' or 'path')\n"
             ));
         }
 
@@ -163,4 +166,27 @@ pub(crate) fn execute<'a>(
             title: Some(format!("grep '{}'", pattern)),
         })
     })
+}
+
+fn build_include_matcher(include: Option<&str>) -> Result<Option<globset::GlobMatcher>, String> {
+    let Some(include) = include else {
+        return Ok(None);
+    };
+
+    let glob = globset::GlobBuilder::new(include)
+        .literal_separator(false)
+        .build()
+        .map_err(|error| format!("invalid include glob: {error}"))?;
+
+    Ok(Some(glob.compile_matcher()))
+}
+
+fn truncate_line(line: &str, max_chars: usize) -> String {
+    if line.chars().count() <= max_chars {
+        return line.to_string();
+    }
+
+    let mut truncated: String = line.chars().take(max_chars).collect();
+    truncated.push_str("...");
+    truncated
 }

@@ -182,7 +182,7 @@ fn inbox_drain_order_with_mixed_response() {
     // assistant text → tool call → tool result
     inbox.push(Fragment::assistant("我来计算"));
     inbox.push(Fragment::tool_call("1", "add", json!({"a": 3, "b": 2})));
-    inbox.push(Fragment::tool_result("1", "5"));
+    inbox.push(Fragment::tool_result("1", "5", None));
 
     // Simulate Drain (Take) behavior
     let mut ctx = Context::new();

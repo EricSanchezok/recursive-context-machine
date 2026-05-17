@@ -58,7 +58,11 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                                 result = %tool_result.content,
                                 duration = %humantime(t1.elapsed()),
                             );
-                            Fragment::tool_result(tc.id.clone(), tool_result.content)
+                            Fragment::tool_result(
+                                tc.id.clone(),
+                                tool_result.content,
+                                tool_result.title,
+                            )
                         }
                         Ok(Err(msg)) => {
                             warn!(tool = tc.name, msg, "tool failed");

@@ -67,6 +67,10 @@ impl Tool for FindTool {
                     "type": "string",
                     "description": "(text only) Glob to filter which files to search, e.g. '*.rs' or '*.{ts,tsx}'. Files not matching this glob are skipped."
                 },
+                "showHidden": {
+                    "type": "boolean",
+                    "description": "(files, text) Whether to include hidden files and directories such as .git, .github, .vscode. Default: false. Set true only when you explicitly need hidden project metadata."
+                },
                 "lang": {
                     "type": "string",
                     "description": "(ast only) Language identifier for the code: rust, python, typescript, go, java, c, cpp, csharp, javascript, bash, css, elixir, haskell, html, json, kotlin, lua, nix, php, ruby, scala, solidity, swift, tsx, yaml."

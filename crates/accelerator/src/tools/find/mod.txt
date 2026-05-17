@@ -1,6 +1,6 @@
 Find code in your project — by file name pattern, by regex in file contents, or by AST structure. Use `mode` to pick the method.
 
-All modes respect `.gitignore` rules in traversed directories. Hidden files and directories are included (not skipped).
+All modes respect `.gitignore` rules in traversed directories. Hidden files and directories are skipped by default; set `showHidden: true` only when you explicitly need hidden project metadata.
 
 ### files — Find files by glob pattern
 
@@ -9,6 +9,7 @@ Returns matching file paths sorted by modification time (newest first).
 Usage:
 - `pattern` must be a glob, e.g. `**/*.rs`, `src/**/*.ts`, `*.md`.
 - `path` narrows the search to a subdirectory. Omit to search the whole project.
+- Hidden files/directories are skipped by default. Use `showHidden: true` to include entries like `.github` or `.vscode`.
 - Capped at 200 results. If you get too many, narrow with `path`.
 - Fire multiple find calls in parallel when you have several patterns to try — it's faster than running them one at a time.
 
@@ -20,6 +21,7 @@ Usage:
 - `pattern` must be a regex, e.g. `fn\s+\w+`, `TODO`, `pub struct`.
 - `include` filters files by glob, e.g. `*.rs` or `*.{ts,tsx}`. Only those files are searched.
 - `path` narrows the search to a subdirectory. Omit to search the whole project.
+- Hidden files/directories are skipped by default. Use `showHidden: true` only when hidden project metadata is relevant.
 - Capped at 200 results. Lines longer than 2000 characters are truncated.
 - To count occurrences in matched files, use the shell tool to run `rg` directly.
 

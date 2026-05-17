@@ -1,8 +1,10 @@
-//! Directory listing with recursive tree traversal.
+//! Directory listing with fair recursive tree rendering.
 //!
 //! Uses the `ignore` crate to walk directories, automatically respecting
 //! `.gitignore` rules and common ignore files.
 
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use ignore::WalkBuilder;
@@ -12,8 +14,15 @@ use tracing::warn;
 
 use super::{MAX_LIST_ENTRIES, relative_path, resolve_path};
 
-/// Maximum recursion depth for directory listing.
-const MAX_DEPTH: usize = 4;
+const DEFAULT_MAX_DEPTH: usize = 4;
+const DEFAULT_PER_DIRECTORY_LIMIT: usize = 20;
+
+#[derive(Debug)]
+struct ListedEntry {
+    name: String,
+    path: PathBuf,
+    is_dir: bool,
+}
 
 pub(crate) fn execute<'a>(
     args: &'a Value,
@@ -26,17 +35,26 @@ pub(crate) fn execute<'a>(
 
         let resolved = resolve_path(file_path, &env.cwd);
 
-        let meta = tokio::fs::metadata(&resolved)
+        let metadata = tokio::fs::metadata(&resolved)
             .await
-            .map_err(|e| format!("cannot access '{}': {e}", resolved.display()))?;
+            .map_err(|error| format!("cannot access '{}': {error}", resolved.display()))?;
 
-        if !meta.is_dir() {
+        if !metadata.is_dir() {
             return Err(format!("not a directory: '{}'", resolved.display()));
         }
 
         let relative = relative_path(&resolved, &env.cwd);
         let max_entries = args["limit"].as_u64().unwrap_or(MAX_LIST_ENTRIES as u64) as usize;
-        if max_entries == 0 {
+        let max_depth = args["maxDepth"]
+            .as_u64()
+            .unwrap_or(DEFAULT_MAX_DEPTH as u64) as usize;
+        let per_directory_limit = args["perDirectoryLimit"]
+            .as_u64()
+            .unwrap_or(DEFAULT_PER_DIRECTORY_LIMIT as u64)
+            as usize;
+        let show_hidden = args["showHidden"].as_bool().unwrap_or(false);
+
+        if max_entries == 0 || per_directory_limit == 0 || max_depth == 0 {
             return Ok(ToolResult {
                 call_id: String::new(),
                 content: String::new(),
@@ -44,64 +62,27 @@ pub(crate) fn execute<'a>(
             });
         }
 
-        let walker = WalkBuilder::new(&resolved)
-            .max_depth(Some(MAX_DEPTH))
-            .hidden(false)
-            .git_ignore(true)
-            .git_global(true)
-            .git_exclude(true)
-            .ignore(true)
-            .sort_by_file_name(|a, b| a.cmp(b))
-            .build();
-
-        // Collect entries: (depth, name, is_dir)
-        let mut entries: Vec<(usize, String, bool)> = Vec::new();
-
-        for result in walker {
-            if entries.len() >= max_entries {
-                break;
-            }
-
-            let entry = match result {
-                Ok(e) => e,
-                Err(e) => {
-                    warn!(?e, "list: walk error");
-                    continue;
-                }
-            };
-
-            // Skip the root directory itself.
-            if entry.depth() == 0 {
-                continue;
-            }
-
-            let name = entry.file_name().to_string_lossy().to_string();
-            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-            entries.push((entry.depth(), name, is_dir));
-        }
-
-        if entries.is_empty() {
-            return Ok(ToolResult {
-                call_id: String::new(),
-                content: "Directory is empty.\n".to_string(),
-                title: Some(format!("list {relative}")),
-            });
-        }
-
-        // Render a tree. WalkBuilder's sort_by_file_name gives us DFS order
-        // sorted at each level, so siblings appear grouped with their
-        // children nested between them. We render with depth-based indentation
-        // and directory markers.
+        let tree = collect_tree(&resolved, max_depth, show_hidden)?;
         let mut output = String::new();
-        for (depth, name, is_dir) in &entries {
-            let indent = "  ".repeat(*depth - 1);
-            let prefix = if *is_dir { "📁 " } else { "📄 " };
-            output.push_str(&format!("{indent}{prefix}{name}\n"));
+        let mut rendered = 0usize;
+
+        render_dir(
+            &resolved,
+            &tree,
+            0,
+            per_directory_limit,
+            max_entries,
+            &mut rendered,
+            &mut output,
+        );
+
+        if rendered == 0 {
+            output.push_str("Directory is empty.\n");
         }
 
-        if entries.len() >= max_entries {
+        if rendered >= max_entries {
             output.push_str(&format!(
-                "\n(truncated at {max_entries} entries — directory may have more)"
+                "\n(truncated at {max_entries} entries — narrow with 'filePath', 'maxDepth', or 'perDirectoryLimit')"
             ));
         }
 
@@ -111,4 +92,104 @@ pub(crate) fn execute<'a>(
             title: Some(format!("list {relative}")),
         })
     })
+}
+
+fn collect_tree(
+    root: &Path,
+    max_depth: usize,
+    show_hidden: bool,
+) -> Result<BTreeMap<PathBuf, Vec<ListedEntry>>, String> {
+    let walker = WalkBuilder::new(root)
+        .max_depth(Some(max_depth))
+        .hidden(!show_hidden)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .ignore(true)
+        .sort_by_file_name(|left, right| left.cmp(right))
+        .build();
+
+    let mut tree: BTreeMap<PathBuf, Vec<ListedEntry>> = BTreeMap::new();
+
+    for result in walker {
+        let entry = match result {
+            Ok(entry) => entry,
+            Err(error) => {
+                warn!(?error, "list: walk error");
+                continue;
+            }
+        };
+
+        if entry.depth() == 0 {
+            continue;
+        }
+
+        let Some(parent) = entry.path().parent() else {
+            continue;
+        };
+
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_dir = entry
+            .file_type()
+            .map(|file_type| file_type.is_dir())
+            .unwrap_or(false);
+
+        tree.entry(parent.to_path_buf())
+            .or_default()
+            .push(ListedEntry {
+                name,
+                path: entry.path().to_path_buf(),
+                is_dir,
+            });
+    }
+
+    Ok(tree)
+}
+
+fn render_dir(
+    dir: &Path,
+    tree: &BTreeMap<PathBuf, Vec<ListedEntry>>,
+    depth: usize,
+    per_directory_limit: usize,
+    max_entries: usize,
+    rendered: &mut usize,
+    output: &mut String,
+) {
+    if *rendered >= max_entries {
+        return;
+    }
+
+    let Some(entries) = tree.get(dir) else {
+        return;
+    };
+
+    let visible_count = entries.len().min(per_directory_limit);
+    for entry in entries.iter().take(visible_count) {
+        if *rendered >= max_entries {
+            return;
+        }
+
+        *rendered += 1;
+        let indent = "  ".repeat(depth);
+        let prefix = if entry.is_dir { "📁 " } else { "📄 " };
+        output.push_str(&format!("{indent}{prefix}{}\n", entry.name));
+
+        if entry.is_dir {
+            render_dir(
+                &entry.path,
+                tree,
+                depth + 1,
+                per_directory_limit,
+                max_entries,
+                rendered,
+                output,
+            );
+        }
+    }
+
+    if entries.len() > visible_count && *rendered < max_entries {
+        let omitted = entries.len() - visible_count;
+        let indent = "  ".repeat(depth);
+        output.push_str(&format!("{indent}… {omitted} more entries\n"));
+    }
 }

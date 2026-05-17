@@ -1,8 +1,7 @@
 //! mode=files — find files by glob pattern.
 //!
-//! Uses `ignore::WalkBuilder` for file traversal (respects .gitignore).
-//! Pattern is matched against relative paths using `globset::Glob`.
-//! Results sorted by modification time, newest first, returned as absolute paths.
+//! Uses `ignore::WalkBuilder` for file traversal and matches patterns against
+//! paths relative to the requested search root.
 
 use std::pin::Pin;
 
@@ -10,6 +9,7 @@ use globset::{Glob, GlobBuilder};
 use ignore::WalkBuilder;
 use machine::{Environment, ToolResult};
 use serde_json::Value;
+use tracing::warn;
 
 use super::{MAX_FILES_RESULTS, resolve_path};
 
@@ -27,15 +27,16 @@ pub(crate) fn execute<'a>(
         } else {
             env.cwd.clone()
         };
+        let show_hidden = args["showHidden"].as_bool().unwrap_or(false);
 
         let glob: Glob = GlobBuilder::new(pattern)
             .literal_separator(false)
             .build()
-            .map_err(|e| format!("invalid glob pattern: {e}"))?;
+            .map_err(|error| format!("invalid glob pattern: {error}"))?;
         let matcher = glob.compile_matcher();
 
         let walker = WalkBuilder::new(&search_path)
-            .hidden(false)
+            .hidden(!show_hidden)
             .follow_links(true)
             .git_ignore(true)
             .git_global(true)
@@ -47,47 +48,56 @@ pub(crate) fn execute<'a>(
 
         for result in walker {
             let entry = match result {
-                Ok(e) => e,
-                Err(e) => {
-                    tracing::warn!(?e, "find: walk error");
+                Ok(entry) => entry,
+                Err(error) => {
+                    warn!(?error, "find: walk error");
                     continue;
                 }
             };
 
-            if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            if !entry
+                .file_type()
+                .map(|file_type| file_type.is_file())
+                .unwrap_or(false)
+            {
                 continue;
             }
-            if let Ok(rel) = entry.path().strip_prefix(&search_path) {
-                if matcher.is_match(rel) {
-                    // entry.metadata() reuses the stat from the walker — no extra syscall.
-                    let mtime = entry.metadata().ok().and_then(|m| m.modified().ok());
-                    matched.push((entry.path().to_path_buf(), mtime));
-                }
-            }
 
-            if matched.len() >= MAX_FILES_RESULTS {
-                break;
+            let Ok(relative) = entry.path().strip_prefix(&search_path) else {
+                continue;
+            };
+
+            if matcher.is_match(relative) {
+                let modified = entry
+                    .metadata()
+                    .ok()
+                    .and_then(|metadata| metadata.modified().ok());
+                matched.push((entry.path().to_path_buf(), modified));
             }
         }
 
-        matched.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        matched.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
 
-        let count = matched.len();
-        let output = if matched.is_empty() {
-            "No files found.\n".to_string()
-        } else {
-            let mut lines = String::new();
-            for (path, _) in &matched {
-                lines.push_str(&path.display().to_string());
-                lines.push('\n');
-            }
-            if count >= MAX_FILES_RESULTS {
-                lines.push_str(&format!(
-                    "\n(truncated at {MAX_FILES_RESULTS} results — narrow the search with 'path')\n"
-                ));
-            }
-            lines
-        };
+        if matched.is_empty() {
+            return Ok(ToolResult {
+                call_id: String::new(),
+                content: "No files found.\n".to_string(),
+                title: Some(format!("find files '{}'", pattern)),
+            });
+        }
+
+        let total = matched.len();
+        let mut output = String::new();
+        for (path, _) in matched.iter().take(MAX_FILES_RESULTS) {
+            output.push_str(&path.display().to_string());
+            output.push('\n');
+        }
+
+        if total > MAX_FILES_RESULTS {
+            output.push_str(&format!(
+                "\n(truncated at {MAX_FILES_RESULTS} of {total} results — narrow the search with 'path')\n"
+            ));
+        }
 
         Ok(ToolResult {
             call_id: String::new(),

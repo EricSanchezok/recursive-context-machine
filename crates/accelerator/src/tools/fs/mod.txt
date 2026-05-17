@@ -37,13 +37,15 @@ Usage:
 
 ### List
 
-Lists the contents of a directory recursively (up to 4 levels deep).
+Lists a directory as a recursive tree.
 
 Usage:
-- Lists up to {MAX_LIST_ENTRIES} entries, sorted with directories first, then files alphabetically.
-- Common build artifacts and dependency directories (node_modules, .git, target, vendor, __pycache__, etc.) are automatically excluded. Entries starting with `.` are also excluded.
-- Use `limit` to cap the number of entries returned.
+- Hidden files and directories (such as `.git`, `.github`, `.vscode`) are hidden by default. Set `showHidden: true` only when you explicitly need them.
+- `limit` caps the total number of rendered entries across the whole tree.
+- `maxDepth` controls how deep to traverse. Default: 4.
+- `perDirectoryLimit` prevents one large directory from consuming the entire output. When a directory has more entries, the output shows an omitted-count line for that directory.
 - Output uses 📁 for directories and 📄 for files, indented by depth.
+- For codebase exploration, use list for a quick structural overview and `find` for targeted file/text/AST search.
 
 ### Stat
 

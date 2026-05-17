@@ -5,7 +5,7 @@ fn fragment_constructor_roles() {
     assert_eq!(Fragment::system("x").role, Role::System);
     assert_eq!(Fragment::user("x").role, Role::User);
     assert_eq!(Fragment::assistant("x").role, Role::Assistant);
-    assert_eq!(Fragment::tool_result("id", "ok").role, Role::Tool);
+    assert_eq!(Fragment::tool_result("id", "ok", None).role, Role::Tool);
 }
 
 #[test]
@@ -15,7 +15,7 @@ fn as_text_roundtrips() {
 
 #[test]
 fn as_text_none_for_nontinuitive_types() {
-    assert_eq!(Fragment::tool_result("id", "ok").as_text(), None);
+    assert_eq!(Fragment::tool_result("id", "ok", None).as_text(), None);
 }
 
 #[test]

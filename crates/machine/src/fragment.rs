@@ -144,7 +144,11 @@ impl Fragment {
         }
     }
 
-    pub fn tool_result(call_id: impl Into<String>, text: impl Into<String>) -> Self {
+    pub fn tool_result(
+        call_id: impl Into<String>,
+        text: impl Into<String>,
+        title: Option<String>,
+    ) -> Self {
         Self {
             id: 0,
             role: Role::Tool,
@@ -152,7 +156,7 @@ impl Fragment {
             content: Content::ToolResult(ToolResult {
                 call_id: call_id.into(),
                 content: text.into(),
-                title: None,
+                title,
             }),
         }
     }

@@ -168,11 +168,7 @@ fn format_lines(text: &str, offset: usize, limit: usize, title: &str) -> String 
 
     for (index, line) in lines[offset..end].iter().enumerate() {
         let line_num = offset + index + 1;
-        let content = if line.len() > MAX_LINE_LENGTH {
-            format!("{}...", &line[..MAX_LINE_LENGTH])
-        } else {
-            line.to_string()
-        };
+        let content = truncate_line(line, MAX_LINE_LENGTH);
 
         let formatted = format!("{:05}| {}\n", line_num, content);
         byte_count += formatted.len();
@@ -198,4 +194,14 @@ fn format_lines(text: &str, offset: usize, limit: usize, title: &str) -> String 
     }
 
     output
+}
+
+fn truncate_line(line: &str, max_chars: usize) -> String {
+    if line.chars().count() <= max_chars {
+        return line.to_string();
+    }
+
+    let mut truncated: String = line.chars().take(max_chars).collect();
+    truncated.push_str("...");
+    truncated
 }

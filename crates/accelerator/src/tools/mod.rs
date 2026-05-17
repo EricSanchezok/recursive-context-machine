@@ -30,7 +30,13 @@ pub(crate) fn resolve_path(raw: &str, cwd: &Path) -> PathBuf {
 /// Compute the display path relative to a working directory.
 pub(crate) fn relative_path(path: &Path, cwd: &Path) -> String {
     path.strip_prefix(cwd)
-        .map(|p| p.display().to_string())
+        .map(|relative| {
+            if relative.as_os_str().is_empty() {
+                ".".to_string()
+            } else {
+                relative.display().to_string()
+            }
+        })
         .unwrap_or_else(|_| path.display().to_string())
 }
 
