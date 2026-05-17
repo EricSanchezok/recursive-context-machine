@@ -1,42 +1,30 @@
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use machine::{Action, Context, Environment, Inbox, Phase, Policy, Purpose, Resources, Role};
-use tracing::{trace, warn};
+use tracing::trace;
 
 use super::phases::{BootstrapAgent, InjectEnv, InjectPurpose};
 
+/// Captain — a simple single-agent Policy.
+///
+/// Decides purely based on inbox state and the last fragment in context:
+///
+///   Inbox not empty  → Take (drain one fragment into context)
+///   Inbox empty:
+///     last in context is Tool  → Halt (tool was just run, show LLM the result)
+///     last in context is not Tool, first call already happened → Done
+///     first call ever → Halt (kick off the LLM)
 pub struct Captain {
-    state: AtomicU8,
-    tool_seen: AtomicBool,
+    started: std::sync::atomic::AtomicBool,
 }
 
 impl Clone for Captain {
     fn clone(&self) -> Self {
         Self {
-            state: AtomicU8::new(self.state.load(Ordering::Relaxed)),
-            tool_seen: AtomicBool::new(self.tool_seen.load(Ordering::Relaxed)),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-enum State {
-    Halt = 1,
-    Drain = 2,
-}
-
-impl State {
-    fn from_u8(v: u8) -> Self {
-        match v {
-            1 => Self::Halt,
-            2 => Self::Drain,
-            other => {
-                warn!(state = other, "captain: unknown state, forcing drain");
-                Self::Drain
-            }
+            started: std::sync::atomic::AtomicBool::new(
+                self.started.load(std::sync::atomic::Ordering::Relaxed),
+            ),
         }
     }
 }
@@ -44,8 +32,7 @@ impl State {
 impl Default for Captain {
     fn default() -> Self {
         Self {
-            state: AtomicU8::new(State::Halt as u8),
-            tool_seen: AtomicBool::new(false),
+            started: std::sync::atomic::AtomicBool::new(false),
         }
     }
 }
@@ -75,37 +62,35 @@ impl Policy for Captain {
     fn decide<'a>(
         &'a self,
         _purpose: &'a Purpose,
-        _ctx: &'a Context,
+        ctx: &'a Context,
         _env: &'a Environment,
         _resources: &'a Resources,
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            let state = State::from_u8(self.state.load(Ordering::Relaxed));
+            if inbox.peek().is_some() {
+                return Action::Take;
+            }
 
-            let (next, action) = match state {
-                State::Halt => {
-                    self.tool_seen.store(false, Ordering::Relaxed);
-                    (State::Drain, Action::Halt)
-                }
-                State::Drain => {
-                    if let Some(frag) = inbox.peek() {
-                        if frag.role == Role::Tool {
-                            self.tool_seen.store(true, Ordering::Relaxed);
-                        }
-                        (State::Drain, Action::Take)
-                    } else if self.tool_seen.load(Ordering::Relaxed) {
-                        trace!("drain: tool results seen, halting again");
-                        (State::Halt, Action::Halt)
-                    } else {
-                        trace!("drain: final answer ready");
-                        (State::Drain, Action::Done)
-                    }
-                }
-            };
+            // Inbox is empty.
+            let not_started = !self
+                .started
+                .swap(true, std::sync::atomic::Ordering::Relaxed);
+            if not_started {
+                trace!("decide: first call, halting");
+                return Action::Halt;
+            }
 
-            self.state.store(next as u8, Ordering::Relaxed);
-            action
+            match ctx.fragments().last().map(|f| f.role) {
+                Some(Role::Tool) => {
+                    trace!("decide: last is Tool, halting");
+                    Action::Halt
+                }
+                _ => {
+                    trace!("decide: done");
+                    Action::Done
+                }
+            }
         })
     }
 }
