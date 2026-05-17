@@ -1,12 +1,9 @@
+use chrono::Local;
 use machine::{
     Action, Context, Environment, Fragment, Phase, PhaseOutcome, Purpose, Resources, Role,
 };
 
 /// Append the user's purpose as a [`Role::User`] fragment with tag `"purpose"`.
-///
-/// - Empty purpose → **Done**
-/// - Already injected → **Done**
-/// - Otherwise → **Append**, then Done on next call
 pub struct InjectPurpose;
 
 impl Phase for InjectPurpose {
@@ -43,14 +40,7 @@ impl Phase for InjectPurpose {
     }
 }
 
-/// Inject an environment snapshot as a [`Role::System`] fragment with tag `"env"`.
-///
-/// Delegates formatting to [`Environment::snapshot`], which produces:
-/// ```text
-/// cwd: /path/to/dir
-/// platform: macos
-/// time: 2026-05-17T13:17:12+08:00
-/// ```
+/// Inject an environment snapshot as a system fragment with tag `"env"`.
 pub struct InjectEnv;
 
 impl Phase for InjectEnv {
@@ -77,8 +67,14 @@ impl Phase for InjectEnv {
             return PhaseOutcome::Done;
         }
 
-        PhaseOutcome::Action(Action::Append(
-            Fragment::system(env.snapshot()).with_tag("env"),
-        ))
+        let now = Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+        let text = format!(
+            "cwd: {}\nplatform: {}\ntime: {}",
+            env.cwd.display(),
+            env.platform,
+            now,
+        );
+
+        PhaseOutcome::Action(Action::Append(Fragment::system(text).with_tag("env")))
     }
 }
