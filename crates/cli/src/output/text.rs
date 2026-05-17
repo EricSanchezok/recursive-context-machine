@@ -15,19 +15,11 @@ fn print_response(text: &str) {
         .map(|(width, _)| width as usize)
         .unwrap_or(100)
         .max(40);
-    let inner = width.saturating_sub(4);
 
     print_top("Response", width);
-    for line in text.lines() {
-        if line.is_empty() {
-            println!("│ {}│", " ".repeat(inner));
-        } else {
-            for part in wrap_line(line, inner) {
-                let padding = inner.saturating_sub(part.chars().count());
-                println!("│ {}{} │", part, " ".repeat(padding));
-            }
-        }
-    }
+    println!();
+    println!("{}", text);
+    println!();
     print_bottom(width);
 }
 
@@ -39,26 +31,6 @@ fn print_top(title: &str, width: usize) {
 
 fn print_bottom(width: usize) {
     println!("╰{}╯", "─".repeat(width.saturating_sub(2)));
-}
-
-fn wrap_line(line: &str, width: usize) -> Vec<String> {
-    if line.chars().count() <= width {
-        return vec![line.to_string()];
-    }
-
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    for ch in line.chars() {
-        if current.chars().count() >= width {
-            parts.push(current);
-            current = String::new();
-        }
-        current.push(ch);
-    }
-    if !current.is_empty() {
-        parts.push(current);
-    }
-    parts
 }
 
 fn print_context(ctx: &Context) {
