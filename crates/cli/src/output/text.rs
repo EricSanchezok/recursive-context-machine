@@ -2,15 +2,36 @@ use machine::{Content, Context, Role};
 
 use super::Summary;
 
-pub fn print(ctx: &Context, summary: &Summary) {
-    println!("── Result ──────────────────────────────────────");
-    for frag in ctx.fragments() {
-        print_fragment(frag.role, &frag.content);
+pub fn print(ctx: &Context, summary: &Summary, full_context: bool) {
+    if full_context {
+        print_context(ctx);
+    } else if let Some(text) = final_message(ctx) {
+        println!("{}", text.trim_end());
     }
+
     println!(
         "── done ({:.1}s, {} fragments, {} tool calls) ──",
         summary.duration_s, summary.fragments, summary.tool_calls
     );
+}
+
+fn print_context(ctx: &Context) {
+    println!("── Context ─────────────────────────────────────");
+    for frag in ctx.fragments() {
+        print_fragment(frag.role, &frag.content);
+    }
+}
+
+fn final_message(ctx: &Context) -> Option<&str> {
+    ctx.fragments().iter().rev().find_map(|frag| {
+        if frag.role != Role::Assistant {
+            return None;
+        }
+        match &frag.content {
+            Content::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        }
+    })
 }
 
 fn print_fragment(role: Role, content: &Content) {
@@ -46,7 +67,7 @@ fn print_fragment(role: Role, content: &Content) {
             code,
         } => {
             let retry = if *retryable { " (retryable)" } else { "" };
-            let status = code.map(|c| format!(" HTTP {c}")).unwrap_or_default();
+            let status = code.map(|code| format!(" HTTP {code}")).unwrap_or_default();
             println!("[{tag}] hitch{}{} {message}", status, retry);
         }
     }

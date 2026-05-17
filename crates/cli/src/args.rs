@@ -26,6 +26,10 @@ pub struct RunArgs {
     /// Output format after execution.
     #[arg(long, value_enum, default_value_t = Format::Text)]
     pub format: Format,
+
+    /// Show the full context instead of only the final assistant message.
+    #[arg(long)]
+    pub context: bool,
 }
 
 impl RunArgs {

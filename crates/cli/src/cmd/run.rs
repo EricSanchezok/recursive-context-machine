@@ -38,8 +38,8 @@ pub fn run(args: RunArgs) -> anyhow::Result<()> {
     let ctx = ctx_rx.recv()?;
 
     match args.format {
-        Format::Text => output::text::print(&ctx, &summary),
-        Format::Json => output::json::print(&ctx, &summary)?,
+        Format::Text => output::text::print(&ctx, &summary, args.context),
+        Format::Json => output::json::print(&ctx, &summary, args.context)?,
     }
 
     Ok(())

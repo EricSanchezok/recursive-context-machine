@@ -3,9 +3,37 @@ use serde_json::json;
 
 use super::Summary;
 
-pub fn print(ctx: &Context, summary: &Summary) -> anyhow::Result<()> {
-    let fragments = ctx
-        .fragments()
+pub fn print(ctx: &Context, summary: &Summary, full_context: bool) -> anyhow::Result<()> {
+    let output = if full_context {
+        json!({
+            "fragments": fragments_json(ctx),
+            "summary": summary_json(summary),
+        })
+    } else {
+        json!({
+            "message": final_message(ctx),
+            "summary": summary_json(summary),
+        })
+    };
+
+    println!("{}", serde_json::to_string_pretty(&output)?);
+    Ok(())
+}
+
+fn final_message(ctx: &Context) -> Option<&str> {
+    ctx.fragments().iter().rev().find_map(|frag| {
+        if frag.role != Role::Assistant {
+            return None;
+        }
+        match &frag.content {
+            Content::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        }
+    })
+}
+
+fn fragments_json(ctx: &Context) -> Vec<serde_json::Value> {
+    ctx.fragments()
         .iter()
         .map(|frag| {
             json!({
@@ -13,18 +41,15 @@ pub fn print(ctx: &Context, summary: &Summary) -> anyhow::Result<()> {
                 "content": content_json(&frag.content),
             })
         })
-        .collect::<Vec<_>>();
+        .collect()
+}
 
-    let output = json!({
-        "fragments": fragments,
-        "summary": {
-            "duration_s": summary.duration_s,
-            "fragments": summary.fragments,
-            "tool_calls": summary.tool_calls,
-        }
-    });
-    println!("{}", serde_json::to_string_pretty(&output)?);
-    Ok(())
+fn summary_json(summary: &Summary) -> serde_json::Value {
+    json!({
+        "duration_s": summary.duration_s,
+        "fragments": summary.fragments,
+        "tool_calls": summary.tool_calls,
+    })
 }
 
 fn role_name(role: Role) -> &'static str {
