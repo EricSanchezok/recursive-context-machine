@@ -1,0 +1,53 @@
+# shell
+
+Run a shell command and get its output.
+
+## Basic usage
+
+- Default working directory is the project root. Use `&&` to change directories: `cd src && cargo check`
+- For multiple independent commands, call shell in parallel — don't chain them with `&&`
+- Default timeout is {DEFAULT_TIMEOUT_SECS}s, max {MAX_TIMEOUT_SECS}s. Commands that exceed the timeout are killed
+- Output cap is {OUTPUT_CAP_KB} KB. Excess is truncated
+
+## Long-running tasks
+
+For commands exceeding {MAX_TIMEOUT_SECS}s (dev servers, training, watch), use tmux:
+
+### Start
+
+```
+tmux new-session -d -s <name> -c <dir> '<command>'
+```
+
+Example:
+
+```
+tmux new-session -d -s rica-frontend -c /app 'npm run dev'
+```
+
+### Common operations
+
+- `tmux send-keys -t <name> '<text>' Enter` — send input
+- `tmux capture-pane -p -t <name> -S -30` — read last 30 lines
+- `tmux capture-pane -p -t <name> -S -500 | grep -n 'Error' | tail -20` — search output
+- `tmux list-sessions` — list all sessions
+- `tmux list-panes -t <name> -F '#{pane_dead}'` — check if process is alive
+- `tmux send-keys -t <name> C-c && sleep 2 && tmux kill-session -t <name>` — stop
+
+### Using with wait
+
+After starting a tmux session, use `wait(seconds=N)` to give it time before reading output:
+
+```
+wait(seconds=60)
+```
+
+### Session naming
+
+`<project>-<purpose>`, e.g. `rica-frontend`, `rica-build`.
+
+## Notes
+
+- Use dedicated tools for file read/write, not shell
+- Never pass passwords or secrets in command arguments (error logs expose them)
+- Quote paths containing spaces: `cat "/path/with spaces/file.txt"`
