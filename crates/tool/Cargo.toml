@@ -1,9 +1,0 @@
-[package]
-name = "tool"
-version = "0.1.0"
-edition = "2024"
-description = "RICA tool pool — dynamic tool linking for RICA cells"
-
-[dependencies]
-serde = { workspace = true }
-serde_json = { workspace = true }
