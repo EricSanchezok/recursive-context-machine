@@ -1,51 +1,19 @@
 //! Directory listing with recursive tree traversal.
 //!
-//! Walks the directory tree up to a configurable depth, applying built-in
-//! ignore rules (node_modules, .git, target, etc.) and an entry limit.
+//! Uses the `ignore` crate to walk directories, automatically respecting
+//! `.gitignore` rules and common ignore files.
 
 use std::pin::Pin;
 
+use ignore::WalkBuilder;
 use machine::{Environment, ToolResult};
 use serde_json::Value;
+use tracing::warn;
 
 use super::{MAX_LIST_ENTRIES, relative_path, resolve_path};
 
-/// Built-in ignore patterns — directories and files excluded from listing.
-/// These match Synergy's standard ignore list.
-const IGNORE_PATTERNS: &[&str] = &[
-    "node_modules",
-    "__pycache__",
-    ".git",
-    ".svn",
-    ".hg",
-    "dist",
-    "build",
-    "target",
-    "vendor",
-    "bin",
-    "obj",
-    ".idea",
-    ".vscode",
-    ".zig-cache",
-    "zig-out",
-    ".coverage",
-    "coverage",
-    "tmp",
-    "temp",
-    ".cache",
-    "cache",
-    "logs",
-    ".venv",
-    "venv",
-    "env",
-    ".DS_Store",
-    "Thumbs.db",
-];
-
-/// Returns true if the entry name matches any ignore pattern.
-fn is_ignored(name: &str) -> bool {
-    IGNORE_PATTERNS.contains(&name) || name.starts_with('.')
-}
+/// Maximum recursion depth for directory listing.
+const MAX_DEPTH: usize = 4;
 
 pub(crate) fn execute<'a>(
     args: &'a Value,
@@ -58,16 +26,15 @@ pub(crate) fn execute<'a>(
 
         let resolved = resolve_path(file_path, &env.cwd);
 
-        let metadata = tokio::fs::metadata(&resolved)
+        let meta = tokio::fs::metadata(&resolved)
             .await
-            .map_err(|error| format!("cannot access '{}': {error}", resolved.display()))?;
+            .map_err(|e| format!("cannot access '{}': {e}", resolved.display()))?;
 
-        if !metadata.is_dir() {
+        if !meta.is_dir() {
             return Err(format!("not a directory: '{}'", resolved.display()));
         }
 
         let relative = relative_path(&resolved, &env.cwd);
-
         let max_entries = args["limit"].as_u64().unwrap_or(MAX_LIST_ENTRIES as u64) as usize;
         if max_entries == 0 {
             return Ok(ToolResult {
@@ -76,75 +43,63 @@ pub(crate) fn execute<'a>(
                 title: Some(format!("list {relative}")),
             });
         }
-        let max_depth = 4;
 
-        let mut output = String::new();
-        let mut count = 0;
-        let mut stack = vec![(resolved.clone(), 0)];
+        let walker = WalkBuilder::new(&resolved)
+            .max_depth(Some(MAX_DEPTH))
+            .hidden(false)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .ignore(true)
+            .sort_by_file_name(|a, b| a.cmp(b))
+            .build();
 
-        while let Some((dir, depth)) = stack.pop() {
-            if depth > max_depth || count >= max_entries {
+        // Collect entries: (depth, name, is_dir)
+        let mut entries: Vec<(usize, String, bool)> = Vec::new();
+
+        for result in walker {
+            if entries.len() >= max_entries {
+                break;
+            }
+
+            let entry = match result {
+                Ok(e) => e,
+                Err(e) => {
+                    warn!(?e, "list: walk error");
+                    continue;
+                }
+            };
+
+            // Skip the root directory itself.
+            if entry.depth() == 0 {
                 continue;
             }
 
-            let mut reader = match tokio::fs::read_dir(&dir).await {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            entries.push((entry.depth(), name, is_dir));
+        }
 
-            let mut entries: Vec<(String, bool)> = Vec::new();
-            loop {
-                let entry = match reader.next_entry().await {
-                    Ok(Some(e)) => e,
-                    _ => break,
-                };
-                let name = entry.file_name().to_string_lossy().to_string();
-                if is_ignored(&name) {
-                    continue;
-                }
-                let is_dir = entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false);
-                entries.push((name, is_dir));
-            }
-
-            // Sort: directories first, then files, each alphabetically
-            entries.sort_by(|a, b| {
-                if a.1 != b.1 {
-                    b.1.cmp(&a.1) // dirs first
-                } else {
-                    a.0.cmp(&b.0)
-                }
+        if entries.is_empty() {
+            return Ok(ToolResult {
+                call_id: String::new(),
+                content: "Directory is empty.\n".to_string(),
+                title: Some(format!("list {relative}")),
             });
-
-            let indent = "  ".repeat(depth);
-
-            for (name, is_directory) in &entries {
-                if count >= max_entries {
-                    break;
-                }
-                count += 1;
-
-                let prefix = if *is_directory { "📁 " } else { "📄 " };
-                output.push_str(&format!("{indent}{prefix}{name}\n"));
-            }
-
-            // Push subdirectories for continued traversal (reversed to
-            // maintain alphabetical order with LIFO popping).
-            if count < max_entries {
-                let dirs: Vec<_> = entries
-                    .iter()
-                    .rev()
-                    .filter(|(_, is_dir)| *is_dir)
-                    .map(|(name, _)| dir.join(name))
-                    .collect();
-                stack.extend(dirs.into_iter().map(|p| (p, depth + 1)));
-            }
         }
 
-        if count == 0 {
-            output.push_str("Directory is empty.\n");
+        // Render a tree. WalkBuilder's sort_by_file_name gives us DFS order
+        // sorted at each level, so siblings appear grouped with their
+        // children nested between them. We render with depth-based indentation
+        // and directory markers.
+        let mut output = String::new();
+        for (depth, name, is_dir) in &entries {
+            let indent = "  ".repeat(*depth - 1);
+            let prefix = if *is_dir { "📁 " } else { "📄 " };
+            output.push_str(&format!("{indent}{prefix}{name}\n"));
         }
 
-        if count >= max_entries {
+        if entries.len() >= max_entries {
             output.push_str(&format!(
                 "\n(truncated at {max_entries} entries — directory may have more)"
             ));
