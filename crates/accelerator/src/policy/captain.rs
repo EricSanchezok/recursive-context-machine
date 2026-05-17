@@ -64,12 +64,14 @@ impl Policy for Captain {
     fn pre(&self) -> Vec<Box<dyn Phase>> {
         vec![
             Box::new(BootstrapAgent::new("captain")),
-            Box::new(InjectPurpose),
         ]
     }
 
     fn pre_halt(&self) -> Vec<Box<dyn Phase>> {
-        vec![Box::new(InjectEnv)]
+        vec![
+            Box::new(InjectEnv),
+            Box::new(InjectPurpose),
+        ]
     }
 
     fn decide<'a>(
