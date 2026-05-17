@@ -93,11 +93,6 @@ fn main() {
         };
         match &frag.content {
             Content::Text(text) => {
-                if frag.role == machine::Role::System
-                    && text.text.contains("You are an AI assistant")
-                {
-                    continue;
-                }
                 println!("[{tag}] {}", text.text);
             }
             Content::ToolCall(tc) => {
@@ -113,6 +108,18 @@ fn main() {
                     println!("[{tag}] {first} ({lines} lines)");
                 }
             }
+            Content::Image(image) => {
+                println!("[{tag}] <image {:?}>", image.media_type);
+            }
+            Content::Audio(audio) => {
+                println!("[{tag}] <audio {:?}>", audio.media_type);
+            }
+            Content::Video(video) => {
+                println!("[{tag}] <video {:?}>", video.media_type);
+            }
+            Content::Document(document) => {
+                println!("[{tag}] <document {:?}>", document.media_type);
+            }
             Content::Hitch {
                 message,
                 retryable,
@@ -120,9 +127,8 @@ fn main() {
             } => {
                 let retry = if *retryable { " (retryable)" } else { "" };
                 let status = code.map(|c| format!(" HTTP {c}")).unwrap_or_default();
-                eprintln!("[{tag}] hitch{}{} {message}", status, retry);
+                println!("[{tag}] hitch{}{} {message}", status, retry);
             }
-            _ => {}
         }
     }
     println!(

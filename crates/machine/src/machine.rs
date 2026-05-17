@@ -1,6 +1,6 @@
 use crate::context::Context;
 use crate::env::Environment;
-use crate::event::preview;
+use crate::event::{content_kind, preview, role_name};
 use crate::hook;
 use crate::inbox::Inbox;
 use crate::policy::{Action, Phase, PhaseOutcome, Policy};
@@ -133,7 +133,8 @@ impl Machine {
                 hook!(
                     event = "appended",
                     id,
-                    role = ?frag.role,
+                    role = role_name(frag.role),
+                    kind = content_kind(frag),
                     preview = %preview(frag),
                 );
             }
@@ -143,7 +144,8 @@ impl Machine {
                 hook!(
                     event = "inserted",
                     id,
-                    role = ?frag.role,
+                    role = role_name(frag.role),
+                    kind = content_kind(frag),
                     preview = %preview(frag),
                 );
             }
@@ -153,7 +155,8 @@ impl Machine {
                 hook!(
                     event = "replaced",
                     id,
-                    role = ?frag.role,
+                    role = role_name(frag.role),
+                    kind = content_kind(frag),
                     preview = %preview(frag),
                 );
             }
@@ -184,7 +187,8 @@ impl Machine {
                     hook!(
                         event = "taken",
                         id,
-                        role = ?frag.role,
+                        role = role_name(frag.role),
+                        kind = content_kind(frag),
                         preview = %preview(frag),
                     );
                 }

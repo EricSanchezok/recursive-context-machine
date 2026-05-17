@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 
 use crossterm::{
-    cursor::{Hide, MoveTo, Show},
+    cursor::{Hide, MoveTo, Show, position},
     execute,
     style::{Color, Stylize},
     terminal::{Clear, ClearType},
@@ -12,46 +12,90 @@ use std::io::Write;
 
 use crate::hook::HookEvent;
 
-const TICK: Duration = Duration::from_millis(50);
+const IDLE_TICK: Duration = Duration::from_millis(50);
+const CELL_WIDTH: usize = 2;
+
+#[derive(Clone)]
+struct TapeBlock {
+    id: u64,
+    kind: FragmentKind,
+}
 
 #[derive(Clone, Copy, PartialEq)]
-pub(crate) enum FragmentKind {
-    System,
-    User,
-    Assistant,
+enum FragmentKind {
+    SystemText,
+    UserText,
+    AssistantText,
     ToolCall,
     ToolResult,
+    Image,
+    Audio,
+    Video,
+    Document,
+    Hitch,
+    Unknown,
 }
 
 impl FragmentKind {
-    fn from_role(role: &str) -> Self {
-        match role {
-            "System" => Self::System,
-            "User" => Self::User,
-            "Assistant" => Self::Assistant,
-            "Tool" => Self::ToolCall,
-            _ => Self::System,
+    fn from_parts(role: &str, kind: &str) -> Self {
+        match kind {
+            "tool_call" => Self::ToolCall,
+            "tool_result" => Self::ToolResult,
+            "image" => Self::Image,
+            "audio" => Self::Audio,
+            "video" => Self::Video,
+            "document" => Self::Document,
+            "hitch" => Self::Hitch,
+            "text" => match role {
+                "system" => Self::SystemText,
+                "user" => Self::UserText,
+                "assistant" => Self::AssistantText,
+                _ => Self::Unknown,
+            },
+            _ => Self::Unknown,
         }
     }
 
-    fn glyph_color(self) -> (&'static str, Color) {
+    fn glyph(self) -> &'static str {
         match self {
-            Self::System => ("▓", Color::Blue),
-            Self::User => ("░", Color::Green),
-            Self::Assistant => ("▢", Color::White),
-            Self::ToolCall => ("▒", Color::Yellow),
-            Self::ToolResult => ("█", Color::Cyan),
+            Self::SystemText => "▓",
+            Self::UserText => "░",
+            Self::AssistantText => "□",
+            Self::ToolCall => "⚒",
+            Self::ToolResult => "■",
+            Self::Image => "◆",
+            Self::Audio => "♪",
+            Self::Video => "▶",
+            Self::Document => "▤",
+            Self::Hitch => "!",
+            Self::Unknown => "·",
+        }
+    }
+
+    fn color(self) -> Color {
+        match self {
+            Self::SystemText => Color::DarkBlue,
+            Self::UserText => Color::Green,
+            Self::AssistantText => Color::White,
+            Self::ToolCall => Color::Yellow,
+            Self::ToolResult => Color::Cyan,
+            Self::Image => Color::Magenta,
+            Self::Audio => Color::DarkMagenta,
+            Self::Video => Color::DarkYellow,
+            Self::Document => Color::DarkGreen,
+            Self::Hitch => Color::Red,
+            Self::Unknown => Color::DarkGrey,
         }
     }
 }
 
 pub(crate) struct State {
-    blocks: Vec<FragmentKind>,
+    blocks: Vec<TapeBlock>,
     pointer: usize,
     target: usize,
-    tool_label: Option<String>,
-    tool_progress: usize,
+    status: String,
     summary: Summary,
+    origin_y: u16,
 }
 
 pub(crate) struct Summary {
@@ -66,235 +110,204 @@ pub(crate) fn run_animation(
     start: std::time::Instant,
 ) -> Summary {
     let step = Duration::from_millis(delay_ms);
+    let origin_y = position().map(|(_, y)| y).unwrap_or(0);
     let mut state = State {
         blocks: Vec::new(),
         pointer: 0,
         target: 0,
-        tool_label: None,
-        tool_progress: 0,
+        status: "booting".into(),
         summary: Summary {
             fragments: 0,
             tool_calls: 0,
             duration_s: 0.0,
         },
+        origin_y,
     };
 
     execute!(std::io::stdout(), Hide).ok();
 
-    // drain initial events
-    for ev in rx.try_iter() {
-        apply_event(&mut state, ev);
-    }
-
     loop {
-        // process available events
-        for ev in rx.try_iter() {
-            if matches!(ev, HookEvent::Done) {
+        for event in rx.try_iter() {
+            if matches!(event, HookEvent::Done) {
                 state.summary.duration_s = start.elapsed().as_secs_f64();
-                // finish animation: march pointer to target
-                while state.pointer < state.target {
-                    state.pointer += 1;
-                    render_frame(&state);
-                    thread::sleep(step);
-                }
-                render_frame(&state);
-                thread::sleep(Duration::from_millis(300));
-                execute!(std::io::stdout(), Show, MoveTo(0, 0)).ok();
+                finish_animation(&mut state, step);
                 return state.summary;
             }
-            apply_event(&mut state, ev);
+            apply_event(&mut state, event);
         }
 
-        // march pointer one step
         if state.pointer < state.target {
             state.pointer += 1;
-            if state
-                .blocks
-                .get(state.pointer.saturating_sub(1))
-                .map_or(false, |k| *k == FragmentKind::ToolCall)
-            {
-                state.tool_progress += 1;
-            }
             render_frame(&state);
             thread::sleep(step);
         } else {
             render_frame(&state);
-            thread::sleep(TICK);
+            thread::sleep(IDLE_TICK);
         }
 
-        // blocking wait with timeout — may return more events
-        match rx.recv_timeout(TICK) {
+        match rx.recv_timeout(IDLE_TICK) {
             Ok(HookEvent::Done) => {
                 state.summary.duration_s = start.elapsed().as_secs_f64();
-                while state.pointer < state.target {
-                    state.pointer += 1;
-                    render_frame(&state);
-                    thread::sleep(step);
-                }
-                render_frame(&state);
-                thread::sleep(Duration::from_millis(300));
-                execute!(std::io::stdout(), Show, MoveTo(0, 0)).ok();
+                finish_animation(&mut state, step);
                 return state.summary;
             }
-            Ok(ev) => {
-                apply_event(&mut state, ev);
-            }
+            Ok(event) => apply_event(&mut state, event),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                // machine thread finished without sending Done — process what we have
                 state.summary.duration_s = start.elapsed().as_secs_f64();
-                while state.pointer < state.target {
-                    state.pointer += 1;
-                    render_frame(&state);
-                    thread::sleep(step);
-                }
-                render_frame(&state);
-                thread::sleep(Duration::from_millis(200));
-                break;
+                finish_animation(&mut state, step);
+                return state.summary;
             }
         }
     }
-
-    execute!(std::io::stdout(), Show, MoveTo(0, 0)).ok();
-    state.summary
 }
 
-fn apply_event(state: &mut State, ev: HookEvent) {
-    match ev {
-        HookEvent::FragmentAppended { role, .. } => {
-            state.blocks.push(FragmentKind::from_role(&role));
+fn finish_animation(state: &mut State, step: Duration) {
+    state.status = "done".into();
+    while state.pointer < state.target {
+        state.pointer += 1;
+        render_frame(state);
+        thread::sleep(step);
+    }
+    render_frame(state);
+    thread::sleep(Duration::from_millis(250));
+    execute!(std::io::stdout(), Show, MoveTo(0, state.origin_y + 2)).ok();
+}
+
+fn apply_event(state: &mut State, event: HookEvent) {
+    match event {
+        HookEvent::FragmentAppended { id, role, kind, .. }
+        | HookEvent::FragmentTaken { id, role, kind, .. } => {
+            state.blocks.push(TapeBlock {
+                id,
+                kind: FragmentKind::from_parts(&role, &kind),
+            });
             state.target = state.blocks.len();
+            state.summary.fragments = state.blocks.len();
+            state.status = format!("write {role}/{kind}");
+        }
+        HookEvent::FragmentInserted { id, role, kind, .. } => {
+            state.blocks.push(TapeBlock {
+                id,
+                kind: FragmentKind::from_parts(&role, &kind),
+            });
+            state.target = state.blocks.len();
+            state.summary.fragments = state.blocks.len();
+            state.status = format!("insert {role}/{kind}");
+        }
+        HookEvent::FragmentReplaced { id, role, kind, .. } => {
+            let next_kind = FragmentKind::from_parts(&role, &kind);
+            if let Some(block) = state.blocks.iter_mut().find(|block| block.id == id) {
+                block.kind = next_kind;
+            } else {
+                state.blocks.push(TapeBlock {
+                    id,
+                    kind: next_kind,
+                });
+            }
+            state.target = state.blocks.len();
+            state.status = format!("replace {role}/{kind}");
+        }
+        HookEvent::FragmentRemoved { id } => {
+            state.blocks.retain(|block| block.id != id);
+            state.pointer = state.pointer.min(state.blocks.len());
+            state.target = state.blocks.len();
+            state.summary.fragments = state.blocks.len();
+            state.status = format!("remove #{id}");
+        }
+        HookEvent::FragmentsSwapped { first, second } => {
+            let first_index = state.blocks.iter().position(|block| block.id == first);
+            let second_index = state.blocks.iter().position(|block| block.id == second);
+            if let (Some(first_index), Some(second_index)) = (first_index, second_index) {
+                state.blocks.swap(first_index, second_index);
+            }
+            state.status = format!("swap #{first} ↔ #{second}");
         }
         HookEvent::ToolCall { tool, .. } => {
-            state.blocks.push(FragmentKind::ToolCall);
-            state.target = state.blocks.len();
-            state.tool_label = Some(tool);
-            state.tool_progress = 0;
+            state.status = format!("tool {tool}");
         }
-        HookEvent::ToolResult { .. } => {
-            state.blocks.push(FragmentKind::ToolResult);
-            state.target = state.blocks.len();
-            state.tool_label = None;
+        HookEvent::ToolResult { tool, .. } => {
             state.summary.tool_calls += 1;
+            state.status = format!("tool {tool} done");
+        }
+        HookEvent::ToolError { tool, .. } => {
+            state.status = format!("tool {tool} error");
         }
         HookEvent::CompletionStart => {
-            state.tool_progress = 0;
+            state.status = "completion".into();
         }
-        HookEvent::CompletionEnd { fragments } => {
-            state.summary.fragments += fragments;
+        HookEvent::CompletionEnd { .. } => {
+            state.status = "draining".into();
         }
-        HookEvent::Halt { .. }
-        | HookEvent::MachineStart
-        | HookEvent::FragmentTaken { .. }
-        | HookEvent::FragmentInserted { .. }
-        | HookEvent::FragmentReplaced { .. }
-        | HookEvent::ToolError { .. } => {}
+        HookEvent::Halt { round } => {
+            state.status = format!("halt #{round}");
+        }
+        HookEvent::Model { name } => {
+            state.status = format!("model {name}");
+        }
+        HookEvent::Activate { name } => {
+            state.status = format!("activate {name}");
+        }
+        HookEvent::Deactivate { name } => {
+            state.status = format!("deactivate {name}");
+        }
+        HookEvent::MachineStart => {
+            state.status = "start".into();
+        }
         HookEvent::Done => unreachable!(),
     }
 }
 
 fn render_frame(state: &State) {
-    let term_width = crossterm::terminal::size()
-        .map(|(w, _)| w as usize)
+    let width = crossterm::terminal::size()
+        .map(|(width, _)| width as usize)
         .unwrap_or(80);
+    let max_blocks = (width / CELL_WIDTH).saturating_sub(1);
+    let start = state.blocks.len().saturating_sub(max_blocks);
+    let visible = &state.blocks[start..];
+    let pointer_index = state.pointer.saturating_sub(1).saturating_sub(start);
+    let pointer_col = if state.pointer == 0 {
+        0
+    } else {
+        pointer_index.min(visible.len().saturating_sub(1)) * CELL_WIDTH
+    };
 
-    let (tape, pointer_col) = build_tape_and_pointer(state, term_width);
+    let mut out = std::io::stdout();
 
-    // Row 0: tape
     execute!(
-        std::io::stdout(),
-        MoveTo(0, 0),
+        out,
+        MoveTo(0, state.origin_y),
         Clear(ClearType::CurrentLine)
     )
     .ok();
-    let mut out = std::io::stdout();
-    for (i, (ch, color)) in tape.iter().enumerate() {
-        if i == pointer_col {
-            write!(out, "{}", "⚙".to_string().with(Color::Cyan).bold()).ok();
+    if visible.is_empty() {
+        write!(out, "{}", "·".with(Color::DarkGrey)).ok();
+    } else {
+        for block in visible {
+            write!(
+                out,
+                "{} ",
+                block.kind.glyph().to_string().with(block.kind.color())
+            )
+            .ok();
         }
-        write!(out, "{}", ch.to_string().with(*color)).ok();
     }
 
-    // Row 1: pointer arrow + label
     execute!(
-        std::io::stdout(),
-        MoveTo(0, 1),
+        out,
+        MoveTo(0, state.origin_y + 1),
         Clear(ClearType::CurrentLine)
     )
     .ok();
-    let indent = pointer_col.saturating_sub(1);
-    for _ in 0..indent {
+    for _ in 0..pointer_col {
         write!(out, " ").ok();
     }
-    write!(out, "{}", "╰╴".to_string().with(Color::Cyan)).ok();
-
-    if let Some(tool) = &state.tool_label {
-        let elapsed = state.tool_progress * 50 / 1000;
-        write!(
-            out,
-            " {} ({}s)",
-            tool.to_string().with(Color::Yellow),
-            elapsed
-        )
-        .ok();
-    } else {
-        write!(
-            out,
-            "{}",
-            build_label(state).to_string().with(Color::DarkCyan)
-        )
-        .ok();
-    }
+    write!(out, "{}", "⚙".with(Color::Cyan).bold()).ok();
+    write!(
+        out,
+        " {}",
+        format!("{} {}/{}", state.status, state.pointer, state.blocks.len()).with(Color::DarkCyan)
+    )
+    .ok();
     out.flush().ok();
-}
-
-fn build_tape_and_pointer(state: &State, max_width: usize) -> (Vec<(String, Color)>, usize) {
-    let max_blocks = max_width / 2;
-    let show = &state.blocks[..state.blocks.len().min(max_blocks)];
-    let mut tape: Vec<(String, Color)> = Vec::with_capacity(show.len() * 2 + 1);
-    let mut pointer_col = 0;
-    let end = state.pointer.min(show.len());
-
-    for (i, block) in show.iter().enumerate() {
-        let (ch, color) = block.glyph_color();
-        if i < end {
-            // already processed — full brightness
-            tape.push((ch.into(), color));
-        } else if i == end && state.pointer == state.target {
-            // target reached — show dim with idle marker
-            tape.push((ch.into(), color));
-        } else if i == end {
-            // next to be processed — dim
-            tape.push((ch.into(), color));
-            pointer_col = tape.len();
-            if state.pointer < state.target {
-                tape.push(("▶".into(), Color::Cyan));
-            } else {
-                tape.push(("▷".into(), Color::Cyan));
-            }
-        } else {
-            // future — dim
-            tape.push((ch.into(), color));
-        }
-    }
-
-    if state.blocks.is_empty() {
-        tape.push(("◉".into(), Color::DarkCyan));
-        pointer_col = 1;
-    }
-
-    (tape, pointer_col)
-}
-
-fn build_label(state: &State) -> String {
-    let total = state.blocks.len();
-    let idx = state.pointer.min(total);
-    if total == 0 {
-        if state.target > 0 {
-            return format!("assembling… 0/{}", state.target);
-        }
-        return "waiting…".into();
-    }
-    let pct = if total > 0 { idx * 100 / total } else { 0 };
-    format!("step {}/{} ({}%)", idx, total, pct)
 }
