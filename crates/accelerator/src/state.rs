@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use machine::{Context, Environment, Policy, Resources};
@@ -27,13 +26,9 @@ impl Default for State {
 }
 
 fn local() -> Environment {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let root = cwd.clone();
-    Environment {
-        cwd,
-        vars: HashMap::new(),
-        root: Some(root),
-    }
+    let mut env = Environment::new(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    env.root = Some(env.cwd.clone());
+    env
 }
 
 fn kit() -> Resources {

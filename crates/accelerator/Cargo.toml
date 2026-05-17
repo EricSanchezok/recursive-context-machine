@@ -12,7 +12,6 @@ tokio = { workspace = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "registry", "json"] }
 tracing-appender = "0.2"
-chrono = { workspace = true }
 regex = "1"
 ignore = "0.4"
 tree-sitter = "0.26.8"

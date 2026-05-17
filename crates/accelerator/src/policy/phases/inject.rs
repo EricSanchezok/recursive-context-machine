@@ -1,4 +1,3 @@
-use chrono::Local;
 use machine::{
     Action, Context, Environment, Fragment, Phase, PhaseOutcome, Purpose, Resources, Role,
 };
@@ -44,17 +43,14 @@ impl Phase for InjectPurpose {
     }
 }
 
-/// Inject environment snapshot as a [`Role::System`] fragment with tag `"env"`.
+/// Inject an environment snapshot as a [`Role::System`] fragment with tag `"env"`.
 ///
-/// Captures only what the LLM needs for correct tool use:
-/// - `cwd` — base for all relative paths
-/// - `platform` — affects path separators and command syntax
-/// - `time` — RFC 3339 local time with explicit offset, zero ambiguity
-///
-/// Time format: `2026-05-17T08:31:30+08:00`
-/// - ISO 8601 / RFC 3339 — LLM's most familiar format
-/// - The `+08:00` offset makes it unambiguously local time (UTC would be `Z`)
-/// - No locale-dependent strings like "Wed May 17"
+/// Delegates formatting to [`Environment::snapshot`], which produces:
+/// ```text
+/// cwd: /path/to/dir
+/// platform: macos
+/// time: 2026-05-17T13:17:12+08:00
+/// ```
 pub struct InjectEnv;
 
 impl Phase for InjectEnv {
@@ -81,15 +77,8 @@ impl Phase for InjectEnv {
             return PhaseOutcome::Done;
         }
 
-        let now = Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
-
-        let text = format!(
-            "cwd: {}\nplatform: {}\ntime: {}",
-            env.cwd.display(),
-            std::env::consts::OS,
-            now,
-        );
-
-        PhaseOutcome::Action(Action::Append(Fragment::system(text).with_tag("env")))
+        PhaseOutcome::Action(Action::Append(
+            Fragment::system(env.snapshot()).with_tag("env"),
+        ))
     }
 }
