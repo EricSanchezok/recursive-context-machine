@@ -1,13 +1,12 @@
-use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::pin::Pin;
 
 use machine::{Environment, ToolResult};
 use serde_json::Value;
 
-use super::{DEFAULT_READ_LIMIT, MAX_LINE_LENGTH, OUTPUT_CAP_BYTES};
+use super::{DEFAULT_READ_LIMIT, MAX_LINE_LENGTH, OUTPUT_CAP_BYTES, relative_path, resolve_path};
 
-/// File extensions known to be binary.
+/// File extensions known to be binary — no content is readable.
 const BINARY_EXTENSIONS: &[&str] = &[
     "zip", "tar", "gz", "exe", "dll", "so", "class", "jar", "war", "7z", "doc", "xls", "ppt",
     "odt", "ods", "odp", "bin", "dat", "obj", "o", "a", "lib", "wasm", "pyc", "pyo",
@@ -68,38 +67,25 @@ pub(crate) fn execute<'a>(
             return Err(format!("Cannot read binary file: {}", resolved.display()));
         }
 
-        let text = String::from_utf8(raw)
-            .map_err(|_| format!("Cannot read binary file: {}", resolved.display()))?;
+        let text = String::from_utf8(raw).map_err(|_| {
+            format!(
+                "Cannot read '{}': file is not valid UTF-8 text",
+                resolved.display()
+            )
+        })?;
 
         let offset = args["offset"].as_u64().unwrap_or(0) as usize;
         let limit = args["limit"].as_u64().unwrap_or(DEFAULT_READ_LIMIT as u64) as usize;
 
-        let title = relative_display(&resolved, &env.cwd).unwrap_or_else(|| raw_path.to_string());
-        let output = format_lines(&text, offset, limit, &title);
+        let path_str = relative_path(&resolved, &env.cwd);
+        let output = format_lines(&text, offset, limit, &path_str);
 
         Ok(ToolResult {
             call_id: String::new(),
             content: output,
-            title: Some(title),
+            title: Some(path_str),
         })
     })
-}
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-fn resolve_path(raw: &str, cwd: &Path) -> PathBuf {
-    let path = Path::new(raw);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        cwd.join(path)
-    }
-}
-
-fn relative_display(path: &Path, cwd: &Path) -> Option<String> {
-    path.strip_prefix(cwd).ok().map(|p| p.display().to_string())
 }
 
 /// True when the byte slice looks like binary (null bytes or >30% ASCII
@@ -175,8 +161,10 @@ fn format_lines(text: &str, offset: usize, limit: usize, title: &str) -> String 
         return output;
     }
 
+    // Account for header bytes in the output cap.
+    let mut byte_count: usize = output.len();
+
     let end = (offset + limit).min(total);
-    let mut byte_count: usize = 0;
 
     for (index, line) in lines[offset..end].iter().enumerate() {
         let line_num = offset + index + 1;

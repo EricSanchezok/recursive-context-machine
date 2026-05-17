@@ -4,6 +4,8 @@ use std::pin::Pin;
 use machine::{Environment, ToolResult};
 use serde_json::Value;
 
+use super::{relative_path, resolve_path};
+
 pub(crate) fn execute<'a>(
     args: &'a Value,
     env: &'a Environment,
@@ -18,11 +20,7 @@ pub(crate) fn execute<'a>(
             .ok_or("missing required parameter 'content'")?;
 
         let path = resolve_path(file_path, &env.cwd);
-        let relative = path
-            .strip_prefix(&env.cwd)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .to_string();
+        let relative = relative_path(&path, &env.cwd);
 
         if tokio::fs::metadata(&path)
             .await
@@ -51,13 +49,4 @@ pub(crate) fn execute<'a>(
             title: Some(format!("wrote {relative}")),
         })
     })
-}
-
-fn resolve_path(raw: &str, cwd: &std::path::Path) -> std::path::PathBuf {
-    let candidate = std::path::Path::new(raw);
-    if candidate.is_absolute() {
-        candidate.to_path_buf()
-    } else {
-        cwd.join(candidate)
-    }
 }

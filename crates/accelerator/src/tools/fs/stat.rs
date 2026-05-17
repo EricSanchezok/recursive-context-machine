@@ -1,10 +1,10 @@
-use std::future::Future;
-use std::path::Path;
 use std::pin::Pin;
 
 use chrono::{TimeZone, Utc};
 use machine::{Environment, ToolResult};
 use serde_json::Value;
+
+use super::{relative_path, resolve_path};
 
 pub(crate) fn execute<'a>(
     args: &'a Value,
@@ -15,11 +15,7 @@ pub(crate) fn execute<'a>(
             .as_str()
             .ok_or("missing required parameter 'filePath'")?;
 
-        let resolved = if Path::new(file_path).is_absolute() {
-            Path::new(file_path).to_path_buf()
-        } else {
-            env.cwd.join(file_path)
-        };
+        let resolved = resolve_path(file_path, &env.cwd);
 
         let metadata = tokio::fs::metadata(&resolved).await.map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
@@ -32,15 +28,7 @@ pub(crate) fn execute<'a>(
             }
         })?;
 
-        let relative = if resolved.starts_with(&env.cwd) {
-            resolved
-                .strip_prefix(&env.cwd)
-                .unwrap()
-                .to_string_lossy()
-                .to_string()
-        } else {
-            resolved.to_string_lossy().to_string()
-        };
+        let relative = relative_path(&resolved, &env.cwd);
 
         let file_type = if metadata.is_dir() {
             "directory"

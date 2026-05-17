@@ -18,12 +18,12 @@
 //! 8. **ContextAwareReplacer** — anchor-based with ≥50% middle-line match threshold.
 //! 9. **MultiOccurrenceReplacer** — literal oldString; triggers multi-match error when matches are ambiguous.
 
-use std::future::Future;
-use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use machine::{Environment, ToolResult};
 use serde_json::Value;
+
+use super::{relative_path, resolve_path};
 
 // ── Replacer type ──────────────────────────────────────────────────────────
 
@@ -261,33 +261,47 @@ fn line_trimmed_replacer(content: &str, find: &str) -> Vec<String> {
 
 // ── 3. BlockAnchorReplacer ─────────────────────────────────────────────────
 
-/// Requires ≥3 lines in the find string. Uses the first and last lines as
-/// trimmed anchors. For each block where both anchors match, computes
-/// Levenshtein similarity on the middle lines. Accepts candidates with
-/// similarity ≥0.3, taking the highest when multiple are available.
+/// Requires ≥3 find lines. Uses the first and last (trimmed) lines as anchors.
+/// For each candidate block found in content, computes Levenshtein similarity
+/// on the middle lines and accepts candidates with similarity ≥0.3.
+///
+/// Unlike simpler strategies, the end anchor is searched at any position
+/// after the start anchor (not necessarily at a fixed offset). This means
+/// the matched block can have a different number of lines than the find
+/// string — similarity is evaluated over min(both_middle_counts) lines.
 fn block_anchor_replacer(content: &str, find: &str) -> Vec<String> {
     let find_lines: Vec<&str> = find.lines().collect();
     if find_lines.len() < 3 {
         return vec![];
     }
+
+    // Strip trailing empty line from find (common when copying multi-line text)
+    let find_lines = if find_lines.last().copied() == Some("") {
+        &find_lines[..find_lines.len() - 1]
+    } else {
+        find_lines.as_slice()
+    };
+    if find_lines.len() < 3 {
+        return vec![];
+    }
+
     let content_lines: Vec<&str> = content.lines().collect();
     let first = find_lines[0].trim();
     let last = find_lines[find_lines.len() - 1].trim();
-    let middle_find: Vec<&str> = find_lines[1..find_lines.len() - 1].to_vec();
+    let find_block_size = find_lines.len();
 
-    let mut candidates: Vec<(usize, f64)> = Vec::new();
-    for start in 0..content_lines.len() {
-        let end = start + find_lines.len() - 1;
-        if end >= content_lines.len() {
-            break;
-        }
-        if content_lines[start].trim() != first || content_lines[end].trim() != last {
+    // Collect candidates where both anchors match in content.
+    // The end anchor is searched after the start anchor + 2 lines.
+    let mut candidates: Vec<(usize, usize)> = Vec::new();
+    for i in 0..content_lines.len() {
+        if content_lines[i].trim() != first {
             continue;
         }
-        let middle_content = &content_lines[start + 1..end];
-        let similarity = average_levenshtein_similarity(&middle_find, middle_content);
-        if similarity >= 0.3 {
-            candidates.push((start, similarity));
+        for j in (i + 2)..content_lines.len() {
+            if content_lines[j].trim() == last {
+                candidates.push((i, j));
+                break; // first occurrence of last anchor after this start
+            }
         }
     }
 
@@ -295,10 +309,62 @@ fn block_anchor_replacer(content: &str, find: &str) -> Vec<String> {
         return vec![];
     }
 
-    candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    let best_start = candidates[0].0;
-    let matched = content_lines[best_start..best_start + find_lines.len()].join("\n");
-    vec![matched]
+    /// Evaluate similarity between find middle lines and content middle lines.
+    /// Only compares up to `min(find_middle, content_middle)` lines.
+    fn evaluate(
+        content_lines: &[&str],
+        find_lines: &[&str],
+        start: usize,
+        end: usize,
+        find_block_size: usize,
+    ) -> f64 {
+        let actual_size = end - start + 1;
+        let lines_to_check = std::cmp::min(find_block_size - 2, actual_size - 2);
+        if lines_to_check == 0 {
+            return 1.0;
+        }
+        let mut sum = 0.0_f64;
+        let max_j = std::cmp::min(find_block_size - 1, actual_size - 1);
+        for j in 1..max_j {
+            let cl = content_lines[start + j].trim();
+            let fl = find_lines[j].trim();
+            let max_len = std::cmp::max(cl.len(), fl.len());
+            if max_len == 0 {
+                continue;
+            }
+            let sim = 1.0 - levenshtein_distance(cl, fl) as f64 / max_len as f64;
+            sum += sim / lines_to_check as f64;
+        }
+        sum
+    }
+
+    // Single candidate: accept if similarity ≥ 0.3
+    if candidates.len() == 1 {
+        let (start, end) = candidates[0];
+        let sim = evaluate(&content_lines, find_lines, start, end, find_block_size);
+        if sim >= 0.3 {
+            return vec![content_lines[start..=end].join("\n")];
+        }
+        return vec![];
+    }
+
+    // Multiple candidates: pick the best with highest similarity
+    let mut best: Option<(usize, usize, f64)> = None;
+    for &(start, end) in &candidates {
+        let sim = evaluate(&content_lines, find_lines, start, end, find_block_size);
+        if sim >= 0.3 {
+            match best {
+                Some((_, _, bs)) if sim <= bs => {}
+                _ => best = Some((start, end, sim)),
+            }
+        }
+    }
+
+    if let Some((start, end, _)) = best {
+        vec![content_lines[start..=end].join("\n")]
+    } else {
+        vec![]
+    }
 }
 
 // ── 4. WhitespaceNormalizedReplacer ────────────────────────────────────────
@@ -597,23 +663,6 @@ fn replace(
     Err(similar_lines_hint(content, old_str))
 }
 
-// ── Path helpers ───────────────────────────────────────────────────────────
-
-fn resolve_path(file_path: &str, env: &Environment) -> PathBuf {
-    let path = Path::new(file_path);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        env.cwd.join(path)
-    }
-}
-
-fn relative_path(path: &Path, cwd: &Path) -> String {
-    path.strip_prefix(cwd)
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| path.display().to_string())
-}
-
 // ── Entry point ────────────────────────────────────────────────────────────
 
 pub(crate) fn execute<'a>(
@@ -639,7 +688,7 @@ pub(crate) fn execute<'a>(
             return Err("oldString and newString must differ".to_string());
         }
 
-        let resolved = resolve_path(file_path_str, env);
+        let resolved = resolve_path(file_path_str, &env.cwd);
 
         if old_string.is_empty() {
             let parent = resolved

@@ -10,7 +10,7 @@ mod read;
 mod stat;
 mod write;
 
-use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -118,4 +118,23 @@ impl Tool for FsTool {
             }
         })
     }
+}
+
+// ── Shared path helpers ─────────────────────────────────────────────────────────
+
+/// Resolve a path string against a working directory.
+pub(crate) fn resolve_path(raw: &str, cwd: &Path) -> PathBuf {
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    }
+}
+
+/// Compute the display path relative to a working directory.
+pub(crate) fn relative_path(path: &Path, cwd: &Path) -> String {
+    path.strip_prefix(cwd)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| path.display().to_string())
 }

@@ -37,13 +37,13 @@ Usage:
 
 ### List
 
-Lists the immediate contents of a directory.
+Lists the contents of a directory recursively (up to 4 levels deep).
 
 Usage:
 - Lists up to {MAX_LIST_ENTRIES} entries, sorted with directories first, then files alphabetically.
-- Does NOT recurse into subdirectories — call list again on the subdirectory path.
+- Common build artifacts and dependency directories (node_modules, .git, target, vendor, __pycache__, etc.) are automatically excluded. Entries starting with `.` are also excluded.
 - Use `limit` to cap the number of entries returned.
-- Output uses 📁 for directories and 📄 for files.
+- Output uses 📁 for directories and 📄 for files, indented by depth.
 
 ### Stat
 
