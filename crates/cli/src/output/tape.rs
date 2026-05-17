@@ -29,6 +29,7 @@ struct TapeCell {
 enum CellState {
     Pending,
     Written,
+    Replacing,
     Removing,
 }
 
@@ -230,7 +231,7 @@ fn tick(state: &mut State, step: Duration) {
         match state.pointer.cmp(&target) {
             std::cmp::Ordering::Less => state.pointer += 1,
             std::cmp::Ordering::Greater => state.pointer -= 1,
-            std::cmp::Ordering::Equal => commit_active_op(state),
+            std::cmp::Ordering::Equal => advance_active_op(state),
         }
     } else {
         render_frame(state);
@@ -238,7 +239,17 @@ fn tick(state: &mut State, step: Duration) {
     }
 }
 
-fn commit_active_op(state: &mut State) {
+fn advance_active_op(state: &mut State) {
+    if let Some(TapeOp::Replace { index, .. }) = state.active.as_ref() {
+        if let Some(cell) = state.cells.get_mut(*index) {
+            if cell.state != CellState::Replacing {
+                cell.state = CellState::Replacing;
+                state.status = "overwriting".into();
+                return;
+            }
+        }
+    }
+
     let Some(op) = state.active.take() else {
         return;
     };
@@ -354,21 +365,9 @@ fn enqueue_write(state: &mut State, meta: FragmentMeta, action: &str) {
 
 fn enqueue_replace(state: &mut State, meta: FragmentMeta) {
     let kind = CellKind::from_meta(&meta);
-    let index = match state.cells.iter().position(|cell| cell.id == meta.id) {
-        Some(index) => {
-            state.cells[index].kind = kind;
-            state.cells[index].state = CellState::Pending;
-            index
-        }
-        None => {
-            let index = state.cells.len();
-            state.cells.push(TapeCell {
-                id: meta.id,
-                kind,
-                state: CellState::Pending,
-            });
-            index
-        }
+    let Some(index) = state.cells.iter().position(|cell| cell.id == meta.id) else {
+        enqueue_write(state, meta, "write");
+        return;
     };
     state.queue.push_back(TapeOp::Replace {
         index,
@@ -536,6 +535,7 @@ fn one_line(text: &str) -> String {
 fn cell_glyph(cell: &TapeCell) -> &'static str {
     match cell.state {
         CellState::Pending | CellState::Removing => "□",
+        CellState::Replacing => "◈",
         CellState::Written => "■",
     }
 }
@@ -543,7 +543,7 @@ fn cell_glyph(cell: &TapeCell) -> &'static str {
 fn cell_color(cell: &TapeCell) -> Color {
     match cell.state {
         CellState::Removing => Color::Red,
-        CellState::Pending => cell.kind.color(),
-        CellState::Written => cell.kind.color(),
+        CellState::Replacing => Color::Yellow,
+        CellState::Pending | CellState::Written => cell.kind.color(),
     }
 }

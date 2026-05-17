@@ -2,17 +2,12 @@ use machine::{Content, Context, Role};
 
 use super::Summary;
 
-pub fn print(ctx: &Context, summary: &Summary, full_context: bool) {
+pub fn print(ctx: &Context, _summary: &Summary, full_context: bool) {
     if full_context {
         print_context(ctx);
     } else if let Some(text) = final_message(ctx) {
         println!("{}", text.trim_end());
     }
-
-    println!(
-        "── done ({:.1}s, {} fragments, {} tool calls) ──",
-        summary.duration_s, summary.fragments, summary.tool_calls
-    );
 }
 
 fn print_context(ctx: &Context) {
