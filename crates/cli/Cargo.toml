@@ -3,10 +3,16 @@ name = "cli"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "accelerate"
+path = "src/main.rs"
+
 [dependencies]
 machine = { path = "../machine" }
 accelerator = { path = "../accelerator" }
 tokio = { workspace = true, features = ["rt", "macros"] }
+anyhow = { workspace = true }
+clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
 serde_json = { workspace = true }

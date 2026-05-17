@@ -151,7 +151,7 @@ pub(crate) fn run_animation(
     start: std::time::Instant,
 ) -> Summary {
     let step = Duration::from_millis(delay_ms);
-    let origin_y = position().map(|(_, cursor_y)| cursor_y).unwrap_or(0);
+    let origin_y = reserve_animation_rows();
     let mut state = State {
         cells: Vec::new(),
         pointer: 0,
@@ -195,6 +195,14 @@ pub(crate) fn run_animation(
             }
         }
     }
+}
+
+fn reserve_animation_rows() -> u16 {
+    let (_, before_y) = position().unwrap_or((0, 0));
+    println!();
+    println!();
+    let (_, after_y) = position().unwrap_or((0, before_y.saturating_add(2)));
+    after_y.saturating_sub(2)
 }
 
 fn finish_animation(state: &mut State, step: Duration) {
