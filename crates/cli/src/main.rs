@@ -11,34 +11,44 @@ use tracing_subscriber::prelude::*;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let prompt = if args.len() > 1 {
-        args[1..].join(" ")
-    } else {
+
+    let mut prompt_parts: Vec<String> = Vec::new();
+    let mut i = 1;
+    let mut delay_ms: u64 = 50;
+
+    while i < args.len() {
+        if args[i] == "--speed" && i + 1 < args.len() {
+            delay_ms = args[i + 1].parse().unwrap_or(50);
+            i += 2;
+        } else {
+            prompt_parts.push(args[i].clone());
+            i += 1;
+        }
+    }
+
+    let prompt = if prompt_parts.is_empty() {
         eprintln!("usage: cargo run -p cli -- <prompt> [--speed <ms>]");
         std::process::exit(1);
-    };
-
-    let delay_ms: u64 = {
-        let mut d = 50;
-        for w in args.windows(2) {
-            if w[0] == "--speed" {
-                d = w[1].parse().unwrap_or(50);
-            }
-        }
-        d
+    } else {
+        prompt_parts.join(" ")
     };
 
     let (hook_tx, hook_rx) = mpsc::channel();
 
-    // Init tracing — hook layer intercepts target:"hook" for the visualizer,
-    // fmt layer prints other logs to stderr only.
+    // Init tracing — hook layer intercepts target:"hook" for the visualizer
+    // (never filtered).  The fmt layer is silenced by default; set
+    // RUST_LOG=info or RUST_LOG=debug to see logs.
+    use tracing_subscriber::layer::Layer;
+    let fmt_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("off"));
     let subscriber = tracing_subscriber::registry()
         .with(hook::hook_layer(hook_tx))
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(false)
                 .with_writer(std::io::stderr)
-                .compact(),
+                .compact()
+                .with_filter(fmt_filter),
         );
     tracing::subscriber::set_global_default(subscriber).ok();
 
@@ -72,6 +82,7 @@ fn main() {
     for _ in 0..2 {
         eprintln!();
     }
+
     println!("── Result ──────────────────────────────────────");
     for frag in ctx.fragments() {
         let tag = match frag.role {

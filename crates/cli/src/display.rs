@@ -115,10 +115,12 @@ pub(crate) fn run_animation(
             {
                 state.tool_progress += 1;
             }
+            render_frame(&state);
+            thread::sleep(step);
+        } else {
+            render_frame(&state);
+            thread::sleep(TICK);
         }
-
-        render_frame(&state);
-        thread::sleep(TICK);
 
         // blocking wait with timeout — may return more events
         match rx.recv_timeout(TICK) {
