@@ -1,6 +1,6 @@
-# RICA Development Guide
+# RCM Development Guide
 
-This document encodes the development rules for RICA. All agents editing this codebase
+This document encodes the development rules for RCM. All agents editing this codebase
 must follow these conventions. Do not override unless explicitly instructed by the user.
 
 ## Comments
@@ -78,3 +78,11 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - Tests must be fast. No test may depend on external services (LLM APIs) or long
   timeouts. Tests that currently depend on the reactor loop use SeqPolicy without
   `Action::Halt` to avoid HTTP calls.
+
+## Research
+
+- All research materials (literature surveys, benchmark analysis, paper summaries,
+  etc.) go under `research/`, not in the project root.
+- Downloaded papers (PDFs) go in `research/` as well.
+- Keep `research/` organized — group related files into subdirectories by topic
+  when a single topic accumulates multiple files.
