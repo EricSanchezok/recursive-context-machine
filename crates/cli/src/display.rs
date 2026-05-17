@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+use std::io::Write;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -8,21 +10,30 @@ use crossterm::{
     style::{Color, Stylize},
     terminal::{Clear, ClearType},
 };
-use std::io::Write;
 
-use crate::hook::HookEvent;
+use crate::hook::{
+    CompletionEvent, FragmentEvent, FragmentMeta, HookEvent, MachineEvent, ResourceEvent, ToolEvent,
+};
 
 const IDLE_TICK: Duration = Duration::from_millis(50);
 const CELL_WIDTH: usize = 2;
 
 #[derive(Clone)]
-struct TapeBlock {
+struct TapeCell {
     id: u64,
-    kind: FragmentKind,
+    kind: CellKind,
+    state: CellState,
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum FragmentKind {
+enum CellState {
+    Pending,
+    Written,
+    Removing,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum CellKind {
     SystemText,
     UserText,
     AssistantText,
@@ -36,9 +47,9 @@ enum FragmentKind {
     Unknown,
 }
 
-impl FragmentKind {
-    fn from_parts(role: &str, kind: &str) -> Self {
-        match kind {
+impl CellKind {
+    fn from_meta(meta: &FragmentMeta) -> Self {
+        match meta.kind.as_str() {
             "tool_call" => Self::ToolCall,
             "tool_result" => Self::ToolResult,
             "image" => Self::Image,
@@ -46,29 +57,13 @@ impl FragmentKind {
             "video" => Self::Video,
             "document" => Self::Document,
             "hitch" => Self::Hitch,
-            "text" => match role {
+            "text" => match meta.role.as_str() {
                 "system" => Self::SystemText,
                 "user" => Self::UserText,
                 "assistant" => Self::AssistantText,
                 _ => Self::Unknown,
             },
             _ => Self::Unknown,
-        }
-    }
-
-    fn glyph(self) -> &'static str {
-        match self {
-            Self::SystemText => "▓",
-            Self::UserText => "░",
-            Self::AssistantText => "□",
-            Self::ToolCall => "⚒",
-            Self::ToolResult => "■",
-            Self::Image => "◆",
-            Self::Audio => "♪",
-            Self::Video => "▶",
-            Self::Document => "▤",
-            Self::Hitch => "!",
-            Self::Unknown => "·",
         }
     }
 
@@ -89,10 +84,56 @@ impl FragmentKind {
     }
 }
 
+#[derive(Clone)]
+enum TapeOp {
+    Write {
+        index: usize,
+        id: u64,
+        kind: CellKind,
+        label: String,
+    },
+    Replace {
+        index: usize,
+        kind: CellKind,
+        label: String,
+    },
+    Remove {
+        index: usize,
+        id: u64,
+        label: String,
+    },
+    Swap {
+        first: usize,
+        second: usize,
+        label: String,
+    },
+}
+
+impl TapeOp {
+    fn target(&self) -> usize {
+        match self {
+            Self::Write { index, .. }
+            | Self::Replace { index, .. }
+            | Self::Remove { index, .. } => *index,
+            Self::Swap { first, .. } => *first,
+        }
+    }
+
+    fn label(&self) -> &str {
+        match self {
+            Self::Write { label, .. }
+            | Self::Replace { label, .. }
+            | Self::Remove { label, .. }
+            | Self::Swap { label, .. } => label,
+        }
+    }
+}
+
 pub(crate) struct State {
-    blocks: Vec<TapeBlock>,
+    cells: Vec<TapeCell>,
     pointer: usize,
-    target: usize,
+    queue: VecDeque<TapeOp>,
+    active: Option<TapeOp>,
     status: String,
     summary: Summary,
     origin_y: u16,
@@ -110,11 +151,12 @@ pub(crate) fn run_animation(
     start: std::time::Instant,
 ) -> Summary {
     let step = Duration::from_millis(delay_ms);
-    let origin_y = position().map(|(_, y)| y).unwrap_or(0);
+    let origin_y = position().map(|(_, cursor_y)| cursor_y).unwrap_or(0);
     let mut state = State {
-        blocks: Vec::new(),
+        cells: Vec::new(),
         pointer: 0,
-        target: 0,
+        queue: VecDeque::new(),
+        active: None,
         status: "booting".into(),
         summary: Summary {
             fragments: 0,
@@ -128,7 +170,7 @@ pub(crate) fn run_animation(
 
     loop {
         for event in rx.try_iter() {
-            if matches!(event, HookEvent::Done) {
+            if matches!(event, HookEvent::Machine(MachineEvent::Done)) {
                 state.summary.duration_s = start.elapsed().as_secs_f64();
                 finish_animation(&mut state, step);
                 return state.summary;
@@ -136,17 +178,10 @@ pub(crate) fn run_animation(
             apply_event(&mut state, event);
         }
 
-        if state.pointer < state.target {
-            state.pointer += 1;
-            render_frame(&state);
-            thread::sleep(step);
-        } else {
-            render_frame(&state);
-            thread::sleep(IDLE_TICK);
-        }
+        tick(&mut state, step);
 
         match rx.recv_timeout(IDLE_TICK) {
-            Ok(HookEvent::Done) => {
+            Ok(HookEvent::Machine(MachineEvent::Done)) => {
                 state.summary.duration_s = start.elapsed().as_secs_f64();
                 finish_animation(&mut state, step);
                 return state.summary;
@@ -163,98 +198,199 @@ pub(crate) fn run_animation(
 }
 
 fn finish_animation(state: &mut State, step: Duration) {
-    state.status = "done".into();
-    while state.pointer < state.target {
-        state.pointer += 1;
-        render_frame(state);
-        thread::sleep(step);
+    while state.active.is_some() || !state.queue.is_empty() {
+        tick(state, step);
     }
+    state.status = "done".into();
     render_frame(state);
     thread::sleep(Duration::from_millis(250));
     execute!(std::io::stdout(), Show, MoveTo(0, state.origin_y + 2)).ok();
 }
 
+fn tick(state: &mut State, step: Duration) {
+    if state.active.is_none() {
+        state.active = state.queue.pop_front();
+    }
+
+    if let Some(op) = state.active.as_ref() {
+        let target = op.target().min(state.cells.len().saturating_sub(1));
+        state.status = op.label().to_string();
+        render_frame(state);
+        thread::sleep(step);
+
+        match state.pointer.cmp(&target) {
+            std::cmp::Ordering::Less => state.pointer += 1,
+            std::cmp::Ordering::Greater => state.pointer -= 1,
+            std::cmp::Ordering::Equal => commit_active_op(state),
+        }
+    } else {
+        render_frame(state);
+        thread::sleep(IDLE_TICK);
+    }
+}
+
+fn commit_active_op(state: &mut State) {
+    let Some(op) = state.active.take() else {
+        return;
+    };
+
+    match op {
+        TapeOp::Write {
+            index, id, kind, ..
+        } => {
+            if let Some(cell) = state.cells.get_mut(index) {
+                cell.id = id;
+                cell.kind = kind;
+                cell.state = CellState::Written;
+            }
+        }
+        TapeOp::Replace { index, kind, .. } => {
+            if let Some(cell) = state.cells.get_mut(index) {
+                cell.kind = kind;
+                cell.state = CellState::Written;
+            }
+        }
+        TapeOp::Remove { index, id, .. } => {
+            if state.cells.get(index).is_some_and(|cell| cell.id == id) {
+                state.cells.remove(index);
+                if !state.cells.is_empty() {
+                    state.pointer = state.pointer.min(state.cells.len() - 1);
+                } else {
+                    state.pointer = 0;
+                }
+            }
+        }
+        TapeOp::Swap { first, second, .. } => {
+            if first < state.cells.len() && second < state.cells.len() {
+                state.cells.swap(first, second);
+            }
+        }
+    }
+
+    state.summary.fragments = state.cells.len();
+}
+
 fn apply_event(state: &mut State, event: HookEvent) {
     match event {
-        HookEvent::FragmentAppended { id, role, kind, .. }
-        | HookEvent::FragmentTaken { id, role, kind, .. } => {
-            state.blocks.push(TapeBlock {
-                id,
-                kind: FragmentKind::from_parts(&role, &kind),
-            });
-            state.target = state.blocks.len();
-            state.summary.fragments = state.blocks.len();
-            state.status = format!("write {role}/{kind}");
+        HookEvent::Fragment(FragmentEvent::Appended(meta))
+        | HookEvent::Fragment(FragmentEvent::Taken(meta)) => enqueue_write(state, meta, "write"),
+        HookEvent::Fragment(FragmentEvent::Inserted(meta)) => enqueue_write(state, meta, "insert"),
+        HookEvent::Fragment(FragmentEvent::Replaced(meta)) => enqueue_replace(state, meta),
+        HookEvent::Fragment(FragmentEvent::Removed { id }) => enqueue_remove(state, id),
+        HookEvent::Fragment(FragmentEvent::Swapped { first, second }) => {
+            enqueue_swap(state, first, second)
         }
-        HookEvent::FragmentInserted { id, role, kind, .. } => {
-            state.blocks.push(TapeBlock {
-                id,
-                kind: FragmentKind::from_parts(&role, &kind),
-            });
-            state.target = state.blocks.len();
-            state.summary.fragments = state.blocks.len();
-            state.status = format!("insert {role}/{kind}");
+        HookEvent::Tool(ToolEvent::Call { tool, arguments }) => {
+            state.status = format!("tool {tool} args={}B", arguments.len());
         }
-        HookEvent::FragmentReplaced { id, role, kind, .. } => {
-            let next_kind = FragmentKind::from_parts(&role, &kind);
-            if let Some(block) = state.blocks.iter_mut().find(|block| block.id == id) {
-                block.kind = next_kind;
-            } else {
-                state.blocks.push(TapeBlock {
-                    id,
-                    kind: next_kind,
-                });
-            }
-            state.target = state.blocks.len();
-            state.status = format!("replace {role}/{kind}");
-        }
-        HookEvent::FragmentRemoved { id } => {
-            state.blocks.retain(|block| block.id != id);
-            state.pointer = state.pointer.min(state.blocks.len());
-            state.target = state.blocks.len();
-            state.summary.fragments = state.blocks.len();
-            state.status = format!("remove #{id}");
-        }
-        HookEvent::FragmentsSwapped { first, second } => {
-            let first_index = state.blocks.iter().position(|block| block.id == first);
-            let second_index = state.blocks.iter().position(|block| block.id == second);
-            if let (Some(first_index), Some(second_index)) = (first_index, second_index) {
-                state.blocks.swap(first_index, second_index);
-            }
-            state.status = format!("swap #{first} ↔ #{second}");
-        }
-        HookEvent::ToolCall { tool, .. } => {
-            state.status = format!("tool {tool}");
-        }
-        HookEvent::ToolResult { tool, .. } => {
+        HookEvent::Tool(ToolEvent::Result {
+            tool,
+            result_len,
+            duration,
+        }) => {
             state.summary.tool_calls += 1;
-            state.status = format!("tool {tool} done");
+            state.status = format!("tool {tool} done {result_len}B {duration}");
         }
-        HookEvent::ToolError { tool, .. } => {
-            state.status = format!("tool {tool} error");
+        HookEvent::Tool(ToolEvent::Error {
+            tool,
+            error,
+            retryable,
+        }) => {
+            let retry = if retryable { "retry" } else { "fatal" };
+            state.status = format!("tool {tool} error {retry}: {error}");
         }
-        HookEvent::CompletionStart => {
+        HookEvent::Completion(CompletionEvent::Start) => {
             state.status = "completion".into();
         }
-        HookEvent::CompletionEnd { .. } => {
-            state.status = "draining".into();
+        HookEvent::Completion(CompletionEvent::End { fragments }) => {
+            state.status = format!("drain {fragments} fragments");
         }
-        HookEvent::Halt { round } => {
+        HookEvent::Machine(MachineEvent::Halt { round }) => {
             state.status = format!("halt #{round}");
         }
-        HookEvent::Model { name } => {
-            state.status = format!("model {name}");
-        }
-        HookEvent::Activate { name } => {
-            state.status = format!("activate {name}");
-        }
-        HookEvent::Deactivate { name } => {
-            state.status = format!("deactivate {name}");
-        }
-        HookEvent::MachineStart => {
+        HookEvent::Machine(MachineEvent::Start) => {
             state.status = "start".into();
         }
-        HookEvent::Done => unreachable!(),
+        HookEvent::Resource(ResourceEvent::Model { name }) => {
+            state.status = format!("model {name}");
+        }
+        HookEvent::Resource(ResourceEvent::Activate { name }) => {
+            state.status = format!("activate {name}");
+        }
+        HookEvent::Resource(ResourceEvent::Deactivate { name }) => {
+            state.status = format!("deactivate {name}");
+        }
+        HookEvent::Machine(MachineEvent::Done) => unreachable!(),
+    }
+}
+
+fn enqueue_write(state: &mut State, meta: FragmentMeta, action: &str) {
+    let index = state.cells.len();
+    let kind = CellKind::from_meta(&meta);
+    state.cells.push(TapeCell {
+        id: meta.id,
+        kind,
+        state: CellState::Pending,
+    });
+    state.queue.push_back(TapeOp::Write {
+        index,
+        id: meta.id,
+        kind,
+        label: format!(
+            "{action} {}/{} #{} {}",
+            meta.role, meta.kind, meta.id, meta.preview
+        ),
+    });
+}
+
+fn enqueue_replace(state: &mut State, meta: FragmentMeta) {
+    let kind = CellKind::from_meta(&meta);
+    let index = match state.cells.iter().position(|cell| cell.id == meta.id) {
+        Some(index) => {
+            state.cells[index].kind = kind;
+            state.cells[index].state = CellState::Pending;
+            index
+        }
+        None => {
+            let index = state.cells.len();
+            state.cells.push(TapeCell {
+                id: meta.id,
+                kind,
+                state: CellState::Pending,
+            });
+            index
+        }
+    };
+    state.queue.push_back(TapeOp::Replace {
+        index,
+        kind,
+        label: format!(
+            "replace {}/{} #{} {}",
+            meta.role, meta.kind, meta.id, meta.preview
+        ),
+    });
+}
+
+fn enqueue_remove(state: &mut State, id: u64) {
+    if let Some(index) = state.cells.iter().position(|cell| cell.id == id) {
+        state.cells[index].state = CellState::Removing;
+        state.queue.push_back(TapeOp::Remove {
+            index,
+            id,
+            label: format!("remove #{id}"),
+        });
+    }
+}
+
+fn enqueue_swap(state: &mut State, first: u64, second: u64) {
+    let first_index = state.cells.iter().position(|cell| cell.id == first);
+    let second_index = state.cells.iter().position(|cell| cell.id == second);
+    if let (Some(first_index), Some(second_index)) = (first_index, second_index) {
+        state.queue.push_back(TapeOp::Swap {
+            first: first_index,
+            second: second_index,
+            label: format!("swap #{first} ↔ #{second}"),
+        });
     }
 }
 
@@ -262,15 +398,14 @@ fn render_frame(state: &State) {
     let width = crossterm::terminal::size()
         .map(|(width, _)| width as usize)
         .unwrap_or(80);
-    let max_blocks = (width / CELL_WIDTH).saturating_sub(1);
-    let start = state.blocks.len().saturating_sub(max_blocks);
-    let visible = &state.blocks[start..];
-    let pointer_index = state.pointer.saturating_sub(1).saturating_sub(start);
-    let pointer_col = if state.pointer == 0 {
-        0
-    } else {
-        pointer_index.min(visible.len().saturating_sub(1)) * CELL_WIDTH
-    };
+    let max_cells = (width / CELL_WIDTH).saturating_sub(1);
+    let start = state.cells.len().saturating_sub(max_cells);
+    let visible = &state.cells[start..];
+    let pointer_index = state
+        .pointer
+        .saturating_sub(start)
+        .min(visible.len().saturating_sub(1));
+    let pointer_col = pointer_index * CELL_WIDTH;
 
     let mut out = std::io::stdout();
 
@@ -281,15 +416,10 @@ fn render_frame(state: &State) {
     )
     .ok();
     if visible.is_empty() {
-        write!(out, "{}", "·".with(Color::DarkGrey)).ok();
+        write!(out, "{}", "□".with(Color::DarkGrey)).ok();
     } else {
-        for block in visible {
-            write!(
-                out,
-                "{} ",
-                block.kind.glyph().to_string().with(block.kind.color())
-            )
-            .ok();
+        for cell in visible {
+            write!(out, "{} ", cell_glyph(cell).with(cell_color(cell))).ok();
         }
     }
 
@@ -303,11 +433,43 @@ fn render_frame(state: &State) {
         write!(out, " ").ok();
     }
     write!(out, "{}", "⚙".with(Color::Cyan).bold()).ok();
-    write!(
-        out,
-        " {}",
-        format!("{} {}/{}", state.status, state.pointer, state.blocks.len()).with(Color::DarkCyan)
-    )
-    .ok();
+    write!(out, " {}", status_line(state, width).with(Color::DarkCyan)).ok();
     out.flush().ok();
+}
+
+fn status_line(state: &State, width: usize) -> String {
+    let position = if state.cells.is_empty() {
+        "0/0".to_string()
+    } else {
+        format!("{}/{}", state.pointer + 1, state.cells.len())
+    };
+    let mut line = format!("{} {position}", one_line(&state.status));
+    let max_len = width.saturating_sub(4).max(20);
+    if line.chars().count() > max_len {
+        line = line
+            .chars()
+            .take(max_len.saturating_sub(1))
+            .collect::<String>();
+        line.push('…');
+    }
+    line
+}
+
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn cell_glyph(cell: &TapeCell) -> &'static str {
+    match cell.state {
+        CellState::Pending | CellState::Removing => "□",
+        CellState::Written => "■",
+    }
+}
+
+fn cell_color(cell: &TapeCell) -> Color {
+    match cell.state {
+        CellState::Removing => Color::Red,
+        CellState::Pending => cell.kind.color(),
+        CellState::Written => cell.kind.color(),
+    }
 }
