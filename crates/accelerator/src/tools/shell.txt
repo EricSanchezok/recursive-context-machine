@@ -22,7 +22,7 @@ tmux new-session -d -s <name> -c <dir> '<command>'
 Example:
 
 ```
-tmux new-session -d -s rcm-frontend -c /app 'npm run dev'
+tmux new-session -d -s ram-frontend -c /app 'npm run dev'
 ```
 
 ### Common operations
@@ -44,7 +44,7 @@ wait(seconds=60)
 
 ### Session naming
 
-`<project>-<purpose>`, e.g. `rcm-frontend`, `rcm-build`.
+`<project>-<purpose>`, e.g. `ram-frontend`, `ram-build`.
 
 ## Notes
 

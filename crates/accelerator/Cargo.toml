@@ -2,7 +2,7 @@
 name = "accelerator"
 version = "0.1.0"
 edition = "2024"
-description = "RCM accelerator — lightweight execution entry for Context Machine"
+description = "RAM accelerator — lightweight execution entry for Context Machine"
 
 [dependencies]
 machine = { path = "../machine" }

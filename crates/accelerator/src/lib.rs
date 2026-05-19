@@ -1,4 +1,4 @@
-//! RCM Accelerator — composable agent execution via dataflow graphs.
+//! RAM Accelerator — composable agent execution via dataflow graphs.
 
 pub mod accelerator;
 pub mod assembly;
