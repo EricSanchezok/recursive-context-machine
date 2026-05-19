@@ -30,6 +30,11 @@ pub struct RunArgs {
     /// Show the full context instead of only the final assistant message.
     #[arg(long)]
     pub context: bool,
+
+    /// MCP server to launch, in the form `label=command arg1 arg2`.
+    /// Repeatable.
+    #[arg(long = "mcp-server")]
+    pub mcp_servers: Vec<String>,
 }
 
 impl RunArgs {
