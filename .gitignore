@@ -43,3 +43,6 @@ venv/
 
 # Research notes
 research/
+
+# Datasets (downloaded benchmarks, too large for git)
+data/
