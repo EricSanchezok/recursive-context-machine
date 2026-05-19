@@ -1,6 +1,6 @@
-# RAM Development Guide
+# RCM Development Guide
 
-This document encodes the development rules for RAM. All agents editing this codebase
+This document encodes the development rules for RCM. All agents editing this codebase
 must follow these conventions. Do not override unless explicitly instructed by the user.
 
 ## Comments

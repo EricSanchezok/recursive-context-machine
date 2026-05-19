@@ -36,7 +36,7 @@ impl HttpTransport {
                 json!({
                     "protocolVersion": "2025-03-26",
                     "capabilities": {},
-                    "clientInfo": { "name": "ram", "version": "0.1.0" }
+                    "clientInfo": { "name": "rica", "version": "0.1.0" }
                 }),
             )
             .await?;

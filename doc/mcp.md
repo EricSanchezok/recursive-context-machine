@@ -1,6 +1,6 @@
 # MCP Server 配置
 
-MCP (Model Context Protocol) 让 agent 能通过标准化的对外接口调用外部工具——搜索、查数据库、操作文件系统等。RAM 通过 `--mcp-server` 参数配置，支持 stdio 子进程和 Streamable HTTP 两种传输方式。
+MCP (Model Context Protocol) 让 agent 能通过标准化的对外接口调用外部工具——搜索、查数据库、操作文件系统等。RICA 通过 `--mcp-server` 参数配置，支持 stdio 子进程和 Streamable HTTP 两种传输方式。
 
 ## 快速开始
 
@@ -16,9 +16,9 @@ accelerate run "搜索量子计算最新进展" \
 
 ---
 
-## 从标准配置到 RAM CLI
+## 从标准配置到 RICA CLI
 
-大多数 MCP 服务器在文档中展示的都是 Claude Desktop 的 JSON 配置格式。映射到 RAM 很简单：`command` + `args` 用空格拼起来就行。
+大多数 MCP 服务器在文档中展示的都是 Claude Desktop 的 JSON 配置格式。映射到 RICA 很简单：`command` + `args` 用空格拼起来就行。
 
 ### Basic — uvx
 
@@ -182,7 +182,7 @@ accelerate run "带自定义追踪ID的查询" \
 
 ## 工作原理
 
-启动时，RAM 依次：
+启动时，RICA 依次：
 
 1. **连接** — 根据格式创建 HTTP 客户端或启动子进程
 2. **握手** — 发送 `initialize` 请求，协商协议版本
