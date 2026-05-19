@@ -50,9 +50,6 @@ impl Tool for McpTool {
                 )
                 .await?;
 
-            // MCP tool results contain a `content` array. Each entry has
-            // a `type` (text, image, resource) and its payload. Concatenate
-            // all text entries into the tool call result.
             let mut output = String::new();
             if let Some(contents) = result.get("content").and_then(|c| c.as_array()) {
                 for entry in contents {
@@ -62,8 +59,6 @@ impl Tool for McpTool {
                         }
                         output.push_str(text);
                     }
-                    // Images and resources are not yet handled — return
-                    // their metadata as a placeholder.
                     match entry.get("type").and_then(|t| t.as_str()) {
                         Some("image") => output.push_str("[MCP image result]"),
                         Some("resource") => {

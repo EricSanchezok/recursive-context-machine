@@ -31,8 +31,12 @@ pub struct RunArgs {
     #[arg(long)]
     pub context: bool,
 
-    /// MCP server to launch, in the form `label=command arg1 arg2`.
-    /// Repeatable.
+    /// MCP server to launch.
+    ///
+    /// Stdio: `label=command arg1 arg2`
+    /// HTTP:  `label=https://url|HeaderName:Value|HeaderName:Value`
+    ///
+    /// Repeatable — each `--mcp-server` adds one server.
     #[arg(long = "mcp-server")]
     pub mcp_servers: Vec<String>,
 }
