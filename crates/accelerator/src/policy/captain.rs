@@ -48,6 +48,10 @@ impl Policy for Captain {
         Box::new(self.clone())
     }
 
+    fn name(&self) -> &str {
+        "captain"
+    }
+
     fn pre(&self) -> Vec<Box<dyn Phase>> {
         vec![
             Box::new(Bootstrap::new("captain")),

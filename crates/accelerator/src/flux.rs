@@ -1,4 +1,5 @@
-use machine::{Context, Environment, Resources};
+use machine::{Context, Environment, Policy, Resources};
+use utils::Name;
 
 use crate::accelerator::Channel;
 
@@ -38,6 +39,10 @@ pub enum ResFlux {
     Merge,
 }
 
+pub enum PolicyFlux {
+    Replace,
+}
+
 // ── Mode ──
 
 pub enum FluxMode {
@@ -45,6 +50,7 @@ pub enum FluxMode {
     Context(ContextFlux),
     Environment(EnvFlux),
     Resources(ResFlux),
+    Policy(PolicyFlux),
 }
 
 impl FluxMode {
@@ -54,6 +60,18 @@ impl FluxMode {
             FluxMode::Context(_) => Channel::Context,
             FluxMode::Environment(_) => Channel::Environment,
             FluxMode::Resources(_) => Channel::Resources,
+            FluxMode::Policy(_) => Channel::Policy,
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            FluxMode::Purpose(PurposeFlux::Concat) => "purpose_concat",
+            FluxMode::Context(ContextFlux::Append) => "context_append",
+            FluxMode::Context(ContextFlux::Replace) => "context_replace",
+            FluxMode::Environment(EnvFlux::Overlay) => "environment_overlay",
+            FluxMode::Resources(ResFlux::Merge) => "resources_merge",
+            FluxMode::Policy(PolicyFlux::Replace) => "policy_replace",
         }
     }
 }
@@ -61,6 +79,7 @@ impl FluxMode {
 // ── Internal representation ──
 
 pub(crate) struct Flux {
+    pub name: Name,
     pub mode: FluxMode,
     pub arity: usize,
 }
@@ -109,7 +128,7 @@ pub(crate) fn apply_ctx(flux: &Flux, mut read: impl FnMut(usize) -> Context) -> 
 pub(crate) fn apply_env(flux: &Flux, mut read: impl FnMut(usize) -> Environment) -> Environment {
     match &flux.mode {
         FluxMode::Environment(EnvFlux::Overlay) => {
-            let mut result = Environment::new(".");
+            let mut result = Environment::named(flux.name.as_str(), ".");
             for slot in 0..flux.arity {
                 let env = read(slot);
                 result.cwd.clone_from(&env.cwd);
@@ -127,7 +146,7 @@ pub(crate) fn apply_env(flux: &Flux, mut read: impl FnMut(usize) -> Environment)
 pub(crate) fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -> Resources {
     match &flux.mode {
         FluxMode::Resources(ResFlux::Merge) => {
-            let mut result = Resources::new();
+            let mut result = Resources::named(flux.name.as_str());
             for slot in 0..flux.arity {
                 let res = read(slot);
                 for (name, model) in &res.models {
@@ -152,5 +171,21 @@ pub(crate) fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -
             result
         }
         _ => panic!("unexpected flux mode for resources"),
+    }
+}
+
+pub(crate) fn apply_policy(
+    flux: &Flux,
+    mut read: impl FnMut(usize) -> Box<dyn Policy>,
+) -> Box<dyn Policy> {
+    match &flux.mode {
+        FluxMode::Policy(PolicyFlux::Replace) => {
+            let mut result = None;
+            for slot in 0..flux.arity {
+                result = Some(read(slot));
+            }
+            result.expect("policy flux requires at least one input")
+        }
+        _ => panic!("unexpected flux mode for policy"),
     }
 }

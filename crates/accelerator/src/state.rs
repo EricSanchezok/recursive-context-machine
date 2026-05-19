@@ -25,16 +25,19 @@ impl Default for State {
     }
 }
 
-fn local() -> Environment {
-    let mut env = Environment::new(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+pub fn local() -> Environment {
+    let mut env = Environment::named(
+        "local",
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    );
     env.root = Some(env.cwd.clone());
     env
 }
 
-fn kit() -> Resources {
+pub fn kit() -> Resources {
     use crate::tools::builtin_tools;
 
-    let mut resources = Resources::new();
+    let mut resources = Resources::named("kit");
 
     for tool in builtin_tools() {
         let name = tool.name().to_string();

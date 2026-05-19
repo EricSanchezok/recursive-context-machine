@@ -4,8 +4,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use machine::hook;
-use machine::{Context, Environment, Resources};
+use machine::{Context, Environment, Policy, Resources};
 use tracing::trace;
+use utils::Name;
 
 use crate::accelerator::{Channel, Port, fire};
 use crate::flux::Flux;
@@ -13,6 +14,7 @@ use crate::state::State;
 
 /// A frozen multi-agent graph ready to run.
 pub struct Assembly {
+    pub name: Name,
     pub(crate) slots: Vec<Slot>,
     pub(crate) fluxes: Vec<Flux>,
     pub(crate) downstream: Vec<Vec<usize>>,
@@ -23,13 +25,15 @@ pub struct Assembly {
 }
 
 pub(crate) struct Slot {
+    pub name: Name,
     pub input: State,
     pub output: Option<State>,
 }
 
 impl Slot {
-    pub fn new(state: State) -> Self {
+    pub fn new(name: Name, state: State) -> Self {
         Self {
+            name,
             input: state,
             output: None,
         }
@@ -47,20 +51,32 @@ impl Assembly {
             }
 
             while let Some(id) = queue.pop_front() {
-                trace!(slot = id, "running");
+                let slot_name = self.slots[id].name.clone();
+                trace!(graph = %self.name, slot = id, slot_name = %slot_name, "running");
 
-                hook!(event = "slot_started", slot = id);
+                hook!(
+                    event = "slot_started",
+                    graph = self.name.as_str(),
+                    slot = id,
+                    name = slot_name.as_str()
+                );
 
                 let mut s = self.slots[id].input.clone();
                 s.purpose = self.resolve_purpose(id);
                 s.ctx = self.resolve_ctx(id);
                 s.env = self.resolve_env(id);
+                s.policy = self.resolve_policy(id);
                 s.res = self.resolve_res(id);
 
                 let output = fire(s).await;
                 self.slots[id].output = Some(output);
 
-                hook!(event = "slot_finished", slot = id);
+                hook!(
+                    event = "slot_finished",
+                    graph = self.name.as_str(),
+                    slot = id,
+                    name = slot_name.as_str()
+                );
 
                 for next in &self.downstream[id] {
                     self.pending[*next] -= 1;
@@ -162,6 +178,33 @@ impl Assembly {
                 })
             }
             _ => panic!("type mismatch in env wire"),
+        }
+    }
+
+    fn resolve_policy(&self, slot_id: usize) -> Box<dyn Policy> {
+        let pin = Port::Accel(slot_id, Channel::Policy);
+        match self.state_wires.get(&pin) {
+            Some(from) => self.read_policy(*from),
+            None => self.slots[slot_id].input.policy.clone(),
+        }
+    }
+
+    fn read_policy(&self, pin: Port) -> Box<dyn Policy> {
+        match pin {
+            Port::Accel(id, Channel::Policy) => self.slots[id]
+                .output
+                .as_ref()
+                .expect("upstream not ready")
+                .policy
+                .clone(),
+            Port::FluxOut(id, Channel::Policy) => {
+                let flux = &self.fluxes[id];
+                crate::flux::apply_policy(flux, |slot| {
+                    let from = self.flux_slot_wires[&(id, slot)];
+                    self.read_policy(from)
+                })
+            }
+            _ => panic!("type mismatch in policy wire"),
         }
     }
 

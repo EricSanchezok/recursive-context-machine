@@ -1,17 +1,26 @@
 use machine::{Machine, Purpose};
 use std::future::Future;
 use std::pin::Pin;
+use utils::Name;
 
 use crate::state::State;
 
 /// A single agent — runs the Context Machine.
 pub struct Accelerator {
+    pub name: Name,
     pub(crate) state: State,
 }
 
 impl Accelerator {
     pub fn new(state: State) -> Self {
-        Self { state }
+        Self::named("accelerator", state)
+    }
+
+    pub fn named(name: impl Into<String>, state: State) -> Self {
+        Self {
+            name: Name::new(name).expect("accelerator name must be valid"),
+            state,
+        }
     }
 
     pub fn run(self) -> Pin<Box<dyn Future<Output = State> + Send>> {

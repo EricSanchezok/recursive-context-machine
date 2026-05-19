@@ -51,6 +51,10 @@ impl Clone for Box<dyn Phase> {
 pub trait Policy: Send + Sync {
     fn clone_box(&self) -> Box<dyn Policy>;
 
+    fn name(&self) -> &str {
+        "policy"
+    }
+
     fn pre(&self) -> Vec<Box<dyn Phase>> {
         Vec::new()
     }

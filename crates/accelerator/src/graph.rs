@@ -1,4 +1,6 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+
+use utils::Name;
 
 use crate::accelerator::{Accelerator, AcceleratorRef, Channel, Port};
 use crate::assembly::{Assembly, Slot};
@@ -7,6 +9,8 @@ use crate::state::State;
 
 /// Build a multi-agent execution graph.
 pub struct Graph {
+    name: Name,
+    names: HashSet<Name>,
     accelerators: Vec<Accelerator>,
     fluxes: Vec<Flux>,
     wires: Vec<(Port, Port)>,
@@ -14,24 +18,107 @@ pub struct Graph {
 
 impl Graph {
     pub fn new() -> Self {
+        Self::named("graph")
+    }
+
+    pub fn named(name: impl Into<String>) -> Self {
+        let name = Name::new(name).expect("graph name must be valid");
+        let mut names = HashSet::new();
+        names.insert(name.clone());
         Self {
+            name,
+            names,
             accelerators: Vec::new(),
             fluxes: Vec::new(),
             wires: Vec::new(),
         }
     }
 
+    pub fn name(&self) -> &Name {
+        &self.name
+    }
+
+    pub fn rename(&mut self, name: impl Into<String>) {
+        let old = self.name.clone();
+        let new = self.replace_name(old, name);
+        self.name = new;
+    }
+
     pub fn spawn(&mut self, state: State) -> AcceleratorRef {
+        let name = self.next_name("accelerator");
+        self.spawn_named(name, state)
+    }
+
+    pub fn spawn_named(&mut self, name: impl Into<String>, state: State) -> AcceleratorRef {
         let id = self.accelerators.len();
-        self.accelerators.push(Accelerator::new(state));
+        let name = self.reserve_name(name);
+        self.accelerators
+            .push(Accelerator::named(name.as_str(), state));
         AcceleratorRef { id }
     }
 
     pub fn weave(&mut self, arity: usize, mode: FluxMode) -> FluxRef {
+        let name = self.next_name(mode.name());
+        self.weave_named(name, arity, mode)
+    }
+
+    pub fn weave_named(
+        &mut self,
+        name: impl Into<String>,
+        arity: usize,
+        mode: FluxMode,
+    ) -> FluxRef {
         let id = self.fluxes.len();
         let channel = mode.channel();
-        self.fluxes.push(Flux { mode, arity });
+        let name = self.reserve_name(name);
+        self.fluxes.push(Flux { name, mode, arity });
         FluxRef { id, channel }
+    }
+
+    fn next_name(&self, base: &str) -> String {
+        let mut idx = 0;
+        loop {
+            let candidate = format!("{base}_{idx}");
+            if !self.names.iter().any(|name| name.as_str() == candidate) {
+                return candidate;
+            }
+            idx += 1;
+        }
+    }
+
+    fn reserve_name(&mut self, name: impl Into<String>) -> Name {
+        let name = Name::new(name).expect("node name must be valid");
+        assert!(
+            self.names.insert(name.clone()),
+            "name '{}' already exists",
+            name
+        );
+        name
+    }
+
+    fn replace_name(&mut self, old: Name, new: impl Into<String>) -> Name {
+        let new = Name::new(new).expect("name must be valid");
+        if old == new {
+            return old;
+        }
+        self.names.remove(&old);
+        if !self.names.insert(new.clone()) {
+            self.names.insert(old);
+            panic!("name '{}' already exists", new);
+        }
+        new
+    }
+
+    pub fn rename_accelerator(&mut self, reference: AcceleratorRef, name: impl Into<String>) {
+        let old = self.accelerators[reference.id].name.clone();
+        let new = self.replace_name(old, name);
+        self.accelerators[reference.id].name = new;
+    }
+
+    pub fn rename_flux(&mut self, reference: FluxRef, name: impl Into<String>) {
+        let old = self.fluxes[reference.id].name.clone();
+        let new = self.replace_name(old, name);
+        self.fluxes[reference.id].name = new;
     }
 
     pub fn wire(&mut self, from: Port, to: Port) {
@@ -84,10 +171,11 @@ impl Graph {
         let slots = self
             .accelerators
             .into_iter()
-            .map(|a| Slot::new(a.state))
+            .map(|a| Slot::new(a.name, a.state))
             .collect();
 
         Ok(Assembly {
+            name: self.name,
             slots,
             fluxes: self.fluxes,
             downstream,
