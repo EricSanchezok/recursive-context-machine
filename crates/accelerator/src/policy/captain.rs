@@ -4,7 +4,7 @@ use std::pin::Pin;
 use machine::{Action, Context, Environment, Inbox, Phase, Policy, Purpose, Resources, Role};
 use tracing::trace;
 
-use super::phases::{BootstrapAgent, InjectEnv, InjectPurpose};
+use super::phases::{self, Bootstrap, Env, Instructions};
 
 /// Captain — a simple single-agent Policy.
 ///
@@ -50,13 +50,14 @@ impl Policy for Captain {
 
     fn pre(&self) -> Vec<Box<dyn Phase>> {
         vec![
-            Box::new(BootstrapAgent::new("captain")),
-            Box::new(InjectPurpose),
+            Box::new(Bootstrap::new("captain")),
+            Box::new(Instructions),
+            Box::new(phases::Purpose),
         ]
     }
 
     fn pre_halt(&self) -> Vec<Box<dyn Phase>> {
-        vec![Box::new(InjectEnv)]
+        vec![Box::new(Env)]
     }
 
     fn decide<'a>(

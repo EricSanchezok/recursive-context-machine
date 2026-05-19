@@ -3,15 +3,11 @@ use machine::{
 };
 
 /// Ensure the `tag == "agent"` system prompt is present and up to date.
-///
-/// - Exists with correct content → **Done**
-/// - Exists with wrong content → **Replace**, then Done on next call
-/// - Missing → **Append**, then Done on next call
-pub struct BootstrapAgent {
+pub struct Bootstrap {
     prompt_name: String,
 }
 
-impl BootstrapAgent {
+impl Bootstrap {
     pub fn new(prompt_name: impl Into<String>) -> Self {
         Self {
             prompt_name: prompt_name.into(),
@@ -19,7 +15,7 @@ impl BootstrapAgent {
     }
 }
 
-impl Phase for BootstrapAgent {
+impl Phase for Bootstrap {
     fn clone_box(&self) -> Box<dyn Phase> {
         Box::new(Self {
             prompt_name: self.prompt_name.clone(),
@@ -27,7 +23,7 @@ impl Phase for BootstrapAgent {
     }
 
     fn name(&self) -> &str {
-        "bootstrap_agent"
+        "bootstrap"
     }
 
     fn decide(

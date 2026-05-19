@@ -3,51 +3,17 @@ use machine::{
     Action, Context, Environment, Fragment, Phase, PhaseOutcome, Purpose, Resources, Role,
 };
 
-pub struct InjectPurpose;
+/// Inject or replace a `System` fragment tagged `"env"` with current working
+/// directory, platform, and timestamp. Runs before every LLM call.
+pub struct Env;
 
-impl Phase for InjectPurpose {
+impl Phase for Env {
     fn clone_box(&self) -> Box<dyn Phase> {
         Box::new(Self)
     }
 
     fn name(&self) -> &str {
-        "inject_purpose"
-    }
-
-    fn decide(
-        &self,
-        purpose: &Purpose,
-        ctx: &Context,
-        _env: &Environment,
-        _resources: &Resources,
-    ) -> PhaseOutcome {
-        if purpose.is_empty() {
-            return PhaseOutcome::Done;
-        }
-
-        if ctx
-            .fragments()
-            .iter()
-            .any(|f| f.role == Role::User && f.tag == "purpose")
-        {
-            return PhaseOutcome::Done;
-        }
-
-        PhaseOutcome::Action(Action::Append(
-            Fragment::user(&purpose.text).with_tag("purpose"),
-        ))
-    }
-}
-
-pub struct InjectEnv;
-
-impl Phase for InjectEnv {
-    fn clone_box(&self) -> Box<dyn Phase> {
-        Box::new(Self)
-    }
-
-    fn name(&self) -> &str {
-        "inject_env"
+        "env"
     }
 
     fn decide(

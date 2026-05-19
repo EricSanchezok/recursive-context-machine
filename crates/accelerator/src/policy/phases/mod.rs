@@ -1,5 +1,9 @@
 mod bootstrap;
-mod inject;
+mod env;
+mod instruct;
+mod purpose;
 
-pub use bootstrap::BootstrapAgent;
-pub use inject::{InjectEnv, InjectPurpose};
+pub use bootstrap::Bootstrap;
+pub use env::Env;
+pub use instruct::Instructions;
+pub use purpose::Purpose;
