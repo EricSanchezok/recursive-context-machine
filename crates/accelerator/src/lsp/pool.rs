@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
+use lsp_types::request::Request;
 use machine::Environment;
+use serde::de::DeserializeOwned;
 use tokio::sync::{Mutex, Notify};
 use tracing::{debug, warn};
 
@@ -14,6 +16,7 @@ use super::diagnostics::{Diagnostic, DiagnosticSnapshot};
 use super::servers::{ServerSpec, find_root, server_for_file};
 
 const BROKEN_TTL: Duration = Duration::from_secs(60);
+pub const QUERY_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ClientKey {
@@ -87,6 +90,42 @@ pub async fn touch_file_with_text(
             warn!(server = server.id, path = %path.display(), ?error, "lsp touch failed");
             Vec::new()
         }
+    }
+}
+
+pub async fn query<R: Request>(
+    env: &Environment,
+    path: &Path,
+    params: R::Params,
+) -> Result<R::Result, String>
+where
+    R::Params: serde::Serialize,
+    R::Result: DeserializeOwned,
+{
+    let (key, server) =
+        key_for_file(env, path).ok_or_else(|| format!("no LSP server for {}", path.display()))?;
+
+    let client = get_or_start_client(key.clone(), server)
+        .await
+        .ok_or_else(|| format!("{} is unavailable", server.id))?;
+
+    client.request_typed::<R>(params, QUERY_TIMEOUT).await
+}
+
+/// Shutdown all running LSP servers gracefully.
+#[allow(dead_code)]
+pub async fn shutdown_all() {
+    let mut states = POOL.states.lock().await;
+    let running: Vec<_> = states
+        .iter()
+        .filter_map(|(key, state)| match state {
+            ClientState::Running { client } => Some((key.clone(), Arc::clone(client))),
+            _ => None,
+        })
+        .collect();
+    for (key, client) in running {
+        client.shutdown().await;
+        states.remove(&key);
     }
 }
 

@@ -1,14 +1,26 @@
-//! Minimal LSP client for diagnostics.
+//! Minimal LSP client for diagnostics and queries.
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::Duration;
 
-use lsp_types::PublishDiagnosticsParams;
+use lsp_types::notification::{
+    DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Exit, Initialized,
+    Notification,
+};
+use lsp_types::request::{Request, Shutdown};
+use lsp_types::{
+    ClientCapabilities, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, InitializeParams, InitializedParams, PublishDiagnosticsParams,
+    TextDocumentContentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+    TextDocumentSyncClientCapabilities, VersionedTextDocumentIdentifier, WorkspaceFolder,
+};
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::io::BufReader;
 use tokio::process::{Child, ChildStdin, Command};
@@ -18,11 +30,12 @@ use tracing::{debug, warn};
 use super::diagnostics::{Diagnostic, DiagnosticSnapshot, DiagnosticStore};
 use super::servers::ServerSpec;
 use super::transport::{read_message, write_message};
-use super::uri::{path_to_uri, uri_to_path};
+use super::uri::path_to_uri;
 
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(45);
 const DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(3);
 const DIAGNOSTICS_DEBOUNCE: Duration = Duration::from_millis(150);
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 struct OpenDocument {
@@ -41,6 +54,10 @@ pub struct LspClient {
     alive: AtomicBool,
 }
 
+fn to_lsp_uri(s: &str) -> Result<lsp_types::Uri, String> {
+    lsp_types::Uri::from_str(s).map_err(|e| format!("invalid URI '{}': {e}", s))
+}
+
 impl LspClient {
     pub async fn start(server: ServerSpec, root: PathBuf) -> Result<Arc<Self>, String> {
         Self::start_with_command(server, root, server.command, server.args).await
@@ -53,7 +70,6 @@ impl LspClient {
         command_args: &[impl AsRef<OsStr>],
     ) -> Result<Arc<Self>, String> {
         debug!(server = server.id, root = %root.display(), "lsp spawn");
-
         let mut command = Command::new(command_path);
         command.args(command_args);
         command.current_dir(&root);
@@ -62,17 +78,14 @@ impl LspClient {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-
         let mut child = command
             .spawn()
             .map_err(|error| format!("failed to spawn {}: {error}", server.command))?;
-
         let stdin = child.stdin.take().ok_or("LSP server stdin was not piped")?;
         let stdout = child
             .stdout
             .take()
             .ok_or("LSP server stdout was not piped")?;
-
         let client = Arc::new(Self {
             server,
             root,
@@ -84,7 +97,6 @@ impl LspClient {
             documents: Mutex::new(HashMap::new()),
             alive: AtomicBool::new(true),
         });
-
         client.spawn_reader(stdout);
         client.initialize().await?;
         Ok(client)
@@ -93,6 +105,63 @@ impl LspClient {
     pub fn snapshot(&self, path: &Path) -> DiagnosticSnapshot {
         self.diagnostics.snapshot(path)
     }
+
+    // ── typed request/query ───────────────────────────────────────────
+
+    pub async fn request_typed<R: Request>(
+        &self,
+        params: R::Params,
+        timeout: Duration,
+    ) -> Result<R::Result, String>
+    where
+        R::Params: serde::Serialize,
+        R::Result: DeserializeOwned,
+    {
+        let pv = serde_json::to_value(params)
+            .map_err(|error| format!("failed to encode {}: {error}", R::METHOD))?;
+        let rv = self.request_with_timeout(R::METHOD, pv, timeout).await?;
+        serde_json::from_value(rv)
+            .map_err(|error| format!("failed to decode {}: {error}", R::METHOD))
+    }
+
+    pub async fn notify_typed<N: Notification>(&self, params: N::Params) -> Result<(), String>
+    where
+        N::Params: serde::Serialize,
+    {
+        let pv = serde_json::to_value(params)
+            .map_err(|error| format!("failed to encode {}: {error}", N::METHOD))?;
+        self.notify(N::METHOD, pv).await
+    }
+
+    // ── lifecycle ─────────────────────────────────────────────────────
+
+    #[allow(dead_code)]
+    pub async fn close_file(&self, path: &Path) -> Result<(), String> {
+        let uri = to_lsp_uri(&path_to_uri(path)?)?;
+        self.notify_typed::<DidCloseTextDocument>(DidCloseTextDocumentParams {
+            text_document: TextDocumentIdentifier { uri },
+        })
+        .await?;
+        self.documents.lock().await.remove(path);
+        self.diagnostics.clear(path);
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub async fn shutdown(&self) {
+        self.alive.store(false, Ordering::Relaxed);
+        let _ = tokio::time::timeout(
+            SHUTDOWN_TIMEOUT,
+            self.request_typed::<Shutdown>((), SHUTDOWN_TIMEOUT),
+        )
+        .await;
+        let _ = self.notify_typed::<Exit>(()).await;
+        let mut child = self._child.lock().await;
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+    }
+
+    // ── document sync ─────────────────────────────────────────────────
 
     pub async fn touch_file_from_disk(
         &self,
@@ -114,41 +183,34 @@ impl LspClient {
         if !self.alive.load(Ordering::Relaxed) {
             return Err(format!("{} is not running", self.server.id));
         }
-
-        let uri = path_to_uri(path)?;
+        let uri = to_lsp_uri(&path_to_uri(path)?)?;
         let (version, was_open) = self.next_document_version(path).await;
-
         self.diagnostics.clear(path);
-
         if was_open {
-            self.notify(
-                "textDocument/didChange",
-                json!({
-                    "textDocument": { "uri": uri, "version": version },
-                    "contentChanges": [{ "text": text }]
-                }),
-            )
+            self.notify_typed::<DidChangeTextDocument>(DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier { uri, version },
+                content_changes: vec![TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: text.to_string(),
+                }],
+            })
             .await?;
         } else {
-            self.notify(
-                "textDocument/didOpen",
-                json!({
-                    "textDocument": {
-                        "uri": uri,
-                        "languageId": self.server.language_id,
-                        "version": version,
-                        "text": text,
-                    }
-                }),
-            )
+            self.notify_typed::<DidOpenTextDocument>(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri,
+                    language_id: self.server.language_id.to_string(),
+                    version,
+                    text: text.to_string(),
+                },
+            })
             .await?;
         }
-
         if wait {
             self.wait_for_diagnostics(path, version, DIAGNOSTICS_TIMEOUT)
                 .await;
         }
-
         Ok(self.diagnostics.get(path))
     }
 
@@ -166,26 +228,55 @@ impl LspClient {
         self.documents.lock().await.get(path).map(|doc| doc.version)
     }
 
-    async fn initialize(&self) -> Result<(), String> {
-        let root_uri = path_to_uri(&self.root)?;
-        let params = json!({
-            "processId": std::process::id(),
-            "rootUri": root_uri,
-            "workspaceFolders": [{ "uri": root_uri, "name": "workspace" }],
-            "capabilities": {
-                "window": { "workDoneProgress": true },
-                "workspace": { "configuration": true, "workspaceFolders": true },
-                "textDocument": {
-                    "synchronization": { "didOpen": true, "didChange": true },
-                    "publishDiagnostics": {}
-                }
-            }
-        });
+    // ── initialize ────────────────────────────────────────────────────
 
-        self.request_with_timeout("initialize", params, INITIALIZE_TIMEOUT)
-            .await?;
-        self.notify("initialized", json!({})).await
+    async fn initialize(&self) -> Result<(), String> {
+        let root_uri = to_lsp_uri(&path_to_uri(&self.root)?)?;
+        let params = InitializeParams {
+            #[allow(deprecated)]
+            process_id: Some(std::process::id()),
+            #[allow(deprecated)]
+            root_uri: None, // deprecated — using workspace_folders
+            workspace_folders: Some(vec![WorkspaceFolder {
+                uri: root_uri,
+                name: "workspace".to_string(),
+            }]),
+            capabilities: ClientCapabilities {
+                window: Some(lsp_types::WindowClientCapabilities {
+                    work_done_progress: Some(true),
+                    ..Default::default()
+                }),
+                workspace: Some(lsp_types::WorkspaceClientCapabilities {
+                    configuration: Some(true),
+                    workspace_folders: Some(true),
+                    ..Default::default()
+                }),
+                text_document: Some(lsp_types::TextDocumentClientCapabilities {
+                    synchronization: Some(TextDocumentSyncClientCapabilities {
+                        dynamic_registration: Some(false),
+                        will_save: Some(false),
+                        will_save_wait_until: Some(false),
+                        did_save: Some(false),
+                    }),
+                    publish_diagnostics: Some(
+                        lsp_types::PublishDiagnosticsClientCapabilities::default(),
+                    ),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        self.request_with_timeout(
+            "initialize",
+            serde_json::to_value(params).unwrap(),
+            INITIALIZE_TIMEOUT,
+        )
+        .await?;
+        self.notify_typed::<Initialized>(InitializedParams {}).await
     }
+
+    // ── request / notify ──────────────────────────────────────────────
 
     async fn request_with_timeout(
         &self,
@@ -196,19 +287,11 @@ impl LspClient {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(id, tx);
-
-        let message = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params,
-        });
-
+        let message = json!({"jsonrpc":"2.0","id":id,"method":method,"params":params});
         if let Err(error) = self.write(&message).await {
             self.pending.lock().await.remove(&id);
             return Err(error);
         }
-
         match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(response)) => response,
             Ok(Err(_)) => Err(format!("LSP request {method} response channel closed")),
@@ -220,11 +303,7 @@ impl LspClient {
     }
 
     async fn notify(&self, method: &str, params: Value) -> Result<(), String> {
-        let message = json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-        });
+        let message = json!({"jsonrpc":"2.0","method":method,"params":params});
         self.write(&message).await
     }
 
@@ -232,6 +311,8 @@ impl LspClient {
         let mut stdin = self.stdin.lock().await;
         write_message(&mut *stdin, message).await
     }
+
+    // ── diagnostics waiting ───────────────────────────────────────────
 
     async fn wait_for_diagnostics(&self, path: &Path, version: i32, timeout: Duration) {
         let mut rx = self.diagnostics.subscribe();
@@ -249,7 +330,6 @@ impl LspClient {
                     Err(_) => return,
                 }
             }
-
             loop {
                 match tokio::time::timeout(DIAGNOSTICS_DEBOUNCE, rx.recv()).await {
                     Ok(Ok(event))
@@ -263,9 +343,10 @@ impl LspClient {
                 }
             }
         };
-
         let _ = tokio::time::timeout(timeout, wait).await;
     }
+
+    // ── reader / handler ──────────────────────────────────────────────
 
     fn spawn_reader(self: &Arc<Self>, stdout: tokio::process::ChildStdout) {
         let client = Arc::clone(self);
@@ -292,13 +373,11 @@ impl LspClient {
             } else {
                 Ok(message.get("result").cloned().unwrap_or(Value::Null))
             };
-
             if let Some(tx) = self.pending.lock().await.remove(&id) {
                 let _ = tx.send(response);
             }
             return;
         }
-
         if message.get("method").and_then(|value| value.as_str())
             == Some("textDocument/publishDiagnostics")
         {
@@ -316,15 +395,13 @@ impl LspClient {
                 return;
             }
         };
-
-        let path = match uri_to_path(&params.uri.to_string()) {
+        let path = match super::uri::uri_to_path(&params.uri.to_string()) {
             Ok(path) => path,
             Err(error) => {
                 warn!(server = self.server.id, ?error, "invalid diagnostics URI");
                 return;
             }
         };
-
         let current_version = self.current_document_version(&path).await;
         if !self
             .diagnostics
@@ -384,12 +461,10 @@ while True:
             eprintln!("skipping fake LSP test: python3 not found");
             return;
         }
-
         let root = std::env::temp_dir().join(format!("rcm_fake_lsp_{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("lib.rs");
         std::fs::write(&path, "fn main() {}\n").unwrap();
-
         let server = ServerSpec {
             id: "fake-lsp",
             language_id: "rust",
@@ -398,7 +473,6 @@ while True:
             command: "python3",
             args: &[],
         };
-
         let client = LspClient::start_with_command(
             server,
             root.clone(),
@@ -407,19 +481,16 @@ while True:
         )
         .await
         .unwrap();
-
         let first = client
             .touch_file_with_text(&path, "fn main() {}\n", true)
             .await
             .unwrap();
         assert_eq!(first[0].message, "fake error");
-
         let second = client
             .touch_file_with_text(&path, "fn main() {}\nlet x = 1;\n", true)
             .await
             .unwrap();
         assert_eq!(second[0].message, "changed error");
-
         std::fs::remove_dir_all(root).ok();
     }
 }
