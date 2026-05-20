@@ -154,8 +154,6 @@ async fn remove_unknown_panics() {
         .await;
 }
 
-// ── Mixed-content response flow ──
-
 #[test]
 fn context_holds_mixed_assistant_fragments() {
     let mut ctx = Context::new();
