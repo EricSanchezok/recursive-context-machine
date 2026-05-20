@@ -56,7 +56,7 @@ pub fn compile(file: &RcmFile) -> Result<Graph, String> {
 
 fn build_state(catalog: &Catalog, def: &ast::AgentDef) -> Result<State, String> {
     let model_name = def.model.as_deref().unwrap_or("deepseek-v4-flash");
-    let model = catalog
+    catalog
         .models
         .get(model_name)
         .ok_or_else(|| format!("unknown model: {}", model_name))?;
@@ -68,7 +68,6 @@ fn build_state(catalog: &Catalog, def: &ast::AgentDef) -> Result<State, String> 
         .ok_or_else(|| format!("unknown policy: {}", policy_name))?;
 
     let mut resources = catalog.build_resources("kit")?;
-    resources = resources.with_model(model.clone());
     resources.use_model(model_name);
 
     for tool_name in &def.tools {

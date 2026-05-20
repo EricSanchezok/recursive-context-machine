@@ -39,14 +39,10 @@ impl Catalog {
         for tool in self.tools.values() {
             let name = tool.name().to_string();
             res = res.with_tool(tool.clone());
-            res.enable(name);
         }
 
         for (name, model) in &self.models {
             res = res.with_model(model.clone());
-            if res.active_model.is_empty() {
-                res.use_model(name);
-            }
         }
 
         for (name, content) in &self.prompts {
