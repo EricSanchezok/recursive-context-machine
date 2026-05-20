@@ -88,24 +88,16 @@ pub enum Content {
     Document(Document),
     ToolCall(ToolCall),
     ToolResult(ToolResult),
-    /// Execution error that Policy may intercept for retry decisions.
     Hitch {
         message: String,
-        /// Optional HTTP status code from the failed request.
-        ///
-        /// Policy uses this to decide retry strategy: 401/403 are permanent;
-        /// 429/5xx and the absence of a code are transient-worth-retrying.
+        /// HTTP status code for retry strategy (Policy decides permanent vs transient).
         code: Option<u16>,
     },
 }
 
 /// A symbol on the context tape.
 ///
-/// `id` is assigned by [`Context`](crate::Context) on storage and should not be
-/// set directly — mutating the id would break the context's internal invariants.
-/// The `role`, `tag`, and `content` fields are public but effectively read-only
-/// after construction; the only way to modify a fragment in a context is through
-/// [`Action`](crate::Action) variants applied by [`Machine`](crate::Machine).
+/// `id` is assigned by [`Context`](crate::Context) on storage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fragment {
     pub(crate) id: u64,
@@ -167,12 +159,13 @@ impl Fragment {
     /// Creates a [`Content::Hitch`] fragment.
     ///
     /// `code` is an optional HTTP status code from the failed request.
-    /// Policy may use it for retry strategy (e.g. 401/403 are permanent,
-    /// 429/5xx are transient).
-    pub fn hitch(message: impl Into<String>, code: Option<u16>) -> Self {
+    /// `code` and `role` convey the failure context for Policy. Role should
+    /// match the origin: tool errors → [`Role::Tool`], LLM errors →
+    /// [`Role::Assistant`], system errors → [`Role::System`].
+    pub fn hitch(message: impl Into<String>, code: Option<u16>, role: Role) -> Self {
         Self {
             id: 0,
-            role: Role::System,
+            role,
             tag: "hitch".into(),
             content: Content::Hitch {
                 message: message.into(),
