@@ -29,11 +29,39 @@ impl Environment {
         &self.id
     }
 
+    /// An honest snapshot of the host the agent is currently running on:
+    /// inherits process env vars and the host platform tag.
+    ///
+    /// For sandboxed scenarios where the agent should not see host state, use
+    /// [`Environment::empty`].
     pub fn new(cwd: impl Into<PathBuf>) -> Self {
         Self::named("environment", cwd)
     }
 
+    /// Same as [`new`] but with an explicit name. Inherits host env vars.
     pub fn named(name: impl Into<String>, cwd: impl Into<PathBuf>) -> Self {
+        Self {
+            id: EnvironmentId::new(),
+            name: Name::new(name).expect("environment name must be valid"),
+            cwd: cwd.into(),
+            vars: std::env::vars().collect(),
+            root: None,
+            platform: std::env::consts::OS.to_string(),
+        }
+    }
+
+    /// A deliberately empty environment for sandbox scenarios — no inherited
+    /// env vars, no platform tag (defaults to the host OS string for
+    /// compatibility but env vars stay empty).
+    ///
+    /// Callers that want to lie about the platform too should set the field
+    /// directly after construction.
+    pub fn empty(cwd: impl Into<PathBuf>) -> Self {
+        Self::empty_named("environment", cwd)
+    }
+
+    /// Same as [`empty`] but with an explicit name.
+    pub fn empty_named(name: impl Into<String>, cwd: impl Into<PathBuf>) -> Self {
         Self {
             id: EnvironmentId::new(),
             name: Name::new(name).expect("environment name must be valid"),
