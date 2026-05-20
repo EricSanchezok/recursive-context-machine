@@ -141,9 +141,11 @@ async fn remove_and_check_context() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "not found")]
-async fn remove_unknown_panics() {
-    let policy = common::SeqPolicy::new(vec![Action::Remove(999), Action::Done]);
+async fn remove_unknown_emits_hitch_and_continues() {
+    // Stale id should produce a hitch fragment and let the machine continue;
+    // it must not panic. The hitch lands in the inbox; subsequent Take +
+    // Done drains it into context for the policy / LLM to observe.
+    let policy = common::SeqPolicy::new(vec![Action::Remove(999), Action::Take, Action::Done]);
     let machine = Machine::new(Box::new(policy));
     let mut ctx = Context::new();
     let mut env = Environment::new("/tmp");
@@ -152,6 +154,18 @@ async fn remove_unknown_panics() {
     machine
         .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
         .await;
+
+    // The hitch was Taken into context; assert at least one Hitch fragment
+    // mentioning the missing id.
+    let mentions_999 = ctx
+        .fragments()
+        .iter()
+        .any(|f| matches!(&f.content, Content::Hitch { message, .. } if message.contains("999")));
+    assert!(
+        mentions_999,
+        "expected a hitch mentioning the stale id; got context: {:?}",
+        ctx.fragments()
+    );
 }
 
 #[test]

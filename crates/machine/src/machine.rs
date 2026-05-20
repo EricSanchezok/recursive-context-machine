@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::context::Context;
 use crate::env::Environment;
 use crate::event::{content_kind, preview, role_name};
+use crate::fragment::{Fragment, Role};
 use crate::hook;
 use crate::inbox::Inbox;
 use crate::policy::{Action, Phase, PhaseOutcome, Policy};
@@ -199,27 +200,56 @@ impl Machine {
                 let frag = ctx.get(id).expect("just appended");
                 hook!(event = "appended", id, step, role = role_name(frag.role), kind = content_kind(frag), preview = %preview(frag));
             }
-            Action::Insert { after, fragment } => {
-                let id = ctx.insert(after, fragment);
-                let frag = ctx.get(id).expect("just inserted");
-                hook!(event = "inserted", id, step, role = role_name(frag.role), kind = content_kind(frag), preview = %preview(frag));
+            Action::Insert { after, fragment } => match ctx.insert(after, fragment) {
+                Ok(id) => {
+                    let frag = ctx.get(id).expect("just inserted");
+                    hook!(event = "inserted", id, step, role = role_name(frag.role), kind = content_kind(frag), preview = %preview(frag));
+                }
+                Err(error) => {
+                    warn!(?error, "insert failed");
+                    inbox.push(Fragment::hitch(error.to_string(), None, Role::System));
+                }
+            },
+            Action::Replace { id, fragment } => match ctx.replace(id, fragment) {
+                Ok(()) => {
+                    let frag = ctx.get(id).expect("just replaced");
+                    hook!(event = "replaced", id, step, role = role_name(frag.role), kind = content_kind(frag), preview = %preview(frag));
+                }
+                Err(error) => {
+                    warn!(?error, "replace failed");
+                    inbox.push(Fragment::hitch(error.to_string(), None, Role::System));
+                }
+            },
+            Action::Remove(id) => match ctx.remove(id) {
+                Ok(()) => {
+                    hook!(event = "removed", id, step);
+                }
+                Err(error) => {
+                    warn!(?error, "remove failed");
+                    inbox.push(Fragment::hitch(error.to_string(), None, Role::System));
+                }
+            },
+            Action::Swap(id1, id2) => match ctx.swap(id1, id2) {
+                Ok(()) => {
+                    hook!(event = "swapped", id1, id2, step);
+                }
+                Err(error) => {
+                    warn!(?error, "swap failed");
+                    inbox.push(Fragment::hitch(error.to_string(), None, Role::System));
+                }
+            },
+            Action::Model(name) => {
+                hook!(event = "model", name, step);
+                resources.use_model(name);
             }
-            Action::Replace { id, fragment } => {
-                ctx.replace(id, fragment);
-                let frag = ctx.get(id).expect("just replaced");
-                hook!(event = "replaced", id, step, role = role_name(frag.role), kind = content_kind(frag), preview = %preview(frag));
+            Action::Activate(name) => {
+                hook!(event = "activate", name, step);
+                resources.enable(name);
             }
-            Action::Remove(id) => {
-                ctx.remove(id);
-                hook!(event = "removed", id, step);
+            Action::Deactivate(name) => {
+                hook!(event = "deactivate", name, step);
+                resources.disable(name);
             }
-            Action::Swap(id1, id2) => {
-                ctx.swap(id1, id2);
-                hook!(event = "swapped", id1, id2, step);
-            }
-            Action::Model(name) => resources.use_model(name),
-            Action::Activate(name) => resources.enable(name),
-            Action::Deactivate(name) => resources.disable(name),
             Action::Take => {
                 if let Some(frag) = inbox.pop() {
                     let id = ctx.append(frag);

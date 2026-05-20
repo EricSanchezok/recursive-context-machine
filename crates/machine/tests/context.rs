@@ -1,4 +1,4 @@
-use machine::{Context, Fragment};
+use machine::{Context, ContextIdNotFound, Fragment};
 
 #[test]
 fn empty_context() {
@@ -21,7 +21,7 @@ fn append_assigns_ids() {
 fn ids_never_reused_after_remove() {
     let mut ctx = Context::new();
     let id1 = ctx.append(Fragment::system("a"));
-    ctx.remove(id1);
+    ctx.remove(id1).unwrap();
     let id2 = ctx.append(Fragment::system("b"));
     assert_ne!(id1, id2);
     assert_eq!(id2, 2);
@@ -31,49 +31,89 @@ fn ids_never_reused_after_remove() {
 fn insert_after_id() {
     let mut ctx = Context::new();
     let sys = ctx.append(Fragment::system("a"));
-    let user = ctx.insert(sys, Fragment::user("b"));
+    let user = ctx.insert(sys, Fragment::user("b")).unwrap();
     assert_eq!(ctx.len(), 2);
     assert_eq!(ctx.get(sys).unwrap().as_text(), Some("a"));
     assert_eq!(ctx.get(user).unwrap().as_text(), Some("b"));
 }
 
 #[test]
-#[should_panic(expected = "not found")]
-fn insert_unknown_id_panics() {
+fn insert_unknown_id_returns_error() {
     let mut ctx = Context::new();
-    ctx.insert(999, Fragment::user("x"));
+    let result = ctx.insert(999, Fragment::user("x"));
+    assert_eq!(result, Err(ContextIdNotFound(999)));
+    // Context unchanged after failed insert.
+    assert!(ctx.is_empty());
 }
 
 #[test]
 fn replace_preserves_id() {
     let mut ctx = Context::new();
     let id = ctx.append(Fragment::system("old"));
-    ctx.replace(id, Fragment::system("new"));
+    ctx.replace(id, Fragment::system("new")).unwrap();
     assert_eq!(ctx.get(id).unwrap().as_text(), Some("new"));
     assert_eq!(ctx.get(id).unwrap().id(), id);
 }
 
 #[test]
-#[should_panic(expected = "not found")]
-fn replace_unknown_panics() {
+fn replace_unknown_returns_error() {
     let mut ctx = Context::new();
-    ctx.replace(999, Fragment::user("x"));
+    let result = ctx.replace(999, Fragment::user("x"));
+    assert_eq!(result, Err(ContextIdNotFound(999)));
 }
 
 #[test]
 fn remove_single_and_verify() {
     let mut ctx = Context::new();
     let id = ctx.append(Fragment::system("a"));
-    ctx.remove(id);
+    ctx.remove(id).unwrap();
     assert!(ctx.get(id).is_none());
     assert_eq!(ctx.len(), 0);
 }
 
 #[test]
-#[should_panic(expected = "not found")]
-fn remove_unknown_panics() {
+fn remove_unknown_returns_error() {
     let mut ctx = Context::new();
-    ctx.remove(999);
+    let result = ctx.remove(999);
+    assert_eq!(result, Err(ContextIdNotFound(999)));
+}
+
+#[test]
+fn swap_unknown_first_id_returns_error_and_leaves_context_unchanged() {
+    let mut ctx = Context::new();
+    let id1 = ctx.append(Fragment::system("a"));
+    let id2 = ctx.append(Fragment::user("b"));
+    let snapshot: Vec<u64> = ctx.fragments().iter().map(|f| f.id()).collect();
+
+    let result = ctx.swap(999, id2);
+    assert_eq!(result, Err(ContextIdNotFound(999)));
+    let after: Vec<u64> = ctx.fragments().iter().map(|f| f.id()).collect();
+    assert_eq!(
+        after, snapshot,
+        "context must be unchanged after failed swap"
+    );
+
+    // Swapping in the reverse missing position also fails.
+    let result = ctx.swap(id1, 888);
+    assert_eq!(result, Err(ContextIdNotFound(888)));
+}
+
+#[test]
+fn swap_succeeds_returning_unit() {
+    let mut ctx = Context::new();
+    let id1 = ctx.append(Fragment::system("a"));
+    let id2 = ctx.append(Fragment::user("b"));
+    ctx.swap(id1, id2).unwrap();
+    assert_eq!(ctx.fragments()[0].id(), id2);
+    assert_eq!(ctx.fragments()[1].id(), id1);
+}
+
+#[test]
+fn error_display_includes_id() {
+    let error = ContextIdNotFound(42);
+    let text = error.to_string();
+    assert!(text.contains("42"));
+    assert!(text.contains("not found"));
 }
 
 #[test]

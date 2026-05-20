@@ -26,7 +26,7 @@ pub(crate) mod reactor;
 pub mod resources;
 pub mod tool;
 
-pub use context::Context;
+pub use context::{Context, ContextIdNotFound};
 pub use env::Environment;
 pub use fragment::{
     Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, ToolResult, Video,
