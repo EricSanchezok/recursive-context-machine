@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use accelerator::state::kit;
+use accelerator::Catalog;
 use accelerator::{
     ContextFlux, ContextPredicate, EnvFlux, EnvironmentPredicate, FluxMode, Graph, PolicyFlux,
     Predicate as AccelPredicate, PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, State,
@@ -10,7 +10,7 @@ use super::ast::{self, PortDef, Predicate, RcmFile};
 
 /// Compile a parsed `.rcm` file into a `Graph`.
 pub fn compile(file: &RcmFile) -> Result<Graph, String> {
-    let catalog = Catalog::default();
+    let catalog = Catalog::new();
 
     let mut graph = Graph::named(file.name.as_str());
     let mut agent_map: HashMap<String, _> = HashMap::new();
@@ -18,7 +18,7 @@ pub fn compile(file: &RcmFile) -> Result<Graph, String> {
     let mut condition_map: HashMap<String, _> = HashMap::new();
 
     for agent_def in &file.agents {
-        let state = catalog.build_state(agent_def)?;
+        let state = build_state(&catalog, agent_def)?;
         let ref_ = graph.spawn_named(
             agent_def.name.as_deref().unwrap_or(agent_def.id.as_str()),
             state,
@@ -27,7 +27,7 @@ pub fn compile(file: &RcmFile) -> Result<Graph, String> {
     }
 
     for flux_def in &file.fluxes {
-        let mode = resolve_flux_mode(flux_def)?;
+        let mode = resolve_flux_mode(&catalog, flux_def)?;
         let ref_ = graph.weave_named(
             flux_def.name.as_deref().unwrap_or(flux_def.id.as_str()),
             2,
@@ -54,7 +54,36 @@ pub fn compile(file: &RcmFile) -> Result<Graph, String> {
     Ok(graph)
 }
 
-fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {
+fn build_state(catalog: &Catalog, def: &ast::AgentDef) -> Result<State, String> {
+    let model_name = def.model.as_deref().unwrap_or("deepseek-v4-flash");
+    let model = catalog
+        .models
+        .get(model_name)
+        .ok_or_else(|| format!("unknown model: {}", model_name))?;
+
+    let policy_name = def.policy.as_deref().unwrap_or("captain");
+    let policy = catalog
+        .policies
+        .get(policy_name)
+        .ok_or_else(|| format!("unknown policy: {}", policy_name))?;
+
+    let mut resources = catalog.build_resources("kit")?;
+    resources = resources.with_model(model.clone());
+    resources.use_model(model_name);
+
+    for tool_name in &def.tools {
+        resources.enable(tool_name);
+    }
+
+    Ok(State {
+        purpose: def.purpose.clone().unwrap_or_default(),
+        policy: policy(),
+        res: resources,
+        ..Default::default()
+    })
+}
+
+fn resolve_flux_mode(_catalog: &Catalog, def: &ast::FluxDef) -> Result<FluxMode, String> {
     match (def.channel.as_str(), def.mode.as_str()) {
         ("purpose", "concat") => Ok(FluxMode::Purpose(PurposeFlux::Concat)),
         ("context", "append") => Ok(FluxMode::Context(ContextFlux::Append)),
@@ -187,45 +216,5 @@ fn parse_role(role: &str) -> Result<machine::Role, String> {
         "assistant" => Ok(machine::Role::Assistant),
         "tool" => Ok(machine::Role::Tool),
         _ => Err(format!("unknown role: {}", role)),
-    }
-}
-
-struct Catalog {
-    models: HashMap<String, machine::Model>,
-}
-
-impl Default for Catalog {
-    fn default() -> Self {
-        let mut models = HashMap::new();
-        let ds = accelerator::model::deepseek_v4_flash();
-        models.insert(ds.name.clone(), ds);
-        let gpt = accelerator::model::gpt4_1();
-        models.insert(gpt.name.clone(), gpt);
-        Self { models }
-    }
-}
-
-impl Catalog {
-    fn build_state(&self, def: &ast::AgentDef) -> Result<State, String> {
-        let model_name = def.model.as_deref().unwrap_or("deepseek-v4-flash");
-        let model = self
-            .models
-            .get(model_name)
-            .ok_or_else(|| format!("unknown model: {}", model_name))?;
-
-        let mut resources = kit();
-        resources = resources.with_model(model.clone());
-        resources.use_model(model_name);
-
-        for tool_name in &def.tools {
-            resources.enable(tool_name);
-        }
-
-        Ok(State {
-            purpose: def.purpose.clone().unwrap_or_default(),
-            policy: Box::new(accelerator::policy::Captain::new()),
-            res: resources,
-            ..State::default()
-        })
     }
 }

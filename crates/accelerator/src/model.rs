@@ -1,5 +1,15 @@
 use machine::{Cost, Limit, Modalities, Modality, Model, Protocol};
 
+use crate::catalog::Catalog;
+
+/// Register all built-in models in the catalog.
+pub fn register(catalog: &mut Catalog) {
+    let models = vec![deepseek_v4_flash(), gpt4_1(), deepseek_v4_pro()];
+    for model in models {
+        catalog.models.insert(model.name.clone(), model);
+    }
+}
+
 /// GPT-4.1 — OpenAI model hosted on the SII platform.
 ///
 /// Supports text and image input. Credentials (`SII_API_KEY`) are read
