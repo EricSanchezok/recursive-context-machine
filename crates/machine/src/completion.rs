@@ -134,7 +134,7 @@ async fn send(
                 )) => Some(s.as_u16()),
                 _ => None,
             };
-            Err(Fragment::hitch(format!("{}", error), code))
+            Err(Fragment::hitch(error.to_string(), code))
         }
         Err(_) => Err(Fragment::hitch(
             format!("request timed out after {}s", model.timeout),

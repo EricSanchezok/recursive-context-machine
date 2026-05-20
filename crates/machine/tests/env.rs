@@ -43,7 +43,10 @@ fn new_inherits_path_for_subprocess_use() {
 fn empty_keeps_vars_empty() {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let env = Environment::empty(".");
-    assert!(env.vars.is_empty(), "Environment::empty must not inherit vars");
+    assert!(
+        env.vars.is_empty(),
+        "Environment::empty must not inherit vars"
+    );
 }
 
 #[test]

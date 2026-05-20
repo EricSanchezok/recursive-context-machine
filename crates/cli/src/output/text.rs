@@ -80,7 +80,7 @@ fn print_fragment(role: Role, content: &Content) {
         Content::Video(video) => println!("[{tag}] <video {:?}>", video.media_type),
         Content::Document(document) => println!("[{tag}] <document {:?}>", document.media_type),
         Content::Hitch { message, code } => {
-            let status = code.map(|code| format!(" HTTP {code}")).unwrap_or_default();
+            let status = code.map(|c| format!(" HTTP {c}")).unwrap_or_default();
             println!("[{tag}] hitch{status} {message}");
         }
     }
