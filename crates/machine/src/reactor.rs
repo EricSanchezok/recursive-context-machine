@@ -3,7 +3,7 @@ use std::time::Instant;
 use crate::completion;
 use crate::context::Context;
 use crate::env::Environment;
-use crate::fragment::{Content, Fragment};
+use crate::fragment::{Content, Fragment, Role};
 use crate::hook;
 use crate::inbox::Inbox;
 use crate::resources::Resources;
@@ -40,7 +40,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
             );
 
             result = Some(match resources.lookup(&tc.name) {
-                None => Fragment::hitch(format!("tool '{}' not found", tc.name), None),
+                None => Fragment::hitch(format!("tool '{}' not found", tc.name), None, Role::Tool),
                 Some(tool) => {
                     let deadline = Duration::from_secs(tool.timeout().as_secs());
                     let t1 = Instant::now();
@@ -73,7 +73,11 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                                 error = %msg,
                                 duration = %humantime(t1.elapsed()),
                             );
-                            Fragment::hitch(format!("tool '{}' error: {}", tc.name, msg), None)
+                            Fragment::hitch(
+                                format!("tool '{}' error: {}", tc.name, msg),
+                                None,
+                                Role::Tool,
+                            )
                         }
                         Err(_) => {
                             warn!(
@@ -95,6 +99,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                                     tool.timeout().as_secs()
                                 ),
                                 None,
+                                Role::Tool,
                             )
                         }
                     }
