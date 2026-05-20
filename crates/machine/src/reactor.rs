@@ -40,7 +40,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
             );
 
             result = Some(match resources.lookup(&tc.name) {
-                None => Fragment::hitch(format!("tool '{}' not found", tc.name)),
+                None => Fragment::hitch(format!("tool '{}' not found", tc.name), None),
                 Some(tool) => {
                     let deadline = Duration::from_secs(tool.timeout().as_secs());
                     let t1 = Instant::now();
@@ -73,7 +73,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                                 error = %msg,
                                 duration = %humantime(t1.elapsed()),
                             );
-                            Fragment::hitch(format!("tool '{}' error: {}", tc.name, msg))
+                            Fragment::hitch(format!("tool '{}' error: {}", tc.name, msg), None)
                         }
                         Err(_) => {
                             warn!(
@@ -88,11 +88,14 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                                 error = "timeout",
                                 timeout = tool.timeout().as_secs(),
                             );
-                            Fragment::hitch(format!(
-                                "tool '{}' timed out after {}s",
-                                tc.name,
-                                tool.timeout().as_secs()
-                            ))
+                            Fragment::hitch(
+                                format!(
+                                    "tool '{}' timed out after {}s",
+                                    tc.name,
+                                    tool.timeout().as_secs()
+                                ),
+                                None,
+                            )
                         }
                     }
                 }
