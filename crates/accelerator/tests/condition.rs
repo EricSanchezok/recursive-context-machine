@@ -2,8 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 
 use accelerator::{
-    Accelerator, Channel, ConditionBranch, ContextPredicate, Endpoint, EnvironmentPredicate, Graph,
-    Predicate, PurposePredicate, ResourcesPredicate, State,
+    Accelerator, Channel, ConditionBranch, ContextFlux, ContextPredicate, Endpoint,
+    EnvironmentPredicate, FluxMode, Graph, Predicate, PurposePredicate, ResourcesPredicate, State,
 };
 use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources};
 
@@ -33,6 +33,12 @@ fn state_with_purpose(purpose: &str) -> State {
         policy: Box::new(DonePolicy),
         ..State::default()
     }
+}
+
+fn state_with_context(text: &str) -> State {
+    let mut state = state_with_purpose(text);
+    state.ctx.append(Fragment::assistant(text));
+    state
 }
 
 fn run(graph: Graph) -> State {
@@ -191,4 +197,39 @@ fn selected_branch_can_rejoin_after_unselected_branch_is_skipped() {
 
     let output = run(graph);
     assert_eq!(output.purpose, "joined");
+}
+
+#[test]
+fn skipped_branch_contributes_empty_flux_slot() {
+    let mut graph = Graph::new();
+    let source =
+        graph.add_accelerator("source", Accelerator::primitive(state_with_purpose("done")));
+    let true_target =
+        graph.add_accelerator("true", Accelerator::primitive(state_with_context("true")));
+    let false_target =
+        graph.add_accelerator("false", Accelerator::primitive(state_with_context("false")));
+    let join = graph.add_flux("join", FluxMode::Context(ContextFlux::Append), 2);
+    let condition = graph.add_condition(
+        "route",
+        Predicate::Purpose(PurposePredicate::Contains("done".into())),
+    );
+
+    graph.wire(source.done(), condition.condition_in());
+    graph.wire(
+        condition.condition_out(ConditionBranch::True),
+        true_target.trigger(),
+    );
+    graph.wire(
+        condition.condition_out(ConditionBranch::False),
+        false_target.trigger(),
+    );
+    graph.wire(true_target.context(), join.slot(0, Channel::Context));
+    graph.wire(false_target.context(), join.slot(1, Channel::Context));
+    graph.wire(
+        join.flux_out(Channel::Context),
+        Graph::output(Endpoint::State(Channel::Context)),
+    );
+
+    let output = run(graph);
+    assert_eq!(output.ctx.fragments().len(), 1);
 }
