@@ -38,7 +38,6 @@ impl Catalog {
             .ok_or_else(|| format!("unknown resource preset: {}", preset))?;
 
         for tool in self.tools.values() {
-            let _name = tool.name().to_string();
             res = res.with_tool(tool.clone());
         }
 

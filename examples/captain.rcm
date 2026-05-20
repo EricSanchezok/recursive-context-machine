@@ -1,6 +1,3 @@
-// captain.example.rcm — 最简单 accelerator 示例
-// 运行: accelerate run captain.example.rcm
-
 name = "Captain Demo"
 
 model deepseek-v4-flash {
@@ -11,8 +8,7 @@ model deepseek-v4-flash {
     modalities = { input = ["text"], output = ["text"] }
 }
 
-accelerator captain {
-    name = "Captain Agent"
+accelerator {
     purpose = "介绍一下你自己，并说说你能做什么"
     model = "deepseek-v4-flash"
     policy = "captain"

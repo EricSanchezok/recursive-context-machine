@@ -1,14 +1,15 @@
 mod ast;
-pub(crate) mod compile;
+pub mod compile;
 mod lexer;
 mod parser;
 
 pub use ast::{
-    AcceleratorDef, ConditionDef, FluxDef, McpDef, ModelDef, PortDef, Predicate, RcmFile, WireDef,
+    AcceleratorBodyDef, AcceleratorSourceDef, ConditionDef, EndpointDef, FluxDef,
+    GraphAcceleratorDef, GraphDef, McpDef, ModelDef, PortDef, PortOwnerDef, Predicate,
+    PrimitiveDef, RcmFile, UseDef, WireDef,
 };
 pub(crate) use parser::Parser;
 
-/// Parse a `.rcm` source string into an AST.
 pub fn parse(source: &str) -> Result<RcmFile, String> {
     let tokens = lexer::tokenize(source);
     Parser::new(tokens).parse()

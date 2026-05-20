@@ -1,58 +1,36 @@
 use machine::{Context, Environment, Policy, Resources};
 use utils::{FluxId, Name};
 
-use crate::accelerator::Channel;
+use crate::state::State;
+use crate::wire::Channel;
 
-#[derive(Clone, Debug)]
-pub struct FluxRef {
-    pub(crate) index: usize,
-    pub(crate) id: FluxId,
-    pub(crate) channel: Channel,
-}
-
-impl FluxRef {
-    pub fn id(&self) -> &FluxId {
-        &self.id
-    }
-
-    pub fn slot(&self, slot: usize) -> crate::accelerator::Port {
-        crate::accelerator::Port::FluxSlot {
-            index: self.index,
-            flux_id: self.id.clone(),
-            slot,
-            channel: self.channel,
-        }
-    }
-    pub fn out(&self) -> crate::accelerator::Port {
-        crate::accelerator::Port::FluxOut {
-            index: self.index,
-            flux_id: self.id.clone(),
-            channel: self.channel,
-        }
-    }
-}
-
+#[derive(Clone)]
 pub enum PurposeFlux {
     Concat,
 }
 
+#[derive(Clone)]
 pub enum ContextFlux {
     Append,
     Replace,
 }
 
+#[derive(Clone)]
 pub enum EnvFlux {
     Overlay,
 }
 
+#[derive(Clone)]
 pub enum ResFlux {
     Merge,
 }
 
+#[derive(Clone)]
 pub enum PolicyFlux {
     Replace,
 }
 
+#[derive(Clone)]
 pub enum FluxMode {
     Purpose(PurposeFlux),
     Context(ContextFlux),
@@ -84,7 +62,8 @@ impl FluxMode {
     }
 }
 
-pub(crate) struct Flux {
+#[derive(Clone)]
+pub struct Flux {
     id: FluxId,
     pub name: Name,
     pub mode: FluxMode,
@@ -92,7 +71,7 @@ pub(crate) struct Flux {
 }
 
 impl Flux {
-    pub(crate) fn new(name: impl Into<String>, mode: FluxMode, arity: usize) -> Self {
+    pub fn new(name: impl Into<String>, mode: FluxMode, arity: usize) -> Self {
         Self {
             id: FluxId::new(),
             name: Name::new(name).expect("flux name must be valid"),
@@ -101,12 +80,27 @@ impl Flux {
         }
     }
 
-    pub(crate) fn id(&self) -> &FluxId {
+    pub fn id(&self) -> &FluxId {
         &self.id
+    }
+
+    pub fn apply(&self, slots: &[State]) -> State {
+        let mut state = State::default();
+        match self.mode.channel() {
+            Channel::Purpose => {
+                state.purpose = apply_purpose(self, |slot| slots[slot].purpose.clone())
+            }
+            Channel::Context => state.ctx = apply_ctx(self, |slot| slots[slot].ctx.clone()),
+            Channel::Environment => state.env = apply_env(self, |slot| slots[slot].env.clone()),
+            Channel::Policy => state.policy = apply_policy(self, |slot| slots[slot].policy.clone()),
+            Channel::Resources => state.res = apply_res(self, |slot| slots[slot].res.clone()),
+            Channel::Pulse => {}
+        }
+        state
     }
 }
 
-pub(crate) fn apply_purpose(flux: &Flux, mut read: impl FnMut(usize) -> String) -> String {
+fn apply_purpose(flux: &Flux, mut read: impl FnMut(usize) -> String) -> String {
     match &flux.mode {
         FluxMode::Purpose(PurposeFlux::Concat) => {
             let mut parts = Vec::with_capacity(flux.arity);
@@ -115,17 +109,17 @@ pub(crate) fn apply_purpose(flux: &Flux, mut read: impl FnMut(usize) -> String) 
             }
             parts.concat()
         }
-        _ => panic!("unexpected flux mode for purpose"),
+        _ => unreachable!("flux mode channel already matched"),
     }
 }
 
-pub(crate) fn apply_ctx(flux: &Flux, mut read: impl FnMut(usize) -> Context) -> Context {
+fn apply_ctx(flux: &Flux, mut read: impl FnMut(usize) -> Context) -> Context {
     match &flux.mode {
         FluxMode::Context(ContextFlux::Append) => {
             let mut result = Context::new();
             for slot in 0..flux.arity {
-                let ctx = read(slot);
-                for frag in ctx.fragments().iter() {
+                let context = read(slot);
+                for frag in context.fragments().iter() {
                     result.append(frag.clone());
                 }
             }
@@ -134,18 +128,18 @@ pub(crate) fn apply_ctx(flux: &Flux, mut read: impl FnMut(usize) -> Context) -> 
         FluxMode::Context(ContextFlux::Replace) => {
             let mut result = Context::new();
             for slot in 0..flux.arity {
-                let ctx = read(slot);
-                if !ctx.is_empty() {
-                    result = ctx;
+                let context = read(slot);
+                if !context.is_empty() {
+                    result = context;
                 }
             }
             result
         }
-        _ => panic!("unexpected flux mode for context"),
+        _ => unreachable!("flux mode channel already matched"),
     }
 }
 
-pub(crate) fn apply_env(flux: &Flux, mut read: impl FnMut(usize) -> Environment) -> Environment {
+fn apply_env(flux: &Flux, mut read: impl FnMut(usize) -> Environment) -> Environment {
     match &flux.mode {
         FluxMode::Environment(EnvFlux::Overlay) => {
             if flux.arity == 0 {
@@ -169,11 +163,11 @@ pub(crate) fn apply_env(flux: &Flux, mut read: impl FnMut(usize) -> Environment)
             }
             result
         }
-        _ => panic!("unexpected flux mode for environment"),
+        _ => unreachable!("flux mode channel already matched"),
     }
 }
 
-pub(crate) fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -> Resources {
+fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -> Resources {
     match &flux.mode {
         FluxMode::Resources(ResFlux::Merge) => {
             let mut result = Resources::named(flux.name.as_str());
@@ -194,14 +188,11 @@ pub(crate) fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -
             }
             result
         }
-        _ => panic!("unexpected flux mode for resources"),
+        _ => unreachable!("flux mode channel already matched"),
     }
 }
 
-pub(crate) fn apply_policy(
-    flux: &Flux,
-    mut read: impl FnMut(usize) -> Box<dyn Policy>,
-) -> Box<dyn Policy> {
+fn apply_policy(flux: &Flux, mut read: impl FnMut(usize) -> Box<dyn Policy>) -> Box<dyn Policy> {
     match &flux.mode {
         FluxMode::Policy(PolicyFlux::Replace) => {
             let mut result = None;
@@ -210,6 +201,6 @@ pub(crate) fn apply_policy(
             }
             result.expect("policy flux requires at least one input")
         }
-        _ => panic!("unexpected flux mode for policy"),
+        _ => unreachable!("flux mode channel already matched"),
     }
 }

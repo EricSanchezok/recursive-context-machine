@@ -1,100 +1,134 @@
 use cli::rcm;
+use cli::rcm::{AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, PortOwnerDef};
 
 #[test]
-fn parse_accelerator_block() {
+fn parse_primitive_accelerator_file() {
     let source = r#"
-        name = "test"
-        accelerator research {
-            purpose = "study quantum computing"
-            model = "gpt"
-            tools = ["websearch", "fs"]
-        }
-    "#;
-    let file = rcm::parse(source).unwrap();
-    assert_eq!(file.name, "test");
-    assert_eq!(file.accelerators.len(), 1);
-    assert_eq!(file.accelerators[0].id, "research");
-    assert_eq!(
-        file.accelerators[0].purpose.as_deref(),
-        Some("study quantum computing")
-    );
-    assert_eq!(file.accelerators[0].tools, vec!["websearch", "fs"]);
-}
-
-#[test]
-fn parse_model_with_credentials_and_limit() {
-    let source = r#"
-        name = "test"
+        name = "reviewer"
         model gpt {
             protocol = "openai"
-            endpoint = "https://api.example.com"
             credentials = { env = "MY_KEY" }
             limit = { context = "100000", output = "4096" }
             modalities = { input = ["text"], output = ["text"] }
         }
-    "#;
-    let file = rcm::parse(source).unwrap();
-    let m = &file.models[0];
-    assert_eq!(m.id, "gpt");
-    assert_eq!(m.protocol, "openai");
-    assert_eq!(m.credentials_env.as_deref(), Some("MY_KEY"));
-    assert_eq!(m.limit_context, Some(100000));
-    assert_eq!(m.limit_output, 4096);
-    assert_eq!(m.modalities_input, vec!["text"]);
-}
-
-#[test]
-fn parse_model_with_inline_key() {
-    let source = r#"
-        name = "test"
-        model custom {
-            protocol = "openai"
-            credentials = { key = "REDACTED" }
-            limit = { context = "1000", output = "500" }
+        accelerator {
+            purpose = "review code"
+            model = "gpt"
+            tools = ["fs", "shell"]
         }
     "#;
+
     let file = rcm::parse(source).unwrap();
-    let m = &file.models[0];
-    assert_eq!(m.credentials_key.as_deref(), Some("sk-abc"));
+
+    assert_eq!(file.name, "reviewer");
+    assert_eq!(file.models.len(), 1);
+    match file.body {
+        AcceleratorBodyDef::Primitive(primitive) => {
+            assert_eq!(primitive.purpose.as_deref(), Some("review code"));
+            assert_eq!(primitive.tools, vec!["fs", "shell"]);
+        }
+        AcceleratorBodyDef::Graph(_) => panic!("expected primitive accelerator"),
+    }
 }
 
 #[test]
-fn parse_condition_with_predicate() {
+fn parse_graph_with_imported_accelerator_and_boundary_wires() {
     let source = r#"
-        name = "test"
-        condition check {
-            name = "Quality Check"
-            all {
-                purpose contains "done"
-                context has_tag "results"
+        name = "pipeline"
+        use "./reviewer.rcm" as Reviewer
+        graph {
+            accelerator review = Reviewer
+            input.purpose -> review.purpose
+            review.done -> output.done
+            review.context -> output.context
+        }
+    "#;
+
+    let file = rcm::parse(source).unwrap();
+
+    assert_eq!(file.uses[0].alias, "Reviewer");
+    let graph = match file.body {
+        AcceleratorBodyDef::Graph(graph) => graph,
+        AcceleratorBodyDef::Primitive(_) => panic!("expected graph accelerator"),
+    };
+    assert_eq!(graph.accelerators.len(), 1);
+    assert_eq!(graph.wires.len(), 3);
+    assert_eq!(graph.wires[0].from.owner, PortOwnerDef::Input);
+    assert_eq!(
+        graph.wires[0].to.endpoint,
+        EndpointDef::State("purpose".into())
+    );
+}
+
+#[test]
+fn parse_graph_with_flux_and_condition_ports() {
+    let source = r#"
+        name = "pipeline"
+        graph {
+            accelerator source {
+                purpose = "source"
+                model = "gpt"
+            }
+            flux joined {
+                channel = context
+                mode = append
+                arity = 2
+            }
+            condition approved {
+                any {
+                    purpose contains "LGTM"
+                    context contains "approved"
+                }
+            }
+            source.context -> joined.slot(0)
+            joined.out -> source.context
+            source.done -> approved.trigger
+            approved.true -> output.done
+        }
+    "#;
+
+    let file = rcm::parse(source).unwrap();
+    let graph = match file.body {
+        AcceleratorBodyDef::Graph(graph) => graph,
+        AcceleratorBodyDef::Primitive(_) => panic!("expected graph accelerator"),
+    };
+
+    assert_eq!(graph.fluxes[0].arity, 2);
+    assert_eq!(graph.conditions.len(), 1);
+    assert_eq!(graph.wires[0].to.endpoint, EndpointDef::FluxSlot(0));
+    assert_eq!(graph.wires[2].to.endpoint, EndpointDef::Trigger);
+    assert_eq!(graph.wires[3].from.endpoint, EndpointDef::ConditionTrue);
+}
+
+#[test]
+fn parse_inline_graph_accelerator() {
+    let source = r#"
+        name = "pipeline"
+        graph {
+            accelerator fetch {
+                purpose = "fetch diff"
+                model = "gpt"
+                tools = ["shell"]
             }
         }
     "#;
-    let file = rcm::parse(source).unwrap();
-    assert_eq!(file.conditions.len(), 1);
-}
 
-#[test]
-fn parse_wires() {
-    let source = r#"
-        name = "test"
-        accelerator a {}
-        accelerator b {}
-        a.pulse -> b.pulse
-    "#;
     let file = rcm::parse(source).unwrap();
-    assert_eq!(file.wires.len(), 1);
+    let graph = match file.body {
+        AcceleratorBodyDef::Graph(graph) => graph,
+        AcceleratorBodyDef::Primitive(_) => panic!("expected graph accelerator"),
+    };
+
+    match &graph.accelerators[0].source {
+        AcceleratorSourceDef::Inline(primitive) => {
+            assert_eq!(primitive.purpose.as_deref(), Some("fetch diff"));
+        }
+        AcceleratorSourceDef::Import { .. } => panic!("expected inline accelerator"),
+    }
 }
 
 #[test]
 fn parse_rejects_unclosed_string() {
-    let result = rcm::parse(r#"name = "test" accelerator x { purpose = "unclosed"#);
+    let result = rcm::parse(r#"name = "test" accelerator { purpose = "unclosed"#);
     assert!(result.is_err());
-}
-
-#[test]
-fn parse_skips_comments() {
-    let source = "// comment\nname = \"test\"\naccelerator a {}\n";
-    let file = rcm::parse(source).unwrap();
-    assert_eq!(file.accelerators.len(), 1);
 }
