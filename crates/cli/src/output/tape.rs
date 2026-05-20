@@ -18,7 +18,7 @@ use crate::hook::{
 
 const IDLE_TICK: Duration = Duration::from_millis(50);
 const CELL_WIDTH: usize = 2;
-const VIEW_ROWS: u16 = 30;
+const INITIAL_VIEW_ROWS: u16 = 6;
 
 #[derive(Clone)]
 struct TapeCell {
@@ -198,6 +198,7 @@ struct ViewState {
     tape_order: Vec<String>,
     summary: Summary,
     origin_y: u16,
+    reserved_rows: u16,
 }
 
 pub(crate) struct Summary {
@@ -216,7 +217,7 @@ pub(crate) fn run_animation(
     }
 
     let step = Duration::from_millis(delay_ms);
-    let origin_y = reserve_animation_rows();
+    let origin_y = reserve_animation_rows(INITIAL_VIEW_ROWS);
     let mut view = ViewState {
         graph: None,
         frontier: None,
@@ -229,6 +230,7 @@ pub(crate) fn run_animation(
             duration_s: 0.0,
         },
         origin_y,
+        reserved_rows: INITIAL_VIEW_ROWS,
     };
 
     execute!(std::io::stdout(), Hide).ok();
@@ -288,13 +290,13 @@ fn run_silent(rx: mpsc::Receiver<HookEvent>, start: std::time::Instant) -> Summa
     summary
 }
 
-fn reserve_animation_rows() -> u16 {
+fn reserve_animation_rows(rows: u16) -> u16 {
     let (_, before_y) = position().unwrap_or((0, 0));
-    for _ in 0..VIEW_ROWS {
+    for _ in 0..rows {
         println!();
     }
-    let (_, after_y) = position().unwrap_or((0, before_y.saturating_add(VIEW_ROWS)));
-    after_y.saturating_sub(VIEW_ROWS)
+    let (_, after_y) = position().unwrap_or((0, before_y.saturating_add(rows)));
+    after_y.saturating_sub(rows)
 }
 
 fn is_finish_event(view: &ViewState, event: &HookEvent) -> bool {
@@ -319,7 +321,7 @@ fn finish_animation(view: &mut ViewState, step: Duration, start: std::time::Inst
     execute!(
         std::io::stdout(),
         Show,
-        MoveTo(0, view.origin_y + VIEW_ROWS)
+        MoveTo(0, view.origin_y + view.reserved_rows)
     )
     .ok();
     Summary {
@@ -640,14 +642,34 @@ fn enqueue_swap(tape: &mut TapeState, first: u64, second: u64) {
     }
 }
 
-fn render_frame(view: &ViewState) {
+fn ensure_reserved_rows(view: &mut ViewState) {
+    let required = required_rows(view);
+    if required <= view.reserved_rows {
+        return;
+    }
+
+    let mut out = std::io::stdout();
+    execute!(out, MoveTo(0, view.origin_y + view.reserved_rows)).ok();
+    for _ in view.reserved_rows..required {
+        writeln!(out).ok();
+    }
+    view.reserved_rows = required;
+}
+
+fn required_rows(view: &ViewState) -> u16 {
+    let tape_count = ordered_tapes(view).len().max(1) as u16;
+    3 + tape_count * 3
+}
+
+fn render_frame(view: &mut ViewState) {
+    ensure_reserved_rows(view);
     let width = crossterm::terminal::size()
         .map(|(width, _)| width as usize)
         .unwrap_or(80);
     let inner = width.saturating_sub(4).max(20);
     let mut out = std::io::stdout();
 
-    for row in 0..VIEW_ROWS {
+    for row in 0..view.reserved_rows {
         execute!(
             out,
             MoveTo(0, view.origin_y + row),
@@ -660,7 +682,7 @@ fn render_frame(view: &ViewState) {
     draw_graph_status(&mut out, view.origin_y + 1, inner, view);
 
     let mut row = view.origin_y + 2;
-    let last_body_row = view.origin_y + VIEW_ROWS - 2;
+    let last_body_row = view.origin_y + view.reserved_rows - 2;
     for tape in ordered_tapes(view) {
         if row + 2 > last_body_row {
             break;
@@ -669,7 +691,12 @@ fn render_frame(view: &ViewState) {
         row += 3;
     }
 
-    draw_footer(&mut out, view.origin_y + VIEW_ROWS - 1, width, view);
+    draw_footer(
+        &mut out,
+        view.origin_y + view.reserved_rows - 1,
+        width,
+        view,
+    );
     out.flush().ok();
 }
 
