@@ -91,7 +91,10 @@ pub enum Content {
     /// Execution error that Policy may intercept for retry decisions.
     Hitch {
         message: String,
-        retryable: bool,
+        /// Optional HTTP status code from the failed request.
+        ///
+        /// Policy uses this to decide retry strategy: 401/403 are permanent;
+        /// 429/5xx and the absence of a code are transient-worth-retrying.
         code: Option<u16>,
     },
 }
@@ -162,15 +165,18 @@ impl Fragment {
     }
 
     /// Creates a [`Content::Hitch`] fragment.
-    pub fn hitch(message: impl Into<String>) -> Self {
+    ///
+    /// `code` is an optional HTTP status code from the failed request.
+    /// Policy may use it for retry strategy (e.g. 401/403 are permanent,
+    /// 429/5xx are transient).
+    pub fn hitch(message: impl Into<String>, code: Option<u16>) -> Self {
         Self {
             id: 0,
             role: Role::System,
             tag: "hitch".into(),
             content: Content::Hitch {
                 message: message.into(),
-                retryable: false,
-                code: None,
+                code,
             },
         }
     }

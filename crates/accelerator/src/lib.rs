@@ -26,4 +26,5 @@ pub use condition::{
 };
 pub use flux::{ContextFlux, EnvFlux, FluxMode, FluxRef, PolicyFlux, PurposeFlux, ResFlux};
 pub use graph::{BuildError, Graph};
+pub use policy::Captain;
 pub use state::State;

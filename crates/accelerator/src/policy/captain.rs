@@ -1,30 +1,35 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use machine::{Action, Context, Environment, Inbox, Phase, Policy, Purpose, Resources, Role};
-use tracing::trace;
+use machine::{
+    Action, Content, Context, Environment, Inbox, Phase, Policy, Purpose, Resources, Role,
+};
+use tracing::{trace, warn};
 
 use super::phases::{self, Bootstrap, Env, Instructions};
+use super::retry::{HTTP_FORBIDDEN, HTTP_UNAUTHORIZED, Retry};
 
 /// Captain — a simple single-agent Policy.
 ///
-/// Decides purely based on inbox state and the last fragment in context:
-///
-///   Inbox not empty  → Take (drain one fragment into context)
+///   Inbox not empty             → Take
 ///   Inbox empty:
-///     last in context is Tool  → Halt (tool was just run, show LLM the result)
-///     last in context is not Tool, first call already happened → Done
-///     first call ever → Halt (kick off the LLM)
+///     first call ever           → Halt
+///     last is Hitch:
+///       401/403                 → Done
+///       transient, budget > 0   → backoff, Halt (retry)
+///       budget exhausted        → Done
+///     last is Tool              → Halt
+///     last is not Tool          → Done
 pub struct Captain {
-    started: std::sync::atomic::AtomicBool,
+    first_call: std::sync::atomic::AtomicBool,
+    retry: Retry,
 }
 
 impl Clone for Captain {
     fn clone(&self) -> Self {
         Self {
-            started: std::sync::atomic::AtomicBool::new(
-                self.started.load(std::sync::atomic::Ordering::Relaxed),
-            ),
+            first_call: std::sync::atomic::AtomicBool::new(false),
+            retry: self.retry.clone(),
         }
     }
 }
@@ -32,7 +37,8 @@ impl Clone for Captain {
 impl Default for Captain {
     fn default() -> Self {
         Self {
-            started: std::sync::atomic::AtomicBool::new(false),
+            first_call: std::sync::atomic::AtomicBool::new(false),
+            retry: Retry::default(),
         }
     }
 }
@@ -77,16 +83,38 @@ impl Policy for Captain {
                 return Action::Take;
             }
 
-            // Inbox is empty.
-            let not_started = !self
-                .started
-                .swap(true, std::sync::atomic::Ordering::Relaxed);
-            if not_started {
+            if !self
+                .first_call
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
                 trace!("decide: first call, halting");
                 return Action::Halt;
             }
 
-            match ctx.fragments().last().map(|f| f.role) {
+            let last = ctx.fragments().last();
+
+            if let Some(frag) = last {
+                if let Content::Hitch { code, .. } = &frag.content {
+                    if let Some(c) = code {
+                        if *c == HTTP_UNAUTHORIZED || *c == HTTP_FORBIDDEN {
+                            warn!(code = *c, "decide: permanent hitch, done");
+                            return Action::Done;
+                        }
+                    }
+
+                    if self.retry.backoff().await {
+                        let attempts = self.retry.count();
+                        trace!(attempts, "decide: hitched, retrying");
+                        return Action::Halt;
+                    }
+                    warn!("decide: retry budget exhausted, done");
+                    return Action::Done;
+                }
+            }
+
+            self.retry.reset();
+
+            match last.map(|f| f.role) {
                 Some(Role::Tool) => {
                     trace!("decide: last is Tool, halting");
                     Action::Halt
