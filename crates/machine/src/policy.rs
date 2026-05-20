@@ -23,6 +23,25 @@ pub enum Action {
     Done,
 }
 
+impl Action {
+    /// Human-readable action label for stats and tracing.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Action::Append(_) => "append",
+            Action::Insert { .. } => "insert",
+            Action::Replace { .. } => "replace",
+            Action::Remove(_) => "remove",
+            Action::Swap(..) => "swap",
+            Action::Model(_) => "model",
+            Action::Activate(_) => "activate",
+            Action::Deactivate(_) => "deactivate",
+            Action::Take => "take",
+            Action::Halt => "halt",
+            Action::Done => "done",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum PhaseOutcome {
     Action(Action),

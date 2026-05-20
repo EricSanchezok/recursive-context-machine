@@ -325,8 +325,8 @@ fn apply_event(state: &mut State, event: HookEvent) {
         HookEvent::Completion(CompletionEvent::End { fragments }) => {
             state.status = format!("drain {fragments} fragments");
         }
-        HookEvent::Machine(MachineEvent::Halt { round }) => {
-            state.status = format!("halt #{round}");
+        HookEvent::Machine(MachineEvent::Halt { step }) => {
+            state.status = format!("halt #{step}");
         }
         HookEvent::Machine(MachineEvent::Start) => {
             state.status = "start".into();
