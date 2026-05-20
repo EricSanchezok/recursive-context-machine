@@ -100,8 +100,6 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
     }
 }
 
-// ── Internal ──
-
 /// Send a request with a deadline. Returns an error if exceeding `model.timeout` seconds.
 async fn send(
     endpoint: &impl CompletionModel,
