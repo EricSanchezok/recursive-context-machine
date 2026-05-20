@@ -14,6 +14,16 @@ pub use wait::WaitTool;
 
 use std::path::{Path, PathBuf};
 
+use crate::catalog::Catalog;
+
+/// Register all built-in tools in the catalog.
+pub fn register(catalog: &mut Catalog) {
+    for tool in builtin_tools() {
+        let name = tool.name().to_string();
+        catalog.tools.insert(name, tool);
+    }
+}
+
 /// All built-in tools.
 pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
     vec![
