@@ -6,7 +6,6 @@ pub const DEFAULT_BACKOFF_MAX: Duration = Duration::from_secs(60);
 pub const DEFAULT_BACKOFF_MULTIPLIER: u64 = 2;
 pub const DEFAULT_MAX_RETRIES: u32 = 3;
 
-/// Common HTTP status codes used in hitch classification.
 pub const HTTP_UNAUTHORIZED: u16 = 401;
 pub const HTTP_FORBIDDEN: u16 = 403;
 pub const HTTP_RATE_LIMITED: u16 = 429;
@@ -16,13 +15,6 @@ pub const HTTP_SERVICE_UNAVAILABLE: u16 = 503;
 pub const HTTP_GATEWAY_TIMEOUT: u16 = 504;
 
 /// Retry budget with exponential backoff.
-///
-/// Embed in any Policy that needs retry-tracking. Call [`backoff`] on each
-/// hitch turn, [`reset`] on any non-hitch turn. The method increments the
-/// internal counter, sleeps for the backoff duration, and returns `false` when
-/// the budget is exhausted.
-///
-/// Clone produces a fresh counter (a cloned Policy is a separate logical run).
 pub struct Retry {
     attempts: AtomicU32,
     backoff_initial: Duration,
@@ -47,8 +39,7 @@ impl Retry {
         }
     }
 
-    /// Increment counter, compute exponential backoff, sleep, return `true`.
-    /// Returns `false` immediately when the budget is exhausted.
+    /// Returns `false` when the retry budget is exhausted.
     pub async fn backoff(&self) -> bool {
         let attempt = self.attempts.fetch_add(1, Ordering::Relaxed);
         if attempt >= self.max_retries {
@@ -66,12 +57,10 @@ impl Retry {
         true
     }
 
-    /// Reset the budget.
     pub fn reset(&self) {
         self.attempts.store(0, Ordering::Relaxed);
     }
 
-    /// Current consecutive attempt count.
     pub fn count(&self) -> u32 {
         self.attempts.load(Ordering::Relaxed)
     }
