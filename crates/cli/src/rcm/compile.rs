@@ -1,33 +1,46 @@
 use std::collections::HashMap;
 
-use accelerator::state::kit;
+use accelerator::Catalog;
+use accelerator::mcp::{McpRegistry, McpServerConfig};
 use accelerator::{
     ContextFlux, ContextPredicate, EnvFlux, EnvironmentPredicate, FluxMode, Graph, PolicyFlux,
     Predicate as AccelPredicate, PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, State,
 };
+use machine::{Limit, Modalities, Modality, Model, Protocol};
 
 use super::ast::{self, PortDef, Predicate, RcmFile};
 
-/// Compile a parsed `.rcm` file into a `Graph`.
-pub fn compile(file: &RcmFile) -> Result<Graph, String> {
-    let catalog = Catalog::default();
+/// Compile a parsed `.rcm` file into a `Graph`, starting any MCP servers declared in it.
+pub async fn compile(file: &RcmFile) -> Result<Graph, String> {
+    let catalog = Catalog::new();
+
+    let models = build_models(&file.models)?;
+
+    let mut mcp_tools = Vec::new();
+    if !file.mcps.is_empty() {
+        let configs: Vec<McpServerConfig> = file.mcps.iter().map(|m| m.into()).collect();
+        let registry = McpRegistry::start(&configs)
+            .await
+            .map_err(|e| e.to_string())?;
+        mcp_tools = registry.tools();
+    }
 
     let mut graph = Graph::named(file.name.as_str());
-    let mut agent_map: HashMap<String, _> = HashMap::new();
+    let mut accelerator_map: HashMap<String, _> = HashMap::new();
     let mut flux_map: HashMap<String, _> = HashMap::new();
     let mut condition_map: HashMap<String, _> = HashMap::new();
 
-    for agent_def in &file.agents {
-        let state = catalog.build_state(agent_def)?;
+    for accel_def in &file.accelerators {
+        let state = build_state(&catalog, &models, &mcp_tools, accel_def)?;
         let ref_ = graph.spawn_named(
-            agent_def.name.as_deref().unwrap_or(agent_def.id.as_str()),
+            accel_def.name.as_deref().unwrap_or(accel_def.id.as_str()),
             state,
         );
-        agent_map.insert(agent_def.id.clone(), ref_);
+        accelerator_map.insert(accel_def.id.clone(), ref_);
     }
 
     for flux_def in &file.fluxes {
-        let mode = resolve_flux_mode(flux_def)?;
+        let mode = resolve_flux_mode(&catalog, flux_def)?;
         let ref_ = graph.weave_named(
             flux_def.name.as_deref().unwrap_or(flux_def.id.as_str()),
             2,
@@ -46,15 +59,137 @@ pub fn compile(file: &RcmFile) -> Result<Graph, String> {
     }
 
     for wire in &file.wires {
-        let from = resolve_port(&wire.from, &agent_map, &flux_map, &condition_map)?;
-        let to = resolve_port(&wire.to, &agent_map, &flux_map, &condition_map)?;
+        let from = resolve_port(&wire.from, &accelerator_map, &flux_map, &condition_map)?;
+        let to = resolve_port(&wire.to, &accelerator_map, &flux_map, &condition_map)?;
         graph.wire(from, to);
     }
 
     Ok(graph)
 }
 
-fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {
+fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String> {
+    let mut models = HashMap::new();
+    for def in defs {
+        let protocol = parse_protocol(&def.protocol)?;
+        let modalities = build_modalities(&def.modalities_input, &def.modalities_output)?;
+        let credentials = match (&def.credentials_env, &def.credentials_key) {
+            (Some(env_var), None) => std::env::var(env_var).ok(),
+            (None, Some(key)) => Some(key.clone()),
+            (None, None) => None,
+            (Some(_), Some(_)) => {
+                return Err("credentials cannot have both 'env' and 'key'".to_string());
+            }
+        };
+
+        let (input, context) = match (def.limit_context, def.limit_input) {
+            (Some(ctx), None) => (ctx, ctx),
+            (None, Some(inp)) => (inp, inp),
+            (Some(ctx), Some(inp)) => (inp, ctx),
+            (None, None) => {
+                return Err("model limit requires at least one of 'context' or 'input'".to_string());
+            }
+        };
+
+        let model = Model {
+            name: def.id.clone(),
+            protocol,
+            endpoint: def.endpoint.clone(),
+            credentials,
+            limit: Some(Limit {
+                context,
+                input: Some(input),
+                output: def.limit_output,
+            }),
+            cost: None,
+            modalities: Some(modalities),
+            ..Default::default()
+        };
+
+        if models.contains_key(&def.id) {
+            return Err(format!("duplicate model: {}", def.id));
+        }
+        models.insert(def.id.clone(), model);
+    }
+    Ok(models)
+}
+
+fn parse_protocol(name: &str) -> Result<Protocol, String> {
+    match name {
+        "openai" => Ok(Protocol::OpenAI),
+        "anthropic" => Ok(Protocol::Anthropic),
+        "gemini" => Ok(Protocol::Gemini),
+        _ => Err(format!(
+            "unknown protocol '{}' (expected openai, anthropic, or gemini)",
+            name
+        )),
+    }
+}
+
+fn build_modalities(input: &[String], output: &[String]) -> Result<Modalities, String> {
+    let parse_list = |names: &[String]| -> Result<Vec<Modality>, String> {
+        names
+            .iter()
+            .map(|n| match n.as_str() {
+                "text" => Ok(Modality::Text),
+                "audio" => Ok(Modality::Audio),
+                "image" => Ok(Modality::Image),
+                "video" => Ok(Modality::Video),
+                "pdf" => Ok(Modality::Pdf),
+                _ => Err(format!("unknown modality '{}'", n)),
+            })
+            .collect()
+    };
+    Ok(Modalities {
+        input: parse_list(input)?,
+        output: parse_list(output)?,
+    })
+}
+
+fn build_state(
+    catalog: &Catalog,
+    models: &HashMap<String, Model>,
+    mcp_tools: &[std::sync::Arc<dyn machine::Tool>],
+    def: &ast::AcceleratorDef,
+) -> Result<State, String> {
+    let model_name = def
+        .model
+        .as_deref()
+        .ok_or_else(|| "accelerator requires a model (e.g. model = \"gpt-4.1\")".to_string())?;
+    let model = models.get(model_name).ok_or_else(|| {
+        format!(
+            "unknown model '{}' (declare it with a 'model' block)",
+            model_name
+        )
+    })?;
+
+    let policy_name = def.policy.as_deref().unwrap_or("captain");
+    let policy = catalog
+        .policies
+        .get(policy_name)
+        .ok_or_else(|| format!("unknown policy: {}", policy_name))?;
+
+    let mut resources = catalog.build_resources("kit")?;
+    for tool in mcp_tools {
+        let name = tool.name().to_string();
+        resources = resources.with_tool(tool.clone());
+        resources.enable(name);
+    }
+    resources = resources.with_model(model.clone());
+    resources.use_model(model_name);
+
+    for tool_name in &def.tools {
+        resources.enable(tool_name);
+    }
+
+    Ok(State {
+        purpose: def.purpose.clone().unwrap_or_default(),
+        policy: policy(),
+        res: resources,
+        ..State::default()
+    })
+}
+
+fn resolve_flux_mode(_catalog: &Catalog, def: &ast::FluxDef) -> Result<FluxMode, String> {
     match (def.channel.as_str(), def.mode.as_str()) {
         ("purpose", "concat") => Ok(FluxMode::Purpose(PurposeFlux::Concat)),
         ("context", "append") => Ok(FluxMode::Context(ContextFlux::Append)),
@@ -68,23 +203,23 @@ fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {
 
 fn resolve_port(
     def: &PortDef,
-    agents: &HashMap<String, accelerator::AcceleratorRef>,
+    accelerators: &HashMap<String, accelerator::AcceleratorRef>,
     fluxes: &HashMap<String, accelerator::FluxRef>,
     conditions: &HashMap<String, accelerator::ConditionRef>,
 ) -> Result<accelerator::Port, String> {
     match def {
-        PortDef::Agent { id, port } => {
-            let agent = agents
+        PortDef::Accelerator { id, port } => {
+            let accel = accelerators
                 .get(id)
-                .ok_or_else(|| format!("unknown agent: {}", id))?;
+                .ok_or_else(|| format!("unknown accelerator: {}", id))?;
             match port.as_str() {
-                "pulse" => Ok(agent.done()),
-                "purpose" => Ok(agent.purpose_out()),
-                "context" => Ok(agent.ctx_out()),
-                "environment" => Ok(agent.env_out()),
-                "policy" => Ok(agent.policy_out()),
-                "resources" => Ok(agent.res_out()),
-                _ => Err(format!("unknown agent port: {}", port)),
+                "pulse" => Ok(accel.done()),
+                "purpose" => Ok(accel.purpose_out()),
+                "context" => Ok(accel.ctx_out()),
+                "environment" => Ok(accel.env_out()),
+                "policy" => Ok(accel.policy_out()),
+                "resources" => Ok(accel.res_out()),
+                _ => Err(format!("unknown accelerator port: {}", port)),
             }
         }
         PortDef::Flux { id, port } => {
@@ -190,42 +325,14 @@ fn parse_role(role: &str) -> Result<machine::Role, String> {
     }
 }
 
-struct Catalog {
-    models: HashMap<String, machine::Model>,
-}
-
-impl Default for Catalog {
-    fn default() -> Self {
-        let mut models = HashMap::new();
-        let ds = accelerator::model::deepseek_v4_flash();
-        models.insert(ds.name.clone(), ds);
-        let gpt = accelerator::model::gpt4_1();
-        models.insert(gpt.name.clone(), gpt);
-        Self { models }
-    }
-}
-
-impl Catalog {
-    fn build_state(&self, def: &ast::AgentDef) -> Result<State, String> {
-        let model_name = def.model.as_deref().unwrap_or("deepseek-v4-flash");
-        let model = self
-            .models
-            .get(model_name)
-            .ok_or_else(|| format!("unknown model: {}", model_name))?;
-
-        let mut resources = kit();
-        resources = resources.with_model(model.clone());
-        resources.use_model(model_name);
-
-        for tool_name in &def.tools {
-            resources.enable(tool_name);
+impl From<&crate::rcm::McpDef> for McpServerConfig {
+    fn from(def: &crate::rcm::McpDef) -> Self {
+        McpServerConfig {
+            label: def.label.clone(),
+            command: def.command.clone(),
+            args: Vec::new(),
+            url: def.url.clone(),
+            headers: def.headers.clone(),
         }
-
-        Ok(State {
-            purpose: def.purpose.clone().unwrap_or_default(),
-            policy: Box::new(accelerator::policy::Captain::new()),
-            res: resources,
-            ..State::default()
-        })
     }
 }

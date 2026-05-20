@@ -35,11 +35,9 @@ pub fn local() -> Environment {
 }
 
 pub fn kit() -> Resources {
-    use crate::tools::builtin_tools;
-
     let mut resources = Resources::named("kit");
 
-    for tool in builtin_tools() {
+    for tool in crate::tools::builtin_tools() {
         let name = tool.name().to_string();
         resources = resources.with_tool(tool);
         resources.enable(name);
@@ -49,9 +47,6 @@ pub fn kit() -> Resources {
         "captain".to_string(),
         include_str!("prompts/captain.txt").to_string(),
     );
-
-    resources = resources.with_model(crate::model::deepseek_v4_flash());
-    resources = resources.with_model(crate::model::gpt4_1());
 
     resources
 }
