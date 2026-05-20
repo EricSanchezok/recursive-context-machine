@@ -1,10 +1,10 @@
 use cli::rcm;
 
 #[test]
-fn parse_agent_block() {
+fn parse_accelerator_block() {
     let source = r#"
         name = "test"
-        agent research {
+        accelerator research {
             purpose = "study quantum computing"
             model = "gpt"
             tools = ["websearch", "fs"]
@@ -12,13 +12,13 @@ fn parse_agent_block() {
     "#;
     let file = rcm::parse(source).unwrap();
     assert_eq!(file.name, "test");
-    assert_eq!(file.agents.len(), 1);
-    assert_eq!(file.agents[0].id, "research");
+    assert_eq!(file.accelerators.len(), 1);
+    assert_eq!(file.accelerators[0].id, "research");
     assert_eq!(
-        file.agents[0].purpose.as_deref(),
+        file.accelerators[0].purpose.as_deref(),
         Some("study quantum computing")
     );
-    assert_eq!(file.agents[0].tools, vec!["websearch", "fs"]);
+    assert_eq!(file.accelerators[0].tools, vec!["websearch", "fs"]);
 }
 
 #[test]
@@ -78,8 +78,8 @@ fn parse_condition_with_predicate() {
 fn parse_wires() {
     let source = r#"
         name = "test"
-        agent a {}
-        agent b {}
+        accelerator a {}
+        accelerator b {}
         a.pulse -> b.pulse
     "#;
     let file = rcm::parse(source).unwrap();
@@ -88,13 +88,13 @@ fn parse_wires() {
 
 #[test]
 fn parse_rejects_unclosed_string() {
-    let result = rcm::parse(r#"name = "test" agent x { purpose = "unclosed"#);
+    let result = rcm::parse(r#"name = "test" accelerator x { purpose = "unclosed"#);
     assert!(result.is_err());
 }
 
 #[test]
 fn parse_skips_comments() {
-    let source = "// comment\nname = \"test\"\nagent a {}\n";
+    let source = "// comment\nname = \"test\"\naccelerator a {}\n";
     let file = rcm::parse(source).unwrap();
-    assert_eq!(file.agents.len(), 1);
+    assert_eq!(file.accelerators.len(), 1);
 }

@@ -4,7 +4,7 @@ mod lexer;
 mod parser;
 
 pub use ast::{
-    AgentDef, ConditionDef, FluxDef, McpDef, ModelDef, PortDef, Predicate, RcmFile, WireDef,
+    AcceleratorDef, ConditionDef, FluxDef, McpDef, ModelDef, PortDef, Predicate, RcmFile, WireDef,
 };
 pub(crate) use parser::Parser;
 
