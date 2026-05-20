@@ -1,7 +1,9 @@
 use machine::{Machine, Purpose};
 use std::future::Future;
 use std::pin::Pin;
-use utils::{AcceleratorId, FluxId, Name};
+use utils::{AcceleratorId, ConditionId, FluxId, Name};
+
+use crate::condition::ConditionBranch;
 
 use crate::state::State;
 
@@ -128,27 +130,47 @@ pub enum Port {
         slot: usize,
         channel: Channel,
     },
+    ConditionIn {
+        index: usize,
+        condition_id: ConditionId,
+    },
+    ConditionOut {
+        index: usize,
+        condition_id: ConditionId,
+        branch: ConditionBranch,
+    },
 }
 
 impl Port {
     pub fn is_output(&self) -> bool {
-        matches!(self, Port::Accel { .. } | Port::FluxOut { .. })
+        matches!(
+            self,
+            Port::Accel { .. } | Port::FluxOut { .. } | Port::ConditionOut { .. }
+        )
     }
     pub fn is_input(&self) -> bool {
-        matches!(self, Port::Accel { .. } | Port::FluxSlot { .. })
+        matches!(
+            self,
+            Port::Accel { .. } | Port::FluxSlot { .. } | Port::ConditionIn { .. }
+        )
     }
     pub fn channel(&self) -> Channel {
         match self {
             Port::Accel { channel, .. }
             | Port::FluxOut { channel, .. }
             | Port::FluxSlot { channel, .. } => *channel,
+            Port::ConditionIn { .. } | Port::ConditionOut { .. } => Channel::Pulse,
         }
     }
-    pub(crate) fn node_index(&self, num_accelerators: usize) -> usize {
-        let offset = |index: usize| num_accelerators + index;
+    pub(crate) fn node_index(&self, num_accelerators: usize, num_fluxes: usize) -> usize {
+        let flux_offset = |index: usize| num_accelerators + index;
+        let condition_offset = |index: usize| num_accelerators + num_fluxes + index;
         match self {
             Port::Accel { index, .. } => *index,
-            Port::FluxOut { index, .. } | Port::FluxSlot { index, .. } => offset(*index),
+            Port::FluxOut { index, .. } | Port::FluxSlot { index, .. } => flux_offset(*index),
+            Port::ConditionIn { index, .. } | Port::ConditionOut { index, .. } => {
+                condition_offset(*index)
+            }
         }
     }
 }

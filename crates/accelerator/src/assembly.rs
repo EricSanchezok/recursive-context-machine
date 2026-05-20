@@ -9,6 +9,7 @@ use tracing::trace;
 use utils::{AcceleratorId, AssemblyId, Name, SlotId};
 
 use crate::accelerator::{Channel, Port, fire};
+use crate::condition::Predicate;
 use crate::flux::Flux;
 use crate::state::State;
 
@@ -20,9 +21,19 @@ pub struct Assembly {
     pub(crate) fluxes: Vec<Flux>,
     pub(crate) downstream: Vec<Vec<usize>>,
     pub(crate) pending: Vec<usize>,
+    pub(crate) active_inputs: Vec<usize>,
+    pub(crate) skipped: Vec<bool>,
     pub(crate) state_wires: HashMap<Port, Port>,
     pub(crate) flux_slot_wires: HashMap<(usize, usize), Port>,
     pub(crate) is_sink: Vec<bool>,
+    pub(crate) condition_routing: Vec<ConditionRouting>,
+    pub(crate) condition_map: HashMap<usize, Vec<usize>>,
+}
+
+pub(crate) struct ConditionRouting {
+    pub predicate: Predicate,
+    pub true_target: usize,
+    pub false_target: usize,
 }
 
 pub(crate) struct Slot {
@@ -100,33 +111,103 @@ impl Assembly {
                     name = slot_name.as_str()
                 );
 
-                for next in &self.downstream[id] {
-                    self.pending[*next] -= 1;
-                    if self.pending[*next] == 0 {
-                        queue.push_back(*next);
-                    }
-                }
+                self.route_conditions(id, &mut queue);
+                self.release_downstream(id, &mut queue);
             }
 
             self.sink_outputs()
         })
     }
 
+    fn route_conditions(&mut self, source: usize, queue: &mut VecDeque<usize>) {
+        let Some(routing_ids) = self.condition_map.get(&source) else {
+            return;
+        };
+        let routing_ids: Vec<usize> = routing_ids.to_vec();
+
+        for routing_id in routing_ids {
+            let routing = &self.condition_routing[routing_id];
+            let output = self.slots[source]
+                .output
+                .as_ref()
+                .expect("condition source did not run");
+            let matched = routing.predicate.evaluate(output);
+            let selected = if matched {
+                routing.true_target
+            } else {
+                routing.false_target
+            };
+            let skipped = if matched {
+                routing.false_target
+            } else {
+                routing.true_target
+            };
+            self.release_slot(selected, queue);
+            self.skip_slot(skipped, queue);
+        }
+    }
+
+    fn release_downstream(&mut self, source: usize, queue: &mut VecDeque<usize>) {
+        let downstream_len = self.downstream[source].len();
+        for index in 0..downstream_len {
+            let target = self.downstream[source][index];
+            self.release_slot(target, queue);
+        }
+    }
+
+    fn release_slot(&mut self, target: usize, queue: &mut VecDeque<usize>) {
+        if self.skipped[target] || self.slots[target].output.is_some() {
+            return;
+        }
+        self.active_inputs[target] += 1;
+        self.complete_dependency(target, queue);
+    }
+
+    fn skip_slot(&mut self, target: usize, queue: &mut VecDeque<usize>) {
+        if self.skipped[target] || self.slots[target].output.is_some() {
+            return;
+        }
+        self.skipped[target] = true;
+        self.skip_downstream(target, queue);
+    }
+
+    fn skip_downstream(&mut self, source: usize, queue: &mut VecDeque<usize>) {
+        let downstream_len = self.downstream[source].len();
+        for index in 0..downstream_len {
+            let target = self.downstream[source][index];
+            self.complete_dependency(target, queue);
+        }
+    }
+
+    fn complete_dependency(&mut self, target: usize, queue: &mut VecDeque<usize>) {
+        self.pending[target] -= 1;
+        if self.pending[target] != 0 {
+            return;
+        }
+        if self.active_inputs[target] > 0 {
+            queue.push_back(target);
+        } else {
+            self.skip_slot(target, queue);
+        }
+    }
+
     fn sink_outputs(&mut self) -> Vec<State> {
         let mut sinks = Vec::new();
         for (id, slot) in self.slots.iter_mut().enumerate() {
-            if self.is_sink[id] {
-                sinks.push(slot.output.take().expect("sink slot did not run"));
+            if self.is_sink[id]
+                && let Some(output) = slot.output.take()
+            {
+                sinks.push(output);
             }
         }
         sinks
     }
 
-    fn resolve_purpose(&self, slot_id: usize) -> String {
-        let pin = self.slots[slot_id].port(slot_id, Channel::Purpose);
+    fn resolve_purpose(&self, slot_idx: usize) -> String {
+        let pin = self.slots[slot_idx].port(slot_idx, Channel::Purpose);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_purpose(from.clone()),
-            None => self.slots[slot_id].input.purpose.clone(),
+            None => self.slots[slot_idx].input.purpose.clone(),
         }
     }
 
@@ -154,11 +235,11 @@ impl Assembly {
         }
     }
 
-    fn resolve_ctx(&self, slot_id: usize) -> Context {
-        let pin = self.slots[slot_id].port(slot_id, Channel::Context);
+    fn resolve_ctx(&self, slot_idx: usize) -> Context {
+        let pin = self.slots[slot_idx].port(slot_idx, Channel::Context);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_ctx(from.clone()),
-            None => self.slots[slot_id].input.ctx.clone(),
+            None => self.slots[slot_idx].input.ctx.clone(),
         }
     }
 
@@ -186,11 +267,11 @@ impl Assembly {
         }
     }
 
-    fn resolve_env(&self, slot_id: usize) -> Environment {
-        let pin = self.slots[slot_id].port(slot_id, Channel::Environment);
+    fn resolve_env(&self, slot_idx: usize) -> Environment {
+        let pin = self.slots[slot_idx].port(slot_idx, Channel::Environment);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_env(from.clone()),
-            None => self.slots[slot_id].input.env.clone(),
+            None => self.slots[slot_idx].input.env.clone(),
         }
     }
 
@@ -218,11 +299,11 @@ impl Assembly {
         }
     }
 
-    fn resolve_policy(&self, slot_id: usize) -> Box<dyn Policy> {
-        let pin = self.slots[slot_id].port(slot_id, Channel::Policy);
+    fn resolve_policy(&self, slot_idx: usize) -> Box<dyn Policy> {
+        let pin = self.slots[slot_idx].port(slot_idx, Channel::Policy);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_policy(from.clone()),
-            None => self.slots[slot_id].input.policy.clone(),
+            None => self.slots[slot_idx].input.policy.clone(),
         }
     }
 
@@ -250,11 +331,11 @@ impl Assembly {
         }
     }
 
-    fn resolve_res(&self, slot_id: usize) -> Resources {
-        let pin = self.slots[slot_id].port(slot_id, Channel::Resources);
+    fn resolve_res(&self, slot_idx: usize) -> Resources {
+        let pin = self.slots[slot_idx].port(slot_idx, Channel::Resources);
         match self.state_wires.get(&pin) {
             Some(from) => self.read_res(from.clone()),
-            None => self.slots[slot_id].input.res.clone(),
+            None => self.slots[slot_idx].input.res.clone(),
         }
     }
 

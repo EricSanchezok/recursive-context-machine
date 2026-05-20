@@ -1,9 +1,10 @@
 use std::collections::{HashMap, VecDeque};
 
-use utils::{AssemblyId, FluxId, GraphId, Name};
+use utils::{AssemblyId, ConditionId, FluxId, GraphId, Name};
 
 use crate::accelerator::{Accelerator, AcceleratorRef, Channel, Port};
-use crate::assembly::{Assembly, Slot};
+use crate::assembly::{Assembly, ConditionRouting, Slot};
+use crate::condition::{Condition, ConditionBranch, ConditionRef, Predicate};
 use crate::flux::{Flux, FluxMode, FluxRef};
 use crate::state::State;
 
@@ -13,6 +14,7 @@ pub struct Graph {
     pub name: Name,
     accelerators: Vec<Accelerator>,
     fluxes: Vec<Flux>,
+    conditions: Vec<Condition>,
     wires: Vec<(Port, Port)>,
 }
 
@@ -27,6 +29,7 @@ impl Graph {
             name: Name::new(name).expect("graph name must be valid"),
             accelerators: Vec::new(),
             fluxes: Vec::new(),
+            conditions: Vec::new(),
             wires: Vec::new(),
         }
     }
@@ -72,6 +75,23 @@ impl Graph {
         }
     }
 
+    pub fn condition(&mut self, predicate: Predicate) -> ConditionRef {
+        self.condition_named("condition", predicate)
+    }
+
+    pub fn condition_named(
+        &mut self,
+        name: impl Into<String>,
+        predicate: Predicate,
+    ) -> ConditionRef {
+        let index = self.conditions.len();
+        self.conditions.push(Condition::new(name, predicate));
+        ConditionRef {
+            index,
+            id: self.conditions[index].id().clone(),
+        }
+    }
+
     pub fn rename_accelerator(&mut self, reference: AcceleratorRef, name: impl Into<String>) {
         self.assert_accelerator_ref(&reference);
         self.accelerators[reference.index].name =
@@ -83,17 +103,39 @@ impl Graph {
         self.fluxes[reference.index].name = Name::new(name).expect("flux name must be valid");
     }
 
+    pub fn rename_condition(&mut self, reference: ConditionRef, name: impl Into<String>) {
+        self.assert_condition_ref(&reference);
+        self.conditions[reference.index].name =
+            Name::new(name).expect("condition name must be valid");
+    }
+
     pub fn wire(&mut self, from: Port, to: Port) {
         self.assert_port_ref(&from);
         self.assert_port_ref(&to);
         assert!(from.is_output(), "source must be an output pin");
         assert!(to.is_input(), "target must be an input pin");
         assert_eq!(from.channel(), to.channel(), "channel mismatch");
-        assert!(
-            !self.wires.iter().any(|(_, target)| target == &to),
-            "input pin already wired"
-        );
+        self.assert_supported_pulse_wire(&from, &to);
+        if to.channel() != Channel::Pulse {
+            assert!(
+                !self.wires.iter().any(|(_, target)| target == &to),
+                "input pin already wired"
+            );
+        }
         self.wires.push((from, to));
+    }
+
+    fn assert_supported_pulse_wire(&self, from: &Port, to: &Port) {
+        if from.channel() != Channel::Pulse {
+            return;
+        }
+
+        match (from, to) {
+            (Port::Accel { .. }, Port::Accel { .. })
+            | (Port::Accel { .. }, Port::ConditionIn { .. })
+            | (Port::ConditionOut { .. }, Port::Accel { .. }) => {}
+            _ => panic!("unsupported pulse wire"),
+        }
     }
 
     fn assert_accelerator_ref(&self, reference: &AcceleratorRef) {
@@ -115,6 +157,17 @@ impl Graph {
             flux.id(),
             &reference.id,
             "flux reference does not belong to this graph"
+        );
+    }
+
+    fn assert_condition_ref(&self, reference: &ConditionRef) {
+        let Some(condition) = self.conditions.get(reference.index) else {
+            panic!("condition reference does not belong to this graph");
+        };
+        assert_eq!(
+            condition.id(),
+            &reference.id,
+            "condition reference does not belong to this graph"
         );
     }
 
@@ -147,6 +200,15 @@ impl Graph {
                     "flux slot index is out of range"
                 );
             }
+            Port::ConditionIn {
+                index,
+                condition_id,
+            }
+            | Port::ConditionOut {
+                index,
+                condition_id,
+                ..
+            } => self.assert_condition_port(*index, condition_id),
         }
     }
 
@@ -157,30 +219,90 @@ impl Graph {
         assert_eq!(flux.id(), id, "flux port does not belong to this graph");
     }
 
+    fn assert_condition_port(&self, index: usize, id: &ConditionId) {
+        let Some(condition) = self.conditions.get(index) else {
+            panic!("condition port does not belong to this graph");
+        };
+        assert_eq!(
+            condition.id(),
+            id,
+            "condition port does not belong to this graph"
+        );
+    }
+
     pub fn build(self) -> Result<Assembly, BuildError> {
         self.validate_acyclic()?;
 
         let num = self.accelerators.len();
         let mut downstream = vec![Vec::new(); num];
         let mut pending = vec![0usize; num];
+        let active_inputs = vec![0usize; num];
+        let skipped = vec![false; num];
+        let mut condition_sources = vec![None; self.conditions.len()];
+        let mut condition_branches = vec![ConditionBranches::default(); self.conditions.len()];
 
         for (from, to) in &self.wires {
-            if let (
-                Port::Accel {
-                    index: src,
-                    channel: Channel::Pulse,
-                    ..
-                },
-                Port::Accel {
-                    index: dst,
-                    channel: Channel::Pulse,
-                    ..
-                },
-            ) = (from, to)
-            {
-                downstream[*src].push(*dst);
-                pending[*dst] += 1;
+            match (from, to) {
+                (
+                    Port::Accel {
+                        index: src,
+                        channel: Channel::Pulse,
+                        ..
+                    },
+                    Port::Accel {
+                        index: dst,
+                        channel: Channel::Pulse,
+                        ..
+                    },
+                ) => {
+                    downstream[*src].push(*dst);
+                    pending[*dst] += 1;
+                }
+                (
+                    Port::Accel {
+                        index: src,
+                        channel: Channel::Pulse,
+                        ..
+                    },
+                    Port::ConditionIn { index, .. },
+                ) => {
+                    if condition_sources[*index].replace(*src).is_some() {
+                        return Err(BuildError::DuplicateConditionSource);
+                    }
+                }
+                (
+                    Port::ConditionOut { index, branch, .. },
+                    Port::Accel {
+                        index: dst,
+                        channel: Channel::Pulse,
+                        ..
+                    },
+                ) => {
+                    condition_branches[*index].set(*branch, *dst)?;
+                    pending[*dst] += 1;
+                }
+                _ => {}
             }
+        }
+
+        let mut condition_map: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut condition_routing = Vec::with_capacity(self.conditions.len());
+        for (index, condition) in self.conditions.into_iter().enumerate() {
+            let source = condition_sources[index].ok_or(BuildError::MissingConditionSource)?;
+            let branches = condition_branches[index];
+            let true_target = branches
+                .true_target
+                .ok_or(BuildError::MissingConditionTrueBranch)?;
+            let false_target = branches
+                .false_target
+                .ok_or(BuildError::MissingConditionFalseBranch)?;
+            let routing_index = condition_routing.len();
+            condition_map.entry(source).or_default().push(routing_index);
+            condition_routing.push(ConditionRouting {
+                predicate: condition.predicate,
+                true_target,
+                false_target,
+            });
         }
 
         let mut state_wires = HashMap::new();
@@ -228,19 +350,23 @@ impl Graph {
             fluxes: self.fluxes,
             downstream,
             pending,
+            active_inputs,
+            skipped,
             state_wires,
             flux_slot_wires,
             is_sink,
+            condition_routing,
+            condition_map,
         })
     }
 
     fn validate_acyclic(&self) -> Result<(), BuildError> {
-        let total = self.accelerators.len() + self.fluxes.len();
+        let total = self.accelerators.len() + self.fluxes.len() + self.conditions.len();
         let mut adj = vec![Vec::new(); total];
 
         for (from, to) in &self.wires {
-            let src = from.node_index(self.accelerators.len());
-            let dst = to.node_index(self.accelerators.len());
+            let src = from.node_index(self.accelerators.len(), self.fluxes.len());
+            let dst = to.node_index(self.accelerators.len(), self.fluxes.len());
             adj[src].push(dst);
         }
 
@@ -286,4 +412,28 @@ impl Default for Graph {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuildError {
     Cycle,
+    DuplicateConditionSource,
+    DuplicateConditionBranch,
+    MissingConditionSource,
+    MissingConditionTrueBranch,
+    MissingConditionFalseBranch,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ConditionBranches {
+    true_target: Option<usize>,
+    false_target: Option<usize>,
+}
+
+impl ConditionBranches {
+    fn set(&mut self, branch: ConditionBranch, target: usize) -> Result<(), BuildError> {
+        let slot = match branch {
+            ConditionBranch::True => &mut self.true_target,
+            ConditionBranch::False => &mut self.false_target,
+        };
+        if slot.replace(target).is_some() {
+            return Err(BuildError::DuplicateConditionBranch);
+        }
+        Ok(())
+    }
 }

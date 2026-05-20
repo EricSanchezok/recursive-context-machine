@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 
-use utils::{AcceleratorId, FluxId, GraphId};
+use utils::{AcceleratorId, ConditionId, FluxId, GraphId};
 
 #[test]
 fn generated_ids_use_type_prefixes() {
     assert!(GraphId::new().as_str().starts_with("graph_"));
     assert!(AcceleratorId::new().as_str().starts_with("accel_"));
     assert!(FluxId::new().as_str().starts_with("flux_"));
+    assert!(ConditionId::new().as_str().starts_with("cond_"));
 }
 
 #[test]

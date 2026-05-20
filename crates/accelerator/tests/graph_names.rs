@@ -1,4 +1,4 @@
-use accelerator::{ContextFlux, FluxMode, Graph, State};
+use accelerator::{ContextFlux, FluxMode, Graph, Predicate, PurposePredicate, State};
 
 #[test]
 fn duplicate_accelerator_names_are_allowed() {
@@ -18,12 +18,18 @@ fn graph_and_nodes_may_share_names() {
 }
 
 #[test]
-fn accelerator_and_flux_may_share_names_but_not_ids() {
+fn accelerator_flux_and_condition_may_share_names_but_not_ids() {
     let mut graph = Graph::new();
     let agent = graph.spawn_named("shared", State::default());
     let flux = graph.weave_named("shared", 1, FluxMode::Context(ContextFlux::Append));
+    let condition = graph.condition_named(
+        "shared",
+        Predicate::Purpose(PurposePredicate::Contains("done".into())),
+    );
 
     assert_ne!(agent.id().as_str(), flux.id().as_str());
+    assert_ne!(agent.id().as_str(), condition.id().as_str());
+    assert_ne!(flux.id().as_str(), condition.id().as_str());
 }
 
 #[test]
@@ -35,6 +41,24 @@ fn rename_does_not_change_id() {
 
     assert_eq!(graph.id(), &before);
     assert_eq!(graph.name.as_str(), "New Graph Name");
+}
+
+#[test]
+fn rename_flux_and_condition_do_not_change_ids() {
+    let mut graph = Graph::new();
+    let flux = graph.weave_named("flux", 1, FluxMode::Context(ContextFlux::Append));
+    let condition = graph.condition_named(
+        "condition",
+        Predicate::Purpose(PurposePredicate::Contains("done".into())),
+    );
+    let flux_id = flux.id().clone();
+    let condition_id = condition.id().clone();
+
+    graph.rename_flux(flux.clone(), "New Flux Name");
+    graph.rename_condition(condition.clone(), "New Condition Name");
+
+    assert_eq!(flux.id(), &flux_id);
+    assert_eq!(condition.id(), &condition_id);
 }
 
 #[test]
