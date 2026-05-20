@@ -27,7 +27,6 @@ impl Parser {
                 "condition" => conditions.push(self.condition()?),
                 "mcp" => mcps.push(self.mcp()?),
                 _ => {
-                    // Must be a wire.
                     wires.push(self.wire()?);
                 }
             }
@@ -43,13 +42,12 @@ impl Parser {
         })
     }
 
-    // ── top-level ─────────────────────────────────────────
+    // ── top-level ──
 
     fn parse_name(&mut self) -> Result<String, String> {
         self.expect_ident("name")?;
         self.expect(Token::Equals)?;
-        let value = self.expect_string()?;
-        Ok(value)
+        self.expect_string()
     }
 
     fn agent(&mut self) -> Result<AgentDef, String> {
@@ -99,7 +97,6 @@ impl Parser {
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
             self.expect(Token::Equals)?;
-
             match key.as_str() {
                 "name" => name = Some(self.expect_string()?),
                 "channel" => channel = self.expect_ident_any()?,
@@ -123,11 +120,11 @@ impl Parser {
 
         let mut name = None;
 
-        // name field
-        if self.peek_string() == "name" {
-            self.advance(); // skip "name"
+        while self.peek_string() == "name" {
+            self.advance();
             self.expect(Token::Equals)?;
             name = Some(self.expect_string()?);
+            self.eat(Token::Semicolon);
         }
 
         let predicate = self.predicate_block()?;
@@ -144,7 +141,6 @@ impl Parser {
         self.expect_ident("mcp")?;
         let label = self.expect_ident_any()?;
 
-        // Allow mcp without body for stdio subprocesses.
         if self.peek_string() == "{" {
             self.expect(Token::LBrace)?;
             let mut url = None;
@@ -153,14 +149,10 @@ impl Parser {
             while !self.eat(Token::RBrace) {
                 let key = self.expect_ident_any()?;
                 self.expect(Token::Equals)?;
-
                 match key.as_str() {
                     "url" => url = Some(self.expect_string()?),
                     "command" => command = Some(self.expect_string()?),
-                    _ => {
-                        self.eat(Token::Semicolon);
-                        continue;
-                    }
+                    other => return Err(format!("unknown mcp field: {}", other)),
                 }
             }
 
@@ -180,7 +172,7 @@ impl Parser {
         }
     }
 
-    // ── wires ──────────────────────────────────────────────
+    // ── wires ──
 
     fn wire(&mut self) -> Result<WireDef, String> {
         let from = self.port_ref()?;
@@ -191,27 +183,21 @@ impl Parser {
 
     fn port_ref(&mut self) -> Result<PortDef, String> {
         let id = self.expect_ident_any()?;
-
         if !self.eat(Token::Dot) {
             return Err(format!("expected '.' after '{}'", id));
         }
-
         let port = self.expect_ident_any()?;
 
-        Ok(match id.as_str() {
-            id if id.starts_with("flux_") => PortDef::Flux {
-                id: id.to_string(),
-                port,
-            },
-            id if id.starts_with("cond_") => PortDef::Condition {
-                id: id.to_string(),
-                port,
-            },
-            _ => PortDef::Agent { id, port },
+        Ok(if id.starts_with("flux_") {
+            PortDef::Flux { id, port }
+        } else if id.starts_with("cond_") {
+            PortDef::Condition { id, port }
+        } else {
+            PortDef::Agent { id, port }
         })
     }
 
-    // ── predicate parsing ──────────────────────────────────
+    // ── predicates ──
 
     fn predicate_block(&mut self) -> Result<Predicate, String> {
         let key = self.expect_ident_any()?;
@@ -222,7 +208,6 @@ impl Parser {
                 let mut preds = Vec::new();
                 while !self.eat(Token::RBrace) {
                     preds.push(self.predicate_block()?);
-                    // consume optional `;` separator
                     self.eat(Token::Semicolon);
                 }
                 Ok(Predicate::All(preds))
@@ -244,12 +229,12 @@ impl Parser {
             }
             channel => {
                 let op = self.expect_ident_any()?;
-                self.parse_channel_predicate(channel, &op)
+                self.channel_predicate(channel, &op)
             }
         }
     }
 
-    fn parse_channel_predicate(&mut self, channel: &str, op: &str) -> Result<Predicate, String> {
+    fn channel_predicate(&mut self, channel: &str, op: &str) -> Result<Predicate, String> {
         match (channel, op) {
             ("purpose", "contains") => Ok(Predicate::PurposeContains(self.expect_string()?)),
             ("purpose", "equals") => Ok(Predicate::PurposeEquals(self.expect_string()?)),
@@ -262,11 +247,19 @@ impl Parser {
             ("context", "is_empty") => Ok(Predicate::ContextIsEmpty),
             ("env", "var") => {
                 let var_name = self.expect_string()?;
-                if self.expect_ident_any()? == "exists" {
-                    Ok(Predicate::EnvVarExists(var_name))
-                } else {
-                    Err("expected 'exists' or 'equals' after env var".to_string())
+                let action = self.expect_ident_any()?;
+                match action.as_str() {
+                    "exists" => Ok(Predicate::EnvVarExists(var_name)),
+                    _ => Err(format!(
+                        "expected 'exists' or 'equals' after env var, got '{}'",
+                        action
+                    )),
                 }
+            }
+            ("env", "var_equals") => {
+                let var_name = self.expect_string()?;
+                let value = self.expect_string()?;
+                Ok(Predicate::EnvVarEquals(var_name, value))
             }
             ("env", "cwd_contains") => Ok(Predicate::EnvCwdContains(self.expect_string()?)),
             ("env", "platform_is") => Ok(Predicate::EnvPlatformIs(self.expect_string()?)),
@@ -275,20 +268,23 @@ impl Parser {
                 Ok(Predicate::ResActiveModelIs(self.expect_string()?))
             }
             ("resources", "has_tool") => Ok(Predicate::ResHasTool(self.expect_string()?)),
+            ("resources", "tool_enabled") => Ok(Predicate::ResToolEnabled(self.expect_string()?)),
             ("resources", "has_prompt") => Ok(Predicate::ResHasPrompt(self.expect_string()?)),
-            _ => Err(format!("unknown predicate: {channel} {op}")),
+            _ => Err(format!("unknown predicate: {} {}", channel, op)),
         }
     }
 
-    // ── primitives ─────────────────────────────────────────
+    // ── primitives ──
 
     fn peek(&self) -> &Token {
-        self.tokens.get(self.pos).unwrap_or(&Token::Eof)
+        static EOF: Token = Token::Eof;
+        self.tokens.get(self.pos).unwrap_or(&EOF)
     }
 
     fn peek_string(&self) -> &str {
         match self.peek() {
             Token::Ident(s) => s.as_str(),
+            Token::LexError(e) => e.as_str(),
             _ => "",
         }
     }
@@ -311,12 +307,10 @@ impl Parser {
     }
 
     fn expect(&mut self, expected: Token) -> Result<(), String> {
-        let found = self.peek().clone();
-        if found == expected {
-            self.advance();
+        if self.eat(expected.clone()) {
             Ok(())
         } else {
-            Err(format!("expected {:?}, found {:?}", expected, found))
+            Err(format!("expected {:?}, found {:?}", expected, self.peek()))
         }
     }
 
@@ -396,7 +390,7 @@ mod tests {
                 model = "deepseek-v4-flash"
                 tools = ["websearch", "fs"]
             }
-            "#,
+        "#,
         );
         assert_eq!(file.name, "test");
         assert_eq!(file.agents.len(), 1);
@@ -415,14 +409,16 @@ mod tests {
             r#"
             name = "test"
             condition check {
+                name = "Quality Check"
                 all {
                     purpose contains "done"
                     context has_tag "results"
                 }
             }
-            "#,
+        "#,
         );
         assert_eq!(file.conditions.len(), 1);
+        assert_eq!(file.conditions[0].name.as_deref(), Some("Quality Check"));
         assert!(matches!(file.conditions[0].predicate, Predicate::All(_)));
     }
 
@@ -434,7 +430,7 @@ mod tests {
             agent a {}
             agent b {}
             a.pulse -> b.pulse
-            "#,
+        "#,
         );
         assert_eq!(file.wires.len(), 1);
     }

@@ -37,7 +37,7 @@ pub fn compile(file: &RcmFile) -> Result<Graph, String> {
     }
 
     for cond_def in &file.conditions {
-        let predicate = convert_predicate(&cond_def.predicate);
+        let predicate = convert_predicate(&cond_def.predicate)?;
         let ref_ = graph.condition_named(
             cond_def.name.as_deref().unwrap_or(cond_def.id.as_str()),
             predicate,
@@ -116,8 +116,8 @@ fn resolve_port(
     }
 }
 
-fn convert_predicate(predicate: &Predicate) -> AccelPredicate {
-    match predicate {
+fn convert_predicate(predicate: &Predicate) -> Result<AccelPredicate, String> {
+    Ok(match predicate {
         Predicate::PurposeContains(v) => {
             AccelPredicate::Purpose(PurposePredicate::Contains(v.clone()))
         }
@@ -131,7 +131,7 @@ fn convert_predicate(predicate: &Predicate) -> AccelPredicate {
         Predicate::PurposeIsEmpty => AccelPredicate::Purpose(PurposePredicate::IsEmpty),
         Predicate::ContextHasTag(v) => AccelPredicate::Context(ContextPredicate::HasTag(v.clone())),
         Predicate::ContextHasRole(v) => {
-            AccelPredicate::Context(ContextPredicate::HasRole(parse_role(v)))
+            AccelPredicate::Context(ContextPredicate::HasRole(parse_role(v)?))
         }
         Predicate::ContextContains(v) => {
             AccelPredicate::Context(ContextPredicate::Contains(v.clone()))
@@ -164,19 +164,29 @@ fn convert_predicate(predicate: &Predicate) -> AccelPredicate {
         Predicate::ResHasPrompt(v) => {
             AccelPredicate::Resources(ResourcesPredicate::HasPrompt(v.clone()))
         }
-        Predicate::All(preds) => AccelPredicate::All(preds.iter().map(convert_predicate).collect()),
-        Predicate::Any(preds) => AccelPredicate::Any(preds.iter().map(convert_predicate).collect()),
-        Predicate::Not(pred) => AccelPredicate::Not(Box::new(convert_predicate(pred))),
-    }
+        Predicate::All(preds) => AccelPredicate::All(
+            preds
+                .iter()
+                .map(convert_predicate)
+                .collect::<Result<_, _>>()?,
+        ),
+        Predicate::Any(preds) => AccelPredicate::Any(
+            preds
+                .iter()
+                .map(convert_predicate)
+                .collect::<Result<_, _>>()?,
+        ),
+        Predicate::Not(pred) => AccelPredicate::Not(Box::new(convert_predicate(pred)?)),
+    })
 }
 
-fn parse_role(role: &str) -> machine::Role {
+fn parse_role(role: &str) -> Result<machine::Role, String> {
     match role {
-        "system" => machine::Role::System,
-        "user" => machine::Role::User,
-        "assistant" => machine::Role::Assistant,
-        "tool" => machine::Role::Tool,
-        _ => machine::Role::System,
+        "system" => Ok(machine::Role::System),
+        "user" => Ok(machine::Role::User),
+        "assistant" => Ok(machine::Role::Assistant),
+        "tool" => Ok(machine::Role::Tool),
+        _ => Err(format!("unknown role: {}", role)),
     }
 }
 

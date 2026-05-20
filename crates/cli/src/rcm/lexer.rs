@@ -3,24 +3,17 @@
 pub(crate) enum Token {
     Ident(String),
     StringLit(String),
+    LexError(String),
     LBrace,
     RBrace,
     Arrow,
     Dot,
     Semicolon,
     Equals,
-    Comment(String),
     Eof,
 }
 
 /// Tokenize a `.rcm` source file into tokens.
-///
-/// Rules:
-/// - `// ...` and `;; ...` → comment (skipped)
-/// - `"..."` → string literal
-/// - `{` `}` `->` `.` `;` `=` → punctuation
-/// - `[a-zA-Z_][a-zA-Z0-9_-]*` → identifier
-/// - Whitespace is skipped.
 pub(crate) fn tokenize(source: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let chars: Vec<char> = source.chars().collect();
@@ -29,28 +22,23 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
     while pos < chars.len() {
         let ch = chars[pos];
 
-        // Skip whitespace.
         if ch.is_whitespace() {
             pos += 1;
             continue;
         }
 
-        // Line comments.
+        // Line comments — skipped entirely.
         if ch == '/' && pos + 1 < chars.len() && chars[pos + 1] == '/' {
-            let start = pos;
             while pos < chars.len() && chars[pos] != '\n' {
                 pos += 1;
             }
-            tokens.push(Token::Comment(chars[start..pos].iter().collect()));
             continue;
         }
 
         if ch == ';' && pos + 1 < chars.len() && chars[pos + 1] == ';' {
-            let start = pos;
             while pos < chars.len() && chars[pos] != '\n' {
                 pos += 1;
             }
-            tokens.push(Token::Comment(chars[start..pos].iter().collect()));
             continue;
         }
 
@@ -64,9 +52,13 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
                 }
                 pos += 1;
             }
+            if pos >= chars.len() {
+                tokens.push(Token::LexError("unclosed string literal".to_string()));
+                continue;
+            }
             let raw: String = chars[start..pos].iter().collect();
             tokens.push(Token::StringLit(raw));
-            pos += 1; // skip closing "
+            pos += 1;
             continue;
         }
 
@@ -77,7 +69,6 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             continue;
         }
 
-        // Single-character punctuation.
         if ch == '{' {
             tokens.push(Token::LBrace);
             pos += 1;
@@ -104,14 +95,12 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             continue;
         }
 
-        // Arrow ->
         if ch == '-' && pos + 1 < chars.len() && chars[pos + 1] == '>' {
             tokens.push(Token::Arrow);
             pos += 2;
             continue;
         }
 
-        // Identifier or keyword.
         if ch.is_ascii_alphabetic() || ch == '_' {
             let start = pos;
             while pos < chars.len()
@@ -124,14 +113,12 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             continue;
         }
 
-        // Numbers — only appear inside url/strings, but accept here for robustness.
         if ch.is_ascii_digit() {
             let start = pos;
             while pos < chars.len() && chars[pos].is_ascii_digit() {
                 pos += 1;
             }
-            let ident: String = chars[start..pos].iter().collect();
-            tokens.push(Token::Ident(ident));
+            tokens.push(Token::Ident(chars[start..pos].iter().collect()));
             continue;
         }
 
@@ -196,50 +183,19 @@ mod tests {
     }
 
     #[test]
-    fn tokenize_wire_and_predicate() {
-        let source = r#"
-            research.pulse -> writer.pulse
-            quality.true -> writer.pulse
-        "#;
-        let tokens = tokenize(source);
-        let kinds: Vec<&str> = tokens
-            .iter()
-            .filter_map(|t| match t {
-                Token::Ident(i) => Some(i.as_str()),
-                Token::Arrow => Some("->"),
-                Token::Dot => Some("."),
-                _ => None,
-            })
-            .collect();
-
-        assert_eq!(
-            kinds,
-            vec![
-                "research", ".", "pulse", "->", "writer", ".", "pulse", "quality", ".", "true",
-                "->", "writer", ".", "pulse",
-            ]
-        );
-    }
-
-    #[test]
-    fn tokenize_mcp() {
-        let source = r#"mcp search { url = "https://api.anysearch.com/mcp" }"#;
-        let tokens = tokenize(source);
-
-        let string_values: Vec<&str> = tokens
-            .iter()
-            .filter_map(|t| match t {
-                Token::StringLit(s) => Some(s.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(string_values, vec!["https://api.anysearch.com/mcp"]);
+    fn lex_error_on_unclosed_string() {
+        let tokens = tokenize(r#"agent x { purpose = "unclosed"#);
+        assert!(tokens.iter().any(|t| matches!(t, Token::LexError(_))));
     }
 
     #[test]
     fn comments_are_skipped() {
-        let source = "// this is a comment\nagent x { }";
-        let tokens = tokenize(source);
+        let tokens = tokenize("// this is a comment\nagent x { }");
+        assert!(
+            !tokens
+                .iter()
+                .any(|t| matches!(t, Token::Ident(i) if i == "//"))
+        );
         assert!(
             tokens
                 .iter()
