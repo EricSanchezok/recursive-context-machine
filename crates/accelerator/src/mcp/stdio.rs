@@ -75,12 +75,12 @@ impl StdioTransport {
                         }
                         match serde_json::from_str::<Value>(trimmed) {
                             Ok(response) => {
-                                if let Some(id) = response.get("id").and_then(|v| v.as_u64()) {
-                                    if let Ok(mut map) = pending_reader.lock() {
-                                        if let Some(tx) = map.remove(&id) {
-                                            let _ = tx.send(response);
-                                        }
-                                    }
+                                if let Some(id) =
+                                    response.get("id").and_then(|value| value.as_u64())
+                                    && let Ok(mut map) = pending_reader.lock()
+                                    && let Some(tx) = map.remove(&id)
+                                {
+                                    let _ = tx.send(response);
                                 }
                             }
                             Err(e) => {

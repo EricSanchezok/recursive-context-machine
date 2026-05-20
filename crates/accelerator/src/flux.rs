@@ -1,26 +1,36 @@
 use machine::{Context, Environment, Policy, Resources};
-use utils::Name;
+use utils::{FluxId, Name};
 
 use crate::accelerator::Channel;
 
-// ── Public API ──
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct FluxRef {
-    pub(crate) id: usize,
+    pub(crate) index: usize,
+    pub(crate) id: FluxId,
     pub(crate) channel: Channel,
 }
 
 impl FluxRef {
-    pub fn slot(&self, idx: usize) -> crate::accelerator::Port {
-        crate::accelerator::Port::FluxSlot(self.id, idx, self.channel)
+    pub fn id(&self) -> &FluxId {
+        &self.id
+    }
+
+    pub fn slot(&self, slot: usize) -> crate::accelerator::Port {
+        crate::accelerator::Port::FluxSlot {
+            index: self.index,
+            flux_id: self.id.clone(),
+            slot,
+            channel: self.channel,
+        }
     }
     pub fn out(&self) -> crate::accelerator::Port {
-        crate::accelerator::Port::FluxOut(self.id, self.channel)
+        crate::accelerator::Port::FluxOut {
+            index: self.index,
+            flux_id: self.id.clone(),
+            channel: self.channel,
+        }
     }
 }
-
-// ── Behavior enums ──
 
 pub enum PurposeFlux {
     Concat,
@@ -42,8 +52,6 @@ pub enum ResFlux {
 pub enum PolicyFlux {
     Replace,
 }
-
-// ── Mode ──
 
 pub enum FluxMode {
     Purpose(PurposeFlux),
@@ -76,15 +84,27 @@ impl FluxMode {
     }
 }
 
-// ── Internal representation ──
-
 pub(crate) struct Flux {
+    id: FluxId,
     pub name: Name,
     pub mode: FluxMode,
     pub arity: usize,
 }
 
-// ── Evaluation — pure functions called by Assembly ──
+impl Flux {
+    pub(crate) fn new(name: impl Into<String>, mode: FluxMode, arity: usize) -> Self {
+        Self {
+            id: FluxId::new(),
+            name: Name::new(name).expect("flux name must be valid"),
+            mode,
+            arity,
+        }
+    }
+
+    pub(crate) fn id(&self) -> &FluxId {
+        &self.id
+    }
+}
 
 pub(crate) fn apply_purpose(flux: &Flux, mut read: impl FnMut(usize) -> String) -> String {
     match &flux.mode {
@@ -128,14 +148,24 @@ pub(crate) fn apply_ctx(flux: &Flux, mut read: impl FnMut(usize) -> Context) -> 
 pub(crate) fn apply_env(flux: &Flux, mut read: impl FnMut(usize) -> Environment) -> Environment {
     match &flux.mode {
         FluxMode::Environment(EnvFlux::Overlay) => {
-            let mut result = Environment::named(flux.name.as_str(), ".");
-            for slot in 0..flux.arity {
+            if flux.arity == 0 {
+                return Environment::named(flux.name.as_str(), ".");
+            }
+
+            let first = read(0);
+            let mut result = Environment::named(flux.name.as_str(), first.cwd.clone());
+            result.vars = first.vars.clone();
+            result.root = first.root.clone();
+            result.platform = first.platform.clone();
+
+            for slot in 1..flux.arity {
                 let env = read(slot);
                 result.cwd.clone_from(&env.cwd);
                 for (key, value) in &env.vars {
                     result.vars.insert(key.clone(), value.clone());
                 }
                 result.root.clone_from(&env.root);
+                result.platform.clone_from(&env.platform);
             }
             result
         }
@@ -150,10 +180,7 @@ pub(crate) fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -
             for slot in 0..flux.arity {
                 let res = read(slot);
                 for (name, model) in &res.models {
-                    result
-                        .models
-                        .entry(name.clone())
-                        .or_insert_with(|| model.clone());
+                    result.models.entry(name.clone()).or_insert(model.clone());
                 }
                 if result.active_model.is_empty() && !res.active_model.is_empty() {
                     result.active_model.clone_from(&res.active_model);
@@ -162,10 +189,7 @@ pub(crate) fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -
                     result.active_tools.insert(name.clone());
                 }
                 for (name, prompt) in &res.prompts {
-                    result
-                        .prompts
-                        .entry(name.clone())
-                        .or_insert_with(|| prompt.clone());
+                    result.prompts.entry(name.clone()).or_insert(prompt.clone());
                 }
             }
             result

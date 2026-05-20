@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use utils::Name;
+use utils::{Name, ResourcesId};
 
 use crate::model::Model;
 use crate::tool::Tool;
@@ -12,6 +12,7 @@ use crate::tool::Tool;
 /// The completion reads the active state directly.
 #[derive(Clone)]
 pub struct Resources {
+    id: ResourcesId,
     pub name: Name,
     pub tools: HashMap<String, Arc<dyn Tool>>,
     pub models: HashMap<String, Model>,
@@ -27,12 +28,17 @@ impl Default for Resources {
 }
 
 impl Resources {
+    pub fn id(&self) -> &ResourcesId {
+        &self.id
+    }
+
     pub fn new() -> Self {
         Self::named("resources")
     }
 
     pub fn named(name: impl Into<String>) -> Self {
         Self {
+            id: ResourcesId::new(),
             name: Name::new(name).expect("resources name must be valid"),
             tools: HashMap::new(),
             models: HashMap::new(),

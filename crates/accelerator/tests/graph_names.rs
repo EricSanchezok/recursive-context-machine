@@ -1,40 +1,60 @@
 use accelerator::{ContextFlux, FluxMode, Graph, State};
 
 #[test]
-#[should_panic(expected = "name 'graph' already exists")]
-fn graph_and_nodes_share_one_name_namespace() {
+fn duplicate_accelerator_names_are_allowed() {
     let mut graph = Graph::new();
-    graph.spawn_named("graph", State::default());
+    let first = graph.spawn_named("agent", State::default());
+    let second = graph.spawn_named("agent", State::default());
+
+    assert_ne!(first.id(), second.id());
 }
 
 #[test]
-#[should_panic(expected = "name 'agent' already exists")]
-fn duplicate_accelerator_names_are_rejected() {
+fn graph_and_nodes_may_share_names() {
     let mut graph = Graph::new();
-    graph.spawn_named("agent", State::default());
-    graph.spawn_named("agent", State::default());
+    let agent = graph.spawn_named("graph", State::default());
+
+    assert_ne!(graph.id().as_str(), agent.id().as_str());
 }
 
 #[test]
-#[should_panic(expected = "name 'shared' already exists")]
-fn accelerator_and_flux_share_one_name_namespace() {
+fn accelerator_and_flux_may_share_names_but_not_ids() {
     let mut graph = Graph::new();
-    graph.spawn_named("shared", State::default());
-    graph.weave_named("shared", 1, FluxMode::Context(ContextFlux::Append));
+    let agent = graph.spawn_named("shared", State::default());
+    let flux = graph.weave_named("shared", 1, FluxMode::Context(ContextFlux::Append));
+
+    assert_ne!(agent.id().as_str(), flux.id().as_str());
 }
 
 #[test]
-#[should_panic(expected = "name 'agent' already exists")]
-fn graph_cannot_rename_to_existing_node_name() {
+fn rename_does_not_change_id() {
     let mut graph = Graph::new();
-    graph.spawn_named("agent", State::default());
-    graph.rename("agent");
+    let before = graph.id().clone();
+
+    graph.rename("New Graph Name");
+
+    assert_eq!(graph.id(), &before);
+    assert_eq!(graph.name.as_str(), "New Graph Name");
 }
 
 #[test]
-#[should_panic(expected = "name 'graph' already exists")]
-fn accelerator_cannot_rename_to_graph_name() {
-    let mut graph = Graph::new();
-    let agent = graph.spawn_named("agent", State::default());
-    graph.rename_accelerator(agent, "graph");
+#[should_panic(expected = "accelerator reference does not belong to this graph")]
+fn stale_accelerator_ref_is_rejected() {
+    let mut first = Graph::new();
+    let mut second = Graph::new();
+    let agent = first.spawn_named("agent", State::default());
+
+    second.spawn_named("agent", State::default());
+    second.rename_accelerator(agent, "renamed");
+}
+
+#[test]
+#[should_panic(expected = "flux port does not belong to this graph")]
+fn stale_flux_port_is_rejected() {
+    let mut first = Graph::new();
+    let mut second = Graph::new();
+    let agent = second.spawn_named("agent", State::default());
+    let flux = first.weave_named("shared", 1, FluxMode::Context(ContextFlux::Append));
+
+    second.wire(agent.ctx_out(), flux.slot(0));
 }

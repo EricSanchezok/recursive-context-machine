@@ -9,7 +9,7 @@ pub(crate) const CALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// MCP transport dispatching to stdio or HTTP.
 pub(crate) enum Transport {
-    Stdio(StdioTransport),
+    Stdio(Box<StdioTransport>),
     Http(HttpTransport),
 }
 

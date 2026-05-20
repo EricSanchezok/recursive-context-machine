@@ -73,14 +73,16 @@ impl Tool for McpTool {
                 }
             }
 
-            if let Some(is_error) = result.get("isError").and_then(|e| e.as_bool()) {
-                if is_error {
-                    return Err(if output.is_empty() {
-                        "MCP tool returned an error with no text content".to_string()
-                    } else {
-                        output
-                    });
-                }
+            if result
+                .get("isError")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+            {
+                return Err(if output.is_empty() {
+                    "MCP tool returned an error with no text content".to_string()
+                } else {
+                    output
+                });
             }
 
             if output.is_empty() {

@@ -1,23 +1,29 @@
 use machine::{Machine, Purpose};
 use std::future::Future;
 use std::pin::Pin;
-use utils::Name;
+use utils::{AcceleratorId, FluxId, Name};
 
 use crate::state::State;
 
 /// A single agent — runs the Context Machine.
 pub struct Accelerator {
+    id: AcceleratorId,
     pub name: Name,
     pub(crate) state: State,
 }
 
 impl Accelerator {
+    pub fn id(&self) -> &AcceleratorId {
+        &self.id
+    }
+
     pub fn new(state: State) -> Self {
         Self::named("accelerator", state)
     }
 
     pub fn named(name: impl Into<String>, state: State) -> Self {
         Self {
+            id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
             state,
         }
@@ -37,49 +43,60 @@ pub(crate) async fn fire(mut state: State) -> State {
     state
 }
 
-// ── Graph wiring ──
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct AcceleratorRef {
-    pub(crate) id: usize,
+    pub(crate) index: usize,
+    pub(crate) id: AcceleratorId,
 }
 
 impl AcceleratorRef {
+    pub fn id(&self) -> &AcceleratorId {
+        &self.id
+    }
+
     pub fn purpose_out(&self) -> Port {
-        Port::Accel(self.id, Channel::Purpose)
+        self.port(Channel::Purpose)
     }
     pub fn ctx_out(&self) -> Port {
-        Port::Accel(self.id, Channel::Context)
+        self.port(Channel::Context)
     }
     pub fn env_out(&self) -> Port {
-        Port::Accel(self.id, Channel::Environment)
+        self.port(Channel::Environment)
     }
     pub fn policy_out(&self) -> Port {
-        Port::Accel(self.id, Channel::Policy)
+        self.port(Channel::Policy)
     }
     pub fn res_out(&self) -> Port {
-        Port::Accel(self.id, Channel::Resources)
+        self.port(Channel::Resources)
     }
     pub fn done(&self) -> Port {
-        Port::Accel(self.id, Channel::Pulse)
+        self.port(Channel::Pulse)
     }
     pub fn purpose_in(&self) -> Port {
-        Port::Accel(self.id, Channel::Purpose)
+        self.port(Channel::Purpose)
     }
     pub fn ctx_in(&self) -> Port {
-        Port::Accel(self.id, Channel::Context)
+        self.port(Channel::Context)
     }
     pub fn env_in(&self) -> Port {
-        Port::Accel(self.id, Channel::Environment)
+        self.port(Channel::Environment)
     }
     pub fn policy_in(&self) -> Port {
-        Port::Accel(self.id, Channel::Policy)
+        self.port(Channel::Policy)
     }
     pub fn res_in(&self) -> Port {
-        Port::Accel(self.id, Channel::Resources)
+        self.port(Channel::Resources)
     }
     pub fn trigger(&self) -> Port {
-        Port::Accel(self.id, Channel::Pulse)
+        self.port(Channel::Pulse)
+    }
+
+    fn port(&self, channel: Channel) -> Port {
+        Port::Accel {
+            index: self.index,
+            accelerator_id: self.id.clone(),
+            channel,
+        }
     }
 }
 
@@ -93,31 +110,45 @@ pub enum Channel {
     Pulse,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Port {
-    Accel(usize, Channel),
-    FluxOut(usize, Channel),
-    FluxSlot(usize, usize, Channel),
+    Accel {
+        index: usize,
+        accelerator_id: AcceleratorId,
+        channel: Channel,
+    },
+    FluxOut {
+        index: usize,
+        flux_id: FluxId,
+        channel: Channel,
+    },
+    FluxSlot {
+        index: usize,
+        flux_id: FluxId,
+        slot: usize,
+        channel: Channel,
+    },
 }
 
 impl Port {
     pub fn is_output(&self) -> bool {
-        matches!(self, Port::Accel(_, _) | Port::FluxOut(_, _))
+        matches!(self, Port::Accel { .. } | Port::FluxOut { .. })
     }
     pub fn is_input(&self) -> bool {
-        matches!(self, Port::Accel(_, _) | Port::FluxSlot(_, _, _))
+        matches!(self, Port::Accel { .. } | Port::FluxSlot { .. })
     }
     pub fn channel(&self) -> Channel {
         match self {
-            Port::Accel(_, ch) | Port::FluxOut(_, ch) | Port::FluxSlot(_, _, ch) => *ch,
+            Port::Accel { channel, .. }
+            | Port::FluxOut { channel, .. }
+            | Port::FluxSlot { channel, .. } => *channel,
         }
     }
     pub(crate) fn node_index(&self, num_accelerators: usize) -> usize {
-        let offset = |id: usize| num_accelerators + id;
+        let offset = |index: usize| num_accelerators + index;
         match self {
-            Port::Accel(id, _) => *id,
-            Port::FluxOut(id, _) => offset(*id),
-            Port::FluxSlot(id, _, _) => offset(*id),
+            Port::Accel { index, .. } => *index,
+            Port::FluxOut { index, .. } | Port::FluxSlot { index, .. } => offset(*index),
         }
     }
 }

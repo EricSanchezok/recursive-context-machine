@@ -3,25 +3,31 @@ use std::str::FromStr;
 use utils::Name;
 
 #[test]
-fn accepts_clear_machine_names() {
-    assert_eq!(Name::new("agent_1").unwrap().as_str(), "agent_1");
+fn accepts_user_facing_labels() {
     assert_eq!(
-        Name::new("context-append").unwrap().as_str(),
-        "context-append"
+        Name::new("Research Agent").unwrap().as_str(),
+        "Research Agent"
     );
+    assert_eq!(Name::new("研究节点").unwrap().as_str(), "研究节点");
+    assert_eq!(Name::new("agent_1").unwrap().as_str(), "agent_1");
 }
 
 #[test]
-fn rejects_empty_and_digit_prefixed_names() {
+fn rejects_empty_names() {
     assert!(Name::new("").is_err());
-    assert!(Name::new("1agent").is_err());
+    assert!(Name::new("   ").is_err());
 }
 
 #[test]
-fn rejects_names_with_spaces_or_punctuation() {
-    assert!(Name::new("my agent").is_err());
-    assert!(Name::new("agent.one").is_err());
-    assert!(Name::new("agent/one").is_err());
+fn rejects_control_characters() {
+    assert!(Name::new("agent\nname").is_err());
+    assert!(Name::new("agent\tname").is_err());
+}
+
+#[test]
+fn deserialization_rejects_invalid_names() {
+    assert!(serde_json::from_str::<Name>("\"\"").is_err());
+    assert!(serde_json::from_str::<Name>("\"agent\\nname\"").is_err());
 }
 
 #[test]

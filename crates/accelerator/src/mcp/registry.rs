@@ -162,8 +162,8 @@ impl McpServerConfig {
     async fn create_transport(&self) -> Result<Transport, String> {
         match (&self.command, &self.url) {
             (Some(cmd), None) => {
-                let t = StdioTransport::spawn(cmd, &self.args).await?;
-                Ok(Transport::Stdio(t))
+                let transport = StdioTransport::spawn(cmd, &self.args).await?;
+                Ok(Transport::Stdio(Box::new(transport)))
             }
             (None, Some(url)) => {
                 let t = HttpTransport::new(url.clone(), self.headers.clone());
