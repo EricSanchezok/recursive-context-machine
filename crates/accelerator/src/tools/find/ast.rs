@@ -90,9 +90,12 @@ pub(crate) fn execute<'a>(
 
         let context = args["context"].as_u64().unwrap_or(0);
 
-        let sg = find_sg_binary().ok_or(
-            "ast-grep CLI not found. Install it with: brew install ast-grep, or cargo install ast-grep --locked",
-        )?;
+        let sg = tokio::task::spawn_blocking(find_sg_binary)
+            .await
+            .map_err(|_| "ast-grep binary discovery failed unexpectedly".to_string())?
+            .ok_or(
+                "ast-grep CLI not found. Install it with: brew install ast-grep, or cargo install ast-grep --locked",
+            )?;
 
         let mut cmd = tokio::process::Command::new(&sg);
         cmd.args(["run", "-p", pattern, "--lang", lang, "--json=compact"]);
