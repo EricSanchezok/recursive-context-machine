@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use accelerator::Catalog;
+use accelerator::mcp::{McpRegistry, McpServerConfig};
 use accelerator::{
     ContextFlux, ContextPredicate, EnvFlux, EnvironmentPredicate, FluxMode, Graph, PolicyFlux,
     Predicate as AccelPredicate, PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, State,
@@ -9,12 +10,20 @@ use machine::{Limit, Modalities, Modality, Model, Protocol};
 
 use super::ast::{self, PortDef, Predicate, RcmFile};
 
-/// Compile a parsed `.rcm` file into a `Graph`.
-pub fn compile(file: &RcmFile) -> Result<Graph, String> {
+/// Compile a parsed `.rcm` file into a `Graph`, starting any MCP servers declared in it.
+pub async fn compile(file: &RcmFile) -> Result<Graph, String> {
     let catalog = Catalog::new();
 
-    // Build model registry from .rcm model declarations.
     let models = build_models(&file.models)?;
+
+    let mut mcp_tools = Vec::new();
+    if !file.mcps.is_empty() {
+        let configs: Vec<McpServerConfig> = file.mcps.iter().map(|m| m.into()).collect();
+        let registry = McpRegistry::start(&configs)
+            .await
+            .map_err(|e| e.to_string())?;
+        mcp_tools = registry.tools();
+    }
 
     let mut graph = Graph::named(file.name.as_str());
     let mut agent_map: HashMap<String, _> = HashMap::new();
@@ -22,7 +31,7 @@ pub fn compile(file: &RcmFile) -> Result<Graph, String> {
     let mut condition_map: HashMap<String, _> = HashMap::new();
 
     for agent_def in &file.agents {
-        let state = build_state(&catalog, &models, agent_def)?;
+        let state = build_state(&catalog, &models, &mcp_tools, agent_def)?;
         let ref_ = graph.spawn_named(
             agent_def.name.as_deref().unwrap_or(agent_def.id.as_str()),
             state,
@@ -139,6 +148,7 @@ fn build_modalities(input: &[String], output: &[String]) -> Result<Modalities, S
 fn build_state(
     catalog: &Catalog,
     models: &HashMap<String, Model>,
+    mcp_tools: &[std::sync::Arc<dyn machine::Tool>],
     def: &ast::AgentDef,
 ) -> Result<State, String> {
     let model_name = def
@@ -159,6 +169,11 @@ fn build_state(
         .ok_or_else(|| format!("unknown policy: {}", policy_name))?;
 
     let mut resources = catalog.build_resources("kit")?;
+    for tool in mcp_tools {
+        let name = tool.name().to_string();
+        resources = resources.with_tool(tool.clone());
+        resources.enable(name);
+    }
     resources = resources.with_model(model.clone());
     resources.use_model(model_name);
 
@@ -170,7 +185,7 @@ fn build_state(
         purpose: def.purpose.clone().unwrap_or_default(),
         policy: policy(),
         res: resources,
-        ..Default::default()
+        ..State::default()
     })
 }
 
@@ -307,5 +322,17 @@ fn parse_role(role: &str) -> Result<machine::Role, String> {
         "assistant" => Ok(machine::Role::Assistant),
         "tool" => Ok(machine::Role::Tool),
         _ => Err(format!("unknown role: {}", role)),
+    }
+}
+
+impl From<&crate::rcm::McpDef> for McpServerConfig {
+    fn from(def: &crate::rcm::McpDef) -> Self {
+        McpServerConfig {
+            label: def.label.clone(),
+            command: def.command.clone(),
+            args: Vec::new(),
+            url: def.url.clone(),
+            headers: def.headers.clone(),
+        }
     }
 }

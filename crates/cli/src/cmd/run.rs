@@ -1,10 +1,8 @@
-use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
 use accelerator::Graph;
-use accelerator::mcp::{McpRegistry, McpServerConfig};
 use tracing_subscriber::prelude::*;
 
 use crate::args::{Format, RunArgs};
@@ -15,41 +13,13 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     let (hook_tx, hook_rx) = mpsc::channel();
     init_tracing(hook_tx);
 
-    let prompt = args.prompt_text();
-
-    // Detect `.rcm` files by extension.
-    let graph = if prompt.ends_with(".rcm") {
-        let source = std::fs::read_to_string(&prompt)
-            .map_err(|e| anyhow::anyhow!("failed to read '{}': {}", prompt, e))?;
-        let file = crate::rcm::parse(&source).map_err(anyhow::Error::msg)?;
-        crate::rcm::compile::compile(&file).map_err(anyhow::Error::msg)?
-    } else {
-        let mut graph = Graph::new();
-        graph.spawn(accelerator::State {
-            purpose: prompt,
-            ..Default::default()
-        });
-        graph
-    };
-
-    // ── MCP setup ──
-    let configs: Vec<McpServerConfig> = args
-        .mcp_servers
-        .iter()
-        .map(|s| McpServerConfig::parse(s))
-        .collect::<Result<Vec<_>, _>>()
+    let source = std::fs::read_to_string(&args.file)
+        .map_err(|e| anyhow::anyhow!("failed to read '{}': {}", args.file.display(), e))?;
+    let file = crate::rcm::parse(&source).map_err(anyhow::Error::msg)?;
+    let graph: Graph = crate::rcm::compile::compile(&file)
+        .await
         .map_err(anyhow::Error::msg)?;
 
-    let _mcp_tools: Vec<Arc<dyn machine::Tool>> = if configs.is_empty() {
-        Vec::new()
-    } else {
-        let registry: McpRegistry = McpRegistry::start(&configs)
-            .await
-            .map_err(anyhow::Error::msg)?;
-        registry.tools()
-    };
-
-    // ── Accelerator ──
     let start = Instant::now();
     let (ctx_tx, ctx_rx) = mpsc::channel();
 
