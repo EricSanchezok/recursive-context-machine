@@ -13,7 +13,7 @@ use machine::{Limit, Modalities, Modality, Model, Protocol};
 
 use super::ast::{
     self, AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, PortDef, PortOwnerDef, Predicate,
-    PrimitiveDef, RcmFile,
+    PrimitiveDef, PromptSourceDef, RcmFile,
 };
 
 pub fn compile_file(
@@ -90,7 +90,7 @@ impl Compiler {
 
         match &file.body {
             AcceleratorBodyDef::Primitive(primitive) => {
-                let state = build_state(&catalog, &models, &mcp_tools, primitive)?;
+                let state = build_state(&catalog, &models, &mcp_tools, primitive, &self.root)?;
                 Ok(Accelerator::primitive_named(file.name.as_str(), state))
             }
             AcceleratorBodyDef::Graph(graph_def) => {
@@ -125,7 +125,7 @@ impl Compiler {
         for accelerator_def in &graph_def.accelerators {
             let accelerator = match &accelerator_def.source {
                 AcceleratorSourceDef::Inline(primitive) => {
-                    let state = build_state(catalog, models, mcp_tools, primitive)?;
+                    let state = build_state(catalog, models, mcp_tools, primitive, &self.root)?;
                     Accelerator::primitive_named(accelerator_def.id.as_str(), state)
                 }
                 AcceleratorSourceDef::Import { alias, overrides } => {
@@ -232,7 +232,11 @@ fn apply_import_overrides(
     if let Some(purpose) = &overrides.purpose {
         accelerator.set_purpose(purpose.clone())?;
     }
-    if overrides.model.is_some() || overrides.policy.is_some() || !overrides.tools.is_empty() {
+    if !overrides.models.is_empty()
+        || overrides.policy.is_some()
+        || overrides.prompts.is_some()
+        || overrides.tools.is_some()
+    {
         return Err("imported accelerator overrides currently support purpose only".to_string());
     }
     Ok(())
@@ -315,14 +319,12 @@ fn build_state(
     models: &HashMap<String, Model>,
     mcp_tools: &[std::sync::Arc<dyn machine::Tool>],
     def: &PrimitiveDef,
+    root: &Path,
 ) -> Result<State, String> {
-    let model_name = def
-        .model
-        .as_deref()
-        .ok_or_else(|| "accelerator requires model".to_string())?;
-    let model = models
-        .get(model_name)
-        .ok_or_else(|| format!("unknown model: {}", model_name))?;
+    if def.models.is_empty() {
+        return Err("accelerator requires at least one model".to_string());
+    }
+
     let policy_name = def.policy.as_deref().unwrap_or("captain");
     let policy = catalog
         .policies
@@ -330,21 +332,70 @@ fn build_state(
         .ok_or_else(|| format!("unknown policy: {}", policy_name))?;
     let mut resources = catalog.build_resources("kit")?;
     for tool in mcp_tools {
-        let name = tool.name().to_string();
         resources = resources.with_tool(tool.clone());
-        resources.enable(name);
     }
-    resources = resources.with_model(model.clone());
-    resources.use_model(model_name);
-    for tool_name in &def.tools {
-        resources.enable(tool_name);
+
+    if let Some(tool_names) = &def.tools {
+        let tools = select_tools(&resources, tool_names)?;
+        resources = resources.replace_tools(tools);
     }
+    resources.deactivate_tools();
+
+    if let Some(prompt_sources) = &def.prompts {
+        resources = resources.replace_prompts(resolve_prompts(prompt_sources, root)?);
+    }
+
+    for model_name in &def.models {
+        let model = models
+            .get(model_name)
+            .cloned()
+            .ok_or_else(|| format!("unknown model: {}", model_name))?;
+        resources = resources.with_model(model);
+    }
+    resources.deactivate_model();
+
     Ok(State {
         purpose: def.purpose.clone().unwrap_or_default(),
         policy: policy(),
         res: resources,
         ..State::default()
     })
+}
+
+fn select_tools(
+    resources: &machine::Resources,
+    tool_names: &[String],
+) -> Result<HashMap<String, std::sync::Arc<dyn machine::Tool>>, String> {
+    let mut tools = HashMap::new();
+    for tool_name in tool_names {
+        let tool = resources
+            .tools
+            .get(tool_name)
+            .cloned()
+            .ok_or_else(|| format!("unknown tool: {}", tool_name))?;
+        tools.insert(tool_name.clone(), tool);
+    }
+    Ok(tools)
+}
+
+fn resolve_prompts(
+    prompt_sources: &HashMap<String, PromptSourceDef>,
+    root: &Path,
+) -> Result<HashMap<String, String>, String> {
+    let mut prompts = HashMap::new();
+    for (name, source) in prompt_sources {
+        let content = match source {
+            PromptSourceDef::Inline(content) => content.clone(),
+            PromptSourceDef::File(path) => {
+                let prompt_path = root.join(path);
+                std::fs::read_to_string(&prompt_path).map_err(|error| {
+                    format!("failed to read prompt {}: {error}", prompt_path.display())
+                })?
+            }
+        };
+        prompts.insert(name.clone(), content);
+    }
+    Ok(prompts)
 }
 
 fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {

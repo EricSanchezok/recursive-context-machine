@@ -92,6 +92,12 @@ pub struct PrimitiveAccelerator {
     state: State,
 }
 
+impl PrimitiveAccelerator {
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+}
+
 pub(crate) async fn fire(mut state: State) -> State {
     let purpose = Purpose::new(&state.purpose);
     let machine = Machine::new(state.policy.clone());

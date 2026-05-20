@@ -118,13 +118,35 @@ impl Parser {
             self.expect(Token::Equals)?;
             match key.as_str() {
                 "purpose" => def.purpose = Some(self.expect_string()?),
-                "model" => def.model = Some(self.expect_string()?),
+                "models" => def.models = self.expect_string_array()?,
                 "policy" => def.policy = Some(self.expect_string()?),
-                "tools" => def.tools = self.expect_string_array()?,
+                "prompts" => def.prompts = Some(self.prompt_sources()?),
+                "tools" => def.tools = Some(self.expect_string_array()?),
                 _ => return Err(format!("unknown accelerator field: {}", key)),
             }
         }
         Ok(def)
+    }
+
+    fn prompt_sources(
+        &mut self,
+    ) -> Result<std::collections::HashMap<String, PromptSourceDef>, String> {
+        self.expect(Token::LBrace)?;
+        let mut prompts = std::collections::HashMap::new();
+        while !self.eat(Token::RBrace) {
+            let name = self.expect_ident_any()?;
+            self.expect(Token::Equals)?;
+            let source = if self.eat_ident("file") {
+                PromptSourceDef::File(self.expect_string()?)
+            } else {
+                PromptSourceDef::Inline(self.expect_string()?)
+            };
+            if prompts.insert(name.clone(), source).is_some() {
+                return Err(format!("duplicate prompt: {}", name));
+            }
+            self.eat(Token::Semicolon);
+        }
+        Ok(prompts)
     }
 
     fn flux(&mut self) -> Result<FluxDef, String> {

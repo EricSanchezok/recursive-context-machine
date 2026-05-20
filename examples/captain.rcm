@@ -10,7 +10,7 @@ model deepseek-v4-flash {
 
 accelerator {
     purpose = "介绍一下你自己，并说说你能做什么"
-    model = "deepseek-v4-flash"
+    models = ["deepseek-v4-flash"]
     policy = "captain"
     tools = ["shell", "fs", "find", "wait"]
 }

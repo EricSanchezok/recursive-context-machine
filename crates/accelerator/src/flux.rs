@@ -173,8 +173,13 @@ fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -> Resources
             let mut result = Resources::named(flux.name.as_str());
             for slot in 0..flux.arity {
                 let res = read(slot);
-                for (name, model) in &res.models {
-                    result.models.entry(name.clone()).or_insert(model.clone());
+                for model_name in &res.model_order {
+                    if let Some(model) = res.models.get(model_name) {
+                        result = result.with_model(model.clone());
+                    }
+                }
+                for (name, tool) in &res.tools {
+                    result.tools.entry(name.clone()).or_insert(tool.clone());
                 }
                 if result.active_model.is_empty() && !res.active_model.is_empty() {
                     result.active_model.clone_from(&res.active_model);
