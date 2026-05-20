@@ -13,33 +13,38 @@ impl Parser {
 
     pub fn parse(&mut self) -> Result<RcmFile, String> {
         let name = self.parse_name()?;
-
+        let mut uses = Vec::new();
         let mut models = Vec::new();
-        let mut accelerators = Vec::new();
-        let mut fluxes = Vec::new();
-        let mut conditions = Vec::new();
-        let mut wires = Vec::new();
         let mut mcps = Vec::new();
+        let mut body = None;
 
         while !self.is_eof() {
-            match self.peek_string() {
-                "model" => models.push(self.model()?),
-                "accelerator" => accelerators.push(self.accelerator()?),
-                "flux" => fluxes.push(self.flux()?),
-                "condition" => conditions.push(self.condition()?),
-                "mcp" => mcps.push(self.mcp()?),
-                _ => wires.push(self.wire()?),
+            match self.peek_ident() {
+                Some("use") => uses.push(self.use_def()?),
+                Some("model") => models.push(self.model()?),
+                Some("mcp") => mcps.push(self.mcp()?),
+                Some("accelerator") => {
+                    if body.is_some() {
+                        return Err("rcm file can only export one accelerator".to_string());
+                    }
+                    body = Some(AcceleratorBodyDef::Primitive(self.top_accelerator()?));
+                }
+                Some("graph") => {
+                    if body.is_some() {
+                        return Err("rcm file can only export one accelerator".to_string());
+                    }
+                    body = Some(AcceleratorBodyDef::Graph(self.graph()?));
+                }
+                _ => return Err(format!("unexpected token: {:?}", self.peek())),
             }
         }
 
         Ok(RcmFile {
             name,
+            uses,
             models,
-            accelerators,
-            fluxes,
-            conditions,
-            wires,
             mcps,
+            body: body.ok_or_else(|| "rcm file requires accelerator or graph body".to_string())?,
         })
     }
 
@@ -49,35 +54,77 @@ impl Parser {
         self.expect_string()
     }
 
-    fn accelerator(&mut self) -> Result<AcceleratorDef, String> {
+    fn use_def(&mut self) -> Result<UseDef, String> {
+        self.expect_ident("use")?;
+        let path = self.expect_string()?;
+        self.expect_ident("as")?;
+        let alias = self.expect_ident_any()?;
+        Ok(UseDef { path, alias })
+    }
+
+    fn top_accelerator(&mut self) -> Result<PrimitiveDef, String> {
+        self.expect_ident("accelerator")?;
+        self.expect(Token::LBrace)?;
+        self.primitive_fields()
+    }
+
+    fn graph(&mut self) -> Result<GraphDef, String> {
+        self.expect_ident("graph")?;
+        self.expect(Token::LBrace)?;
+        let mut accelerators = Vec::new();
+        let mut fluxes = Vec::new();
+        let mut conditions = Vec::new();
+        let mut wires = Vec::new();
+
+        while !self.eat(Token::RBrace) {
+            match self.peek_ident() {
+                Some("accelerator") => accelerators.push(self.graph_accelerator()?),
+                Some("flux") => fluxes.push(self.flux()?),
+                Some("condition") => conditions.push(self.condition()?),
+                _ => wires.push(self.wire()?),
+            }
+        }
+
+        Ok(GraphDef {
+            accelerators,
+            fluxes,
+            conditions,
+            wires,
+        })
+    }
+
+    fn graph_accelerator(&mut self) -> Result<GraphAcceleratorDef, String> {
         self.expect_ident("accelerator")?;
         let id = self.expect_ident_any()?;
-        self.expect(Token::LBrace)?;
-        let mut name = None;
-        let mut purpose = None;
-        let mut model = None;
-        let mut tools = Vec::new();
-        let mut policy = None;
+        let source = if self.eat(Token::Equals) {
+            let alias = self.expect_ident_any()?;
+            let overrides = if self.eat(Token::LBrace) {
+                self.primitive_fields()?
+            } else {
+                PrimitiveDef::default()
+            };
+            AcceleratorSourceDef::Import { alias, overrides }
+        } else {
+            self.expect(Token::LBrace)?;
+            AcceleratorSourceDef::Inline(self.primitive_fields()?)
+        };
+        Ok(GraphAcceleratorDef { id, source })
+    }
+
+    fn primitive_fields(&mut self) -> Result<PrimitiveDef, String> {
+        let mut def = PrimitiveDef::default();
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
             self.expect(Token::Equals)?;
             match key.as_str() {
-                "name" => name = Some(self.expect_string()?),
-                "purpose" => purpose = Some(self.expect_string()?),
-                "model" => model = Some(self.expect_string()?),
-                "policy" => policy = Some(self.expect_string()?),
-                "tools" => tools = self.expect_string_array()?,
+                "purpose" => def.purpose = Some(self.expect_string()?),
+                "model" => def.model = Some(self.expect_string()?),
+                "policy" => def.policy = Some(self.expect_string()?),
+                "tools" => def.tools = self.expect_string_array()?,
                 _ => return Err(format!("unknown accelerator field: {}", key)),
             }
         }
-        Ok(AcceleratorDef {
-            id,
-            name,
-            purpose,
-            model,
-            tools,
-            policy,
-        })
+        Ok(def)
     }
 
     fn flux(&mut self) -> Result<FluxDef, String> {
@@ -85,23 +132,26 @@ impl Parser {
         let id = self.expect_ident_any()?;
         self.expect(Token::LBrace)?;
         let mut name = None;
-        let mut channel = String::new();
-        let mut mode = String::new();
+        let mut channel = None;
+        let mut mode = None;
+        let mut arity = None;
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
             self.expect(Token::Equals)?;
             match key.as_str() {
                 "name" => name = Some(self.expect_string()?),
-                "channel" => channel = self.expect_ident_any()?,
-                "mode" => mode = self.expect_ident_any()?,
+                "channel" => channel = Some(self.expect_ident_any()?),
+                "mode" => mode = Some(self.expect_ident_any()?),
+                "arity" => arity = Some(self.expect_usize()?),
                 _ => return Err(format!("unknown flux field: {}", key)),
             }
         }
         Ok(FluxDef {
             id,
             name,
-            channel,
-            mode,
+            channel: channel.ok_or_else(|| "flux requires channel".to_string())?,
+            mode: mode.ok_or_else(|| "flux requires mode".to_string())?,
+            arity: arity.ok_or_else(|| "flux requires arity".to_string())?,
         })
     }
 
@@ -110,7 +160,7 @@ impl Parser {
         let id = self.expect_ident_any()?;
         self.expect(Token::LBrace)?;
         let mut name = None;
-        while self.peek_string() == "name" {
+        while self.peek_ident() == Some("name") {
             self.advance();
             self.expect(Token::Equals)?;
             name = Some(self.expect_string()?);
@@ -128,8 +178,7 @@ impl Parser {
     fn mcp(&mut self) -> Result<McpDef, String> {
         self.expect_ident("mcp")?;
         let label = self.expect_ident_any()?;
-        if self.peek_string() == "{" {
-            self.expect(Token::LBrace)?;
+        if self.eat(Token::LBrace) {
             let mut url = None;
             let mut command = None;
             while !self.eat(Token::RBrace) {
@@ -166,16 +215,15 @@ impl Parser {
         let mut endpoint = None;
         let mut credentials_env = None;
         let mut credentials_key = None;
-        let mut limit_context: Option<u64> = None;
-        let mut limit_input: Option<u64> = None;
-        let mut limit_output: u64 = 0;
+        let mut limit_context = None;
+        let mut limit_input = None;
+        let mut limit_output = 0;
         let mut modalities_input = Vec::new();
         let mut modalities_output = Vec::new();
 
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
             self.expect(Token::Equals)?;
-
             if self.eat(Token::LBrace) {
                 match key.as_str() {
                     "credentials" => {
@@ -199,7 +247,7 @@ impl Parser {
         }
 
         if protocol.is_empty() {
-            return Err("model requires a protocol (e.g. protocol = \"openai\")".to_string());
+            return Err("model requires a protocol".to_string());
         }
 
         Ok(ModelDef {
@@ -222,9 +270,9 @@ impl Parser {
         key: &mut Option<String>,
     ) -> Result<(), String> {
         while !self.eat(Token::RBrace) {
-            let k = self.expect_ident_any()?;
+            let field = self.expect_ident_any()?;
             self.expect(Token::Equals)?;
-            match k.as_str() {
+            match field.as_str() {
                 "env" => *env = Some(self.expect_string()?),
                 "key" => *key = Some(self.expect_string()?),
                 other => return Err(format!("unknown credentials field: {}", other)),
@@ -241,16 +289,16 @@ impl Parser {
         output: &mut u64,
     ) -> Result<(), String> {
         while !self.eat(Token::RBrace) {
-            let key = self.expect_ident_any()?;
+            let field = self.expect_ident_any()?;
             self.expect(Token::Equals)?;
             let value = self.expect_string()?;
-            let n: u64 = value
+            let number = value
                 .parse()
                 .map_err(|_| format!("invalid limit value: {}", value))?;
-            match key.as_str() {
-                "context" => *context = Some(n),
-                "input" => *input = Some(n),
-                "output" => *output = n,
+            match field.as_str() {
+                "context" => *context = Some(number),
+                "input" => *input = Some(number),
+                "output" => *output = number,
                 other => return Err(format!("unknown limit field: {}", other)),
             }
             self.eat_ident(",");
@@ -264,9 +312,9 @@ impl Parser {
         output: &mut Vec<String>,
     ) -> Result<(), String> {
         while !self.eat(Token::RBrace) {
-            let key = self.expect_ident_any()?;
+            let field = self.expect_ident_any()?;
             self.expect(Token::Equals)?;
-            match key.as_str() {
+            match field.as_str() {
                 "input" => *input = self.expect_string_array()?,
                 "output" => *output = self.expect_string_array()?,
                 other => return Err(format!("unknown modalities field: {}", other)),
@@ -284,18 +332,36 @@ impl Parser {
     }
 
     fn port_ref(&mut self) -> Result<PortDef, String> {
-        let id = self.expect_ident_any()?;
-        if !self.eat(Token::Dot) {
-            return Err(format!("expected '.' after '{}'", id));
+        let owner_name = self.expect_ident_any()?;
+        self.expect(Token::Dot)?;
+        let endpoint = self.endpoint()?;
+        let owner = match owner_name.as_str() {
+            "input" => PortOwnerDef::Input,
+            "output" => PortOwnerDef::Output,
+            _ => PortOwnerDef::Component(owner_name),
+        };
+        Ok(PortDef { owner, endpoint })
+    }
+
+    fn endpoint(&mut self) -> Result<EndpointDef, String> {
+        let name = self.expect_ident_any()?;
+        match name.as_str() {
+            "trigger" => Ok(EndpointDef::Trigger),
+            "done" => Ok(EndpointDef::Done),
+            "purpose" | "context" | "environment" | "policy" | "resources" => {
+                Ok(EndpointDef::State(name))
+            }
+            "out" => Ok(EndpointDef::FluxOut),
+            "slot" => {
+                self.expect(Token::LParen)?;
+                let slot = self.expect_usize()?;
+                self.expect(Token::RParen)?;
+                Ok(EndpointDef::FluxSlot(slot))
+            }
+            "true" => Ok(EndpointDef::ConditionTrue),
+            "false" => Ok(EndpointDef::ConditionFalse),
+            _ => Err(format!("unknown endpoint: {}", name)),
         }
-        let port = self.expect_ident_any()?;
-        Ok(if id.starts_with("flux_") {
-            PortDef::Flux { id, port }
-        } else if id.starts_with("cond_") {
-            PortDef::Condition { id, port }
-        } else {
-            PortDef::Accelerator { id, port }
-        })
     }
 
     fn predicate_block(&mut self) -> Result<Predicate, String> {
@@ -303,21 +369,21 @@ impl Parser {
         match key.as_str() {
             "all" => {
                 self.expect(Token::LBrace)?;
-                let mut preds = Vec::new();
+                let mut predicates = Vec::new();
                 while !self.eat(Token::RBrace) {
-                    preds.push(self.predicate_block()?);
+                    predicates.push(self.predicate_block()?);
                     self.eat(Token::Semicolon);
                 }
-                Ok(Predicate::All(preds))
+                Ok(Predicate::All(predicates))
             }
             "any" => {
                 self.expect(Token::LBrace)?;
-                let mut preds = Vec::new();
+                let mut predicates = Vec::new();
                 while !self.eat(Token::RBrace) {
-                    preds.push(self.predicate_block()?);
+                    predicates.push(self.predicate_block()?);
                     self.eat(Token::Semicolon);
                 }
-                Ok(Predicate::Any(preds))
+                Ok(Predicate::Any(predicates))
             }
             "not" => {
                 self.expect(Token::LBrace)?;
@@ -348,10 +414,7 @@ impl Parser {
                 let action = self.expect_ident_any()?;
                 match action.as_str() {
                     "exists" => Ok(Predicate::EnvVarExists(var_name)),
-                    _ => Err(format!(
-                        "expected 'exists' or 'equals' after env var, got '{}'",
-                        action
-                    )),
+                    _ => Err(format!("unknown env var predicate action: {}", action)),
                 }
             }
             ("env", "var_equals") => {
@@ -377,11 +440,10 @@ impl Parser {
         self.tokens.get(self.pos).unwrap_or(&EOF)
     }
 
-    fn peek_string(&self) -> &str {
+    fn peek_ident(&self) -> Option<&str> {
         match self.peek() {
-            Token::Ident(s) => s.as_str(),
-            Token::LexError(e) => e.as_str(),
-            _ => "",
+            Token::Ident(ident) => Some(ident.as_str()),
+            _ => None,
         }
     }
 
@@ -423,21 +485,23 @@ impl Parser {
     fn expect_ident_any(&mut self) -> Result<String, String> {
         match self.peek() {
             Token::Ident(ident) => {
-                let s = ident.clone();
+                let value = ident.clone();
                 self.advance();
-                Ok(s)
+                Ok(value)
             }
+            Token::LexError(error) => Err(error.clone()),
             other => Err(format!("expected identifier, found {:?}", other)),
         }
     }
 
     fn expect_string(&mut self) -> Result<String, String> {
         match self.peek() {
-            Token::StringLit(s) => {
-                let s = s.clone();
+            Token::StringLit(value) => {
+                let value = value.clone();
                 self.advance();
-                Ok(s)
+                Ok(value)
             }
+            Token::LexError(error) => Err(error.clone()),
             other => Err(format!("expected string, found {:?}", other)),
         }
     }
@@ -453,6 +517,13 @@ impl Parser {
             self.eat_ident(",");
         }
         Ok(items)
+    }
+
+    fn expect_usize(&mut self) -> Result<usize, String> {
+        let value = self.expect_ident_any()?;
+        value
+            .parse()
+            .map_err(|_| format!("expected number, found {}", value))
     }
 
     fn eat_ident(&mut self, expected: &str) -> bool {

@@ -1,84 +1,105 @@
-use accelerator::{ContextFlux, FluxMode, Graph, Predicate, PurposePredicate, State};
+use std::future::Future;
+use std::pin::Pin;
+
+use accelerator::{
+    Accelerator, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph, State,
+};
+use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources};
+
+#[derive(Clone)]
+struct DonePolicy;
+
+impl Policy for DonePolicy {
+    fn clone_box(&self) -> Box<dyn Policy> {
+        Box::new(self.clone())
+    }
+
+    fn decide<'a>(
+        &'a self,
+        _purpose: &'a Purpose,
+        _ctx: &'a Context,
+        _env: &'a Environment,
+        _resources: &'a Resources,
+        _inbox: &'a Inbox,
+    ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
+        Box::pin(async { Action::Done })
+    }
+}
+
+fn state_with_purpose(purpose: &str) -> State {
+    State {
+        purpose: purpose.to_string(),
+        policy: Box::new(DonePolicy),
+        ..State::default()
+    }
+}
+
+fn run(accelerator: Accelerator) -> State {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async { accelerator.run().await })
+}
 
 #[test]
-fn duplicate_accelerator_names_are_allowed() {
+fn primitive_accelerator_keeps_its_id_when_cloned() {
+    let accelerator = Accelerator::primitive_named("review", state_with_purpose("review"));
+    let clone = accelerator.clone();
+
+    assert_eq!(accelerator.id(), clone.id());
+}
+
+#[test]
+fn graph_components_have_stable_component_ids() {
     let mut graph = Graph::new();
-    let first = graph.spawn_named("agent", State::default());
-    let second = graph.spawn_named("agent", State::default());
+    let first = graph.add_accelerator("first", Accelerator::primitive(state_with_purpose("first")));
+    let second = graph.add_accelerator(
+        "second",
+        Accelerator::primitive(state_with_purpose("second")),
+    );
 
     assert_ne!(first.id(), second.id());
 }
 
 #[test]
-fn graph_and_nodes_may_share_names() {
-    let mut graph = Graph::new();
-    let agent = graph.spawn_named("graph", State::default());
-
-    assert_ne!(graph.id().as_str(), agent.id().as_str());
-}
-
-#[test]
-fn accelerator_flux_and_condition_may_share_names_but_not_ids() {
-    let mut graph = Graph::new();
-    let agent = graph.spawn_named("shared", State::default());
-    let flux = graph.weave_named("shared", 1, FluxMode::Context(ContextFlux::Append));
-    let condition = graph.condition_named(
-        "shared",
-        Predicate::Purpose(PurposePredicate::Contains("done".into())),
+fn graph_and_component_names_are_independent() {
+    let mut graph = Graph::named("pipeline");
+    graph.add_accelerator(
+        "pipeline",
+        Accelerator::primitive(state_with_purpose("leaf")),
     );
 
-    assert_ne!(agent.id().as_str(), flux.id().as_str());
-    assert_ne!(agent.id().as_str(), condition.id().as_str());
-    assert_ne!(flux.id().as_str(), condition.id().as_str());
+    assert_eq!(graph.name.as_str(), "pipeline");
 }
 
 #[test]
-fn rename_does_not_change_id() {
+fn flux_and_accelerator_are_distinct_component_kinds() {
     let mut graph = Graph::new();
-    let before = graph.id().clone();
+    graph.add_accelerator("agent", Accelerator::primitive(state_with_purpose("agent")));
+    graph.add_flux("join", FluxMode::Context(ContextFlux::Append), 1);
 
-    graph.rename("New Graph Name");
+    let accelerator = &graph.components()[0];
+    let flux = &graph.components()[1];
 
-    assert_eq!(graph.id(), &before);
-    assert_eq!(graph.name.as_str(), "New Graph Name");
+    assert!(matches!(accelerator.kind, ComponentKind::Accelerator(_)));
+    assert!(matches!(flux.kind, ComponentKind::Flux(_)));
 }
 
 #[test]
-fn rename_flux_and_condition_do_not_change_ids() {
+fn composite_accelerator_routes_context_to_output() {
+    let mut source_state = state_with_purpose("source");
+    source_state.ctx.append(Fragment::assistant("done"));
+
     let mut graph = Graph::new();
-    let flux = graph.weave_named("flux", 1, FluxMode::Context(ContextFlux::Append));
-    let condition = graph.condition_named(
-        "condition",
-        Predicate::Purpose(PurposePredicate::Contains("done".into())),
+    let source = graph.add_accelerator("source", Accelerator::primitive(source_state));
+    graph.wire(
+        source.context(),
+        Graph::output(Endpoint::State(Channel::Context)),
     );
-    let flux_id = flux.id().clone();
-    let condition_id = condition.id().clone();
+    graph.wire(source.done(), Graph::output(Endpoint::Done));
 
-    graph.rename_flux(flux.clone(), "New Flux Name");
-    graph.rename_condition(condition.clone(), "New Condition Name");
+    let output = run(Accelerator::composite_named("pipeline", graph));
 
-    assert_eq!(flux.id(), &flux_id);
-    assert_eq!(condition.id(), &condition_id);
-}
-
-#[test]
-#[should_panic(expected = "accelerator reference does not belong to this graph")]
-fn stale_accelerator_ref_is_rejected() {
-    let mut first = Graph::new();
-    let mut second = Graph::new();
-    let agent = first.spawn_named("agent", State::default());
-
-    second.spawn_named("agent", State::default());
-    second.rename_accelerator(agent, "renamed");
-}
-
-#[test]
-#[should_panic(expected = "flux port does not belong to this graph")]
-fn stale_flux_port_is_rejected() {
-    let mut first = Graph::new();
-    let mut second = Graph::new();
-    let agent = second.spawn_named("agent", State::default());
-    let flux = first.weave_named("shared", 1, FluxMode::Context(ContextFlux::Append));
-
-    second.wire(agent.ctx_out(), flux.slot(0));
+    assert_eq!(output.ctx.fragments().len(), 1);
 }

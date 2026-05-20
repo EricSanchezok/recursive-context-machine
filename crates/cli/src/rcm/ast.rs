@@ -1,13 +1,53 @@
-/// A parsed `.rcm` file.
 #[derive(Debug, Clone)]
 pub struct RcmFile {
     pub name: String,
+    pub uses: Vec<UseDef>,
     pub models: Vec<ModelDef>,
-    pub accelerators: Vec<AcceleratorDef>,
+    pub mcps: Vec<McpDef>,
+    pub body: AcceleratorBodyDef,
+}
+
+#[derive(Debug, Clone)]
+pub struct UseDef {
+    pub path: String,
+    pub alias: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum AcceleratorBodyDef {
+    Primitive(PrimitiveDef),
+    Graph(GraphDef),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PrimitiveDef {
+    pub purpose: Option<String>,
+    pub model: Option<String>,
+    pub tools: Vec<String>,
+    pub policy: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GraphDef {
+    pub accelerators: Vec<GraphAcceleratorDef>,
     pub fluxes: Vec<FluxDef>,
     pub conditions: Vec<ConditionDef>,
     pub wires: Vec<WireDef>,
-    pub mcps: Vec<McpDef>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GraphAcceleratorDef {
+    pub id: String,
+    pub source: AcceleratorSourceDef,
+}
+
+#[derive(Debug, Clone)]
+pub enum AcceleratorSourceDef {
+    Inline(PrimitiveDef),
+    Import {
+        alias: String,
+        overrides: PrimitiveDef,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -25,21 +65,12 @@ pub struct ModelDef {
 }
 
 #[derive(Debug, Clone)]
-pub struct AcceleratorDef {
-    pub id: String,
-    pub name: Option<String>,
-    pub purpose: Option<String>,
-    pub model: Option<String>,
-    pub tools: Vec<String>,
-    pub policy: Option<String>,
-}
-
-#[derive(Debug, Clone)]
 pub struct FluxDef {
     pub id: String,
     pub name: Option<String>,
     pub channel: String,
     pub mode: String,
+    pub arity: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -55,11 +86,28 @@ pub struct WireDef {
     pub to: PortDef,
 }
 
-#[derive(Debug, Clone)]
-pub enum PortDef {
-    Accelerator { id: String, port: String },
-    Flux { id: String, port: String },
-    Condition { id: String, port: String },
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PortDef {
+    pub owner: PortOwnerDef,
+    pub endpoint: EndpointDef,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PortOwnerDef {
+    Input,
+    Output,
+    Component(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EndpointDef {
+    Trigger,
+    Done,
+    State(String),
+    FluxOut,
+    FluxSlot(usize),
+    ConditionTrue,
+    ConditionFalse,
 }
 
 #[derive(Debug, Clone)]
