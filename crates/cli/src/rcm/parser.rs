@@ -15,7 +15,7 @@ impl Parser {
         let name = self.parse_name()?;
 
         let mut models = Vec::new();
-        let mut agents = Vec::new();
+        let mut accelerators = Vec::new();
         let mut fluxes = Vec::new();
         let mut conditions = Vec::new();
         let mut wires = Vec::new();
@@ -24,7 +24,7 @@ impl Parser {
         while !self.is_eof() {
             match self.peek_string() {
                 "model" => models.push(self.model()?),
-                "agent" => agents.push(self.agent()?),
+                "accelerator" => accelerators.push(self.accelerator()?),
                 "flux" => fluxes.push(self.flux()?),
                 "condition" => conditions.push(self.condition()?),
                 "mcp" => mcps.push(self.mcp()?),
@@ -35,7 +35,7 @@ impl Parser {
         Ok(RcmFile {
             name,
             models,
-            agents,
+            accelerators,
             fluxes,
             conditions,
             wires,
@@ -49,8 +49,8 @@ impl Parser {
         self.expect_string()
     }
 
-    fn agent(&mut self) -> Result<AgentDef, String> {
-        self.expect_ident("agent")?;
+    fn accelerator(&mut self) -> Result<AcceleratorDef, String> {
+        self.expect_ident("accelerator")?;
         let id = self.expect_ident_any()?;
         self.expect(Token::LBrace)?;
         let mut name = None;
@@ -67,10 +67,10 @@ impl Parser {
                 "model" => model = Some(self.expect_string()?),
                 "policy" => policy = Some(self.expect_string()?),
                 "tools" => tools = self.expect_string_array()?,
-                _ => return Err(format!("unknown agent field: {}", key)),
+                _ => return Err(format!("unknown accelerator field: {}", key)),
             }
         }
-        Ok(AgentDef {
+        Ok(AcceleratorDef {
             id,
             name,
             purpose,
@@ -294,7 +294,7 @@ impl Parser {
         } else if id.starts_with("cond_") {
             PortDef::Condition { id, port }
         } else {
-            PortDef::Agent { id, port }
+            PortDef::Accelerator { id, port }
         })
     }
 

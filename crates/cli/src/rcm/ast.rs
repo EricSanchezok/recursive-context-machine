@@ -3,7 +3,7 @@
 pub struct RcmFile {
     pub name: String,
     pub models: Vec<ModelDef>,
-    pub agents: Vec<AgentDef>,
+    pub accelerators: Vec<AcceleratorDef>,
     pub fluxes: Vec<FluxDef>,
     pub conditions: Vec<ConditionDef>,
     pub wires: Vec<WireDef>,
@@ -25,7 +25,7 @@ pub struct ModelDef {
 }
 
 #[derive(Debug, Clone)]
-pub struct AgentDef {
+pub struct AcceleratorDef {
     pub id: String,
     pub name: Option<String>,
     pub purpose: Option<String>,
@@ -57,7 +57,7 @@ pub struct WireDef {
 
 #[derive(Debug, Clone)]
 pub enum PortDef {
-    Agent { id: String, port: String },
+    Accelerator { id: String, port: String },
     Flux { id: String, port: String },
     Condition { id: String, port: String },
 }

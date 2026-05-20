@@ -26,17 +26,17 @@ pub async fn compile(file: &RcmFile) -> Result<Graph, String> {
     }
 
     let mut graph = Graph::named(file.name.as_str());
-    let mut agent_map: HashMap<String, _> = HashMap::new();
+    let mut accelerator_map: HashMap<String, _> = HashMap::new();
     let mut flux_map: HashMap<String, _> = HashMap::new();
     let mut condition_map: HashMap<String, _> = HashMap::new();
 
-    for agent_def in &file.agents {
-        let state = build_state(&catalog, &models, &mcp_tools, agent_def)?;
+    for accel_def in &file.accelerators {
+        let state = build_state(&catalog, &models, &mcp_tools, accel_def)?;
         let ref_ = graph.spawn_named(
-            agent_def.name.as_deref().unwrap_or(agent_def.id.as_str()),
+            accel_def.name.as_deref().unwrap_or(accel_def.id.as_str()),
             state,
         );
-        agent_map.insert(agent_def.id.clone(), ref_);
+        accelerator_map.insert(accel_def.id.clone(), ref_);
     }
 
     for flux_def in &file.fluxes {
@@ -59,8 +59,8 @@ pub async fn compile(file: &RcmFile) -> Result<Graph, String> {
     }
 
     for wire in &file.wires {
-        let from = resolve_port(&wire.from, &agent_map, &flux_map, &condition_map)?;
-        let to = resolve_port(&wire.to, &agent_map, &flux_map, &condition_map)?;
+        let from = resolve_port(&wire.from, &accelerator_map, &flux_map, &condition_map)?;
+        let to = resolve_port(&wire.to, &accelerator_map, &flux_map, &condition_map)?;
         graph.wire(from, to);
     }
 
@@ -149,12 +149,12 @@ fn build_state(
     catalog: &Catalog,
     models: &HashMap<String, Model>,
     mcp_tools: &[std::sync::Arc<dyn machine::Tool>],
-    def: &ast::AgentDef,
+    def: &ast::AcceleratorDef,
 ) -> Result<State, String> {
     let model_name = def
         .model
         .as_deref()
-        .ok_or_else(|| "agent requires a model (e.g. model = \"gpt-4.1\")".to_string())?;
+        .ok_or_else(|| "accelerator requires a model (e.g. model = \"gpt-4.1\")".to_string())?;
     let model = models.get(model_name).ok_or_else(|| {
         format!(
             "unknown model '{}' (declare it with a 'model' block)",
@@ -203,23 +203,23 @@ fn resolve_flux_mode(_catalog: &Catalog, def: &ast::FluxDef) -> Result<FluxMode,
 
 fn resolve_port(
     def: &PortDef,
-    agents: &HashMap<String, accelerator::AcceleratorRef>,
+    accelerators: &HashMap<String, accelerator::AcceleratorRef>,
     fluxes: &HashMap<String, accelerator::FluxRef>,
     conditions: &HashMap<String, accelerator::ConditionRef>,
 ) -> Result<accelerator::Port, String> {
     match def {
-        PortDef::Agent { id, port } => {
-            let agent = agents
+        PortDef::Accelerator { id, port } => {
+            let accel = accelerators
                 .get(id)
-                .ok_or_else(|| format!("unknown agent: {}", id))?;
+                .ok_or_else(|| format!("unknown accelerator: {}", id))?;
             match port.as_str() {
-                "pulse" => Ok(agent.done()),
-                "purpose" => Ok(agent.purpose_out()),
-                "context" => Ok(agent.ctx_out()),
-                "environment" => Ok(agent.env_out()),
-                "policy" => Ok(agent.policy_out()),
-                "resources" => Ok(agent.res_out()),
-                _ => Err(format!("unknown agent port: {}", port)),
+                "pulse" => Ok(accel.done()),
+                "purpose" => Ok(accel.purpose_out()),
+                "context" => Ok(accel.ctx_out()),
+                "environment" => Ok(accel.env_out()),
+                "policy" => Ok(accel.policy_out()),
+                "resources" => Ok(accel.res_out()),
+                _ => Err(format!("unknown accelerator port: {}", port)),
             }
         }
         PortDef::Flux { id, port } => {

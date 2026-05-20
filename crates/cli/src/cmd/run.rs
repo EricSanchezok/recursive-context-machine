@@ -30,7 +30,7 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
             .expect("tokio runtime");
         runtime.block_on(async {
             let outputs = graph.build().expect("assembly").run().await;
-            let output = outputs.into_iter().next().expect("agent output");
+            let output = outputs.into_iter().next().expect("accelerator output");
             let _ = ctx_tx.send(output.ctx);
         });
     });
