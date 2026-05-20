@@ -21,11 +21,7 @@ pub fn compile_file(
 ) -> Pin<Box<dyn Future<Output = Result<Accelerator, String>> + Send>> {
     let path = path.as_ref().to_path_buf();
     Box::pin(async move {
-        let root = path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .to_path_buf();
-        let mut compiler = Compiler::new(root);
+        let mut compiler = Compiler::new(PathBuf::from("."));
         compiler.compile_path(&path).await
     })
 }
