@@ -5,6 +5,7 @@
 //! keeping the implementation modular.
 
 mod edit;
+mod guard;
 mod list;
 mod read;
 mod stat;

@@ -4,7 +4,9 @@ use std::pin::Pin;
 use machine::{Environment, ToolResult};
 use serde_json::Value;
 
-use super::{DEFAULT_READ_LIMIT, MAX_LINE_LENGTH, OUTPUT_CAP_BYTES, relative_path, resolve_path};
+use super::{
+    DEFAULT_READ_LIMIT, MAX_LINE_LENGTH, OUTPUT_CAP_BYTES, guard, relative_path, resolve_path,
+};
 
 /// File extensions known to be binary — no content is readable.
 const BINARY_EXTENSIONS: &[&str] = &[
@@ -79,6 +81,8 @@ pub(crate) fn execute<'a>(
 
         let path_str = relative_path(&resolved, &env.cwd);
         let output = format_lines(&text, offset, limit, &path_str);
+
+        guard::mark_read(env.name.as_str(), &resolved);
 
         Ok(ToolResult {
             call_id: String::new(),

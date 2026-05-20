@@ -23,7 +23,7 @@ use std::pin::Pin;
 use machine::{Environment, ToolResult};
 use serde_json::Value;
 
-use super::{relative_path, resolve_path};
+use super::{guard, relative_path, resolve_path};
 
 // ── Replacer type ──────────────────────────────────────────────────────────
 
@@ -690,6 +690,12 @@ pub(crate) fn execute<'a>(
 
         let resolved = resolve_path(file_path_str, &env.cwd);
 
+        // Guard: existing files must have been read first.
+        // (old_string.is_empty() creates a new file, skip guard.)
+        if !old_string.is_empty() {
+            guard::require_read(env.name.as_str(), &resolved)?;
+        }
+
         if old_string.is_empty() {
             let parent = resolved
                 .parent()
@@ -700,6 +706,7 @@ pub(crate) fn execute<'a>(
             tokio::fs::write(&resolved, new_string)
                 .await
                 .map_err(|e| format!("failed to write {}: {e}", resolved.display()))?;
+            guard::mark_read(env.name.as_str(), &resolved);
             let title = relative_path(&resolved, &env.cwd);
             return Ok(ToolResult {
                 call_id: String::new(),
@@ -712,11 +719,14 @@ pub(crate) fn execute<'a>(
             .await
             .map_err(|e| format!("failed to read {}: {e}", resolved.display()))?;
 
+        let _lock = guard::acquire_write_lock(&resolved).await;
         let new_content = replace(&content, old_string, new_string, replace_all)?;
 
         tokio::fs::write(&resolved, &new_content)
             .await
             .map_err(|e| format!("failed to write {}: {e}", resolved.display()))?;
+
+        guard::mark_read(env.name.as_str(), &resolved);
 
         let title = relative_path(&resolved, &env.cwd);
         Ok(ToolResult {

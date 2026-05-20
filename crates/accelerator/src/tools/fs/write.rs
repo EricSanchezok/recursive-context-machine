@@ -1,10 +1,9 @@
-use std::future::Future;
 use std::pin::Pin;
 
 use machine::{Environment, ToolResult};
 use serde_json::Value;
 
-use super::{relative_path, resolve_path};
+use super::{guard, relative_path, resolve_path};
 
 pub(crate) fn execute<'a>(
     args: &'a Value,
@@ -21,6 +20,12 @@ pub(crate) fn execute<'a>(
 
         let path = resolve_path(file_path, &env.cwd);
         let relative = relative_path(&path, &env.cwd);
+
+        // Guard: existing files must have been read first.
+        let exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
+        if exists {
+            guard::require_read(env.name.as_str(), &path)?;
+        }
 
         if tokio::fs::metadata(&path)
             .await
@@ -42,6 +47,8 @@ pub(crate) fn execute<'a>(
         tokio::fs::write(&path, content)
             .await
             .map_err(|error| format!("failed to write file: {error}"))?;
+
+        guard::mark_read(env.name.as_str(), &path);
 
         Ok(ToolResult {
             call_id: String::new(),
