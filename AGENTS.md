@@ -55,6 +55,16 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - Every failed outcome must log at `warn!` with structured fields (`?error` or named
   fields), not a bare string.
 
+## Git Workflow
+
+- **Never switch to `main` branch or push directly to `main`.**
+  All development happens on feature/personal branches (e.g., `eric`, `dev`).
+- Changes land on `main` only through pull requests — never by direct
+  commit, direct push, or local merge into `main`.
+- When asked to merge something into `main`, open a PR from the working
+  branch and let the user handle the merge. Do not `git checkout main`
+  or `git push origin main` under any circumstances.
+
 ## Execution
 
 - Do not autonomously modify code unless the user explicitly asks.
