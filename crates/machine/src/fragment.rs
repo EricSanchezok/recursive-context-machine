@@ -12,6 +12,11 @@ pub enum Role {
     Assistant,
     /// Tool execution result.
     Tool,
+    /// Reactor-side execution feedback — LLM failure, tool failure, or any
+    /// other non-success signal produced by ω. Distinct from `System` so
+    /// downstream code (encode, policy, UI) can treat it as feedback rather
+    /// than a system instruction.
+    Hitch,
 }
 
 /// Source of multimedia data.
@@ -161,16 +166,32 @@ impl Fragment {
         }
     }
 
-    /// Creates a [`Content::Hitch`] fragment.
+    /// Creates a [`Content::Hitch`] fragment. `retryable=false`, `code=None`.
+    ///
+    /// For richer construction with classification, use [`Fragment::hitch_with`].
     pub fn hitch(message: impl Into<String>) -> Self {
+        Self::hitch_with(message, false, None)
+    }
+
+    /// Construct a hitch with explicit retryable / code classification.
+    ///
+    /// `retryable` should be true for transient failures (network blip, tool
+    /// timeout, rate limit) and false for permanent ones (tool missing, bad
+    /// arguments, auth error). The Policy uses this to decide whether to
+    /// retry.
+    pub fn hitch_with(
+        message: impl Into<String>,
+        retryable: bool,
+        code: Option<u16>,
+    ) -> Self {
         Self {
             id: 0,
-            role: Role::System,
+            role: Role::Hitch,
             tag: "hitch".into(),
             content: Content::Hitch {
                 message: message.into(),
-                retryable: false,
-                code: None,
+                retryable,
+                code,
             },
         }
     }

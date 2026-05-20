@@ -20,6 +20,7 @@ pub(crate) fn role_name(role: Role) -> &'static str {
         Role::User => "user",
         Role::Assistant => "assistant",
         Role::Tool => "tool",
+        Role::Hitch => "hitch",
     }
 }
 

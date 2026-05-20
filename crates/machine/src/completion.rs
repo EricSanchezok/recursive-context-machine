@@ -120,11 +120,12 @@ async fn send(
 
     match timeout(Duration::from_secs(model.timeout), request.send()).await {
         Ok(Ok(response)) => Ok(response.choice),
-        Ok(Err(error)) => Err(Fragment::hitch(format!("{}", error))),
-        Err(_) => Err(Fragment::hitch(format!(
-            "request timed out after {}s",
-            model.timeout
-        ))),
+        Ok(Err(error)) => Err(Fragment::hitch_with(format!("{}", error), true, None)),
+        Err(_) => Err(Fragment::hitch_with(
+            format!("request timed out after {}s", model.timeout),
+            true,
+            None,
+        )),
     }
 }
 
@@ -150,6 +151,11 @@ fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragmen
 }
 
 /// Encode a context fragment into a rig message.
+///
+/// Hitch fragments are encoded as system messages with an unambiguous
+/// `[execution error]` prefix so the LLM can read its own previous failure
+/// and adjust on the next turn — without confusing the hitch for a normal
+/// system instruction.
 fn encode(frag: &Fragment) -> Option<Message> {
     match frag.role {
         Role::System => frag.as_text().map(Message::system),
@@ -175,5 +181,21 @@ fn encode(frag: &Fragment) -> Option<Message> {
                 None
             }
         }
+        Role::Hitch => match &frag.content {
+            Content::Hitch {
+                message,
+                retryable,
+                code,
+            } => {
+                let code_part = code
+                    .map(|c| format!(" {}", c))
+                    .unwrap_or_default();
+                let retry_part = if *retryable { ", retryable" } else { "" };
+                Some(Message::system(format!(
+                    "[execution error{code_part}{retry_part}] {message}"
+                )))
+            }
+            _ => None,
+        },
     }
 }

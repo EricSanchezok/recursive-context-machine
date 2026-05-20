@@ -58,6 +58,7 @@ fn print_fragment(role: Role, content: &Content) {
         Role::User => "user",
         Role::Assistant => "assistant",
         Role::Tool => "tool",
+        Role::Hitch => "hitch",
     };
 
     match content {

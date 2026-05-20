@@ -21,8 +21,35 @@ fn as_text_none_for_nontinuitive_types() {
 #[test]
 fn hitch_content() {
     let f = Fragment::hitch("broken");
-    assert!(matches!(f.content, Content::Hitch { message, .. } if message == "broken"));
-    assert_eq!(f.role, Role::System);
+    assert!(matches!(f.content, Content::Hitch { ref message, .. } if message == "broken"));
+    assert_eq!(f.role, Role::Hitch);
+    if let Content::Hitch {
+        retryable, code, ..
+    } = f.content
+    {
+        assert!(!retryable);
+        assert!(code.is_none());
+    } else {
+        panic!("expected Content::Hitch");
+    }
+}
+
+#[test]
+fn hitch_with_classification() {
+    let f = Fragment::hitch_with("timeout", true, Some(504));
+    assert_eq!(f.role, Role::Hitch);
+    if let Content::Hitch {
+        message,
+        retryable,
+        code,
+    } = f.content
+    {
+        assert_eq!(message, "timeout");
+        assert!(retryable);
+        assert_eq!(code, Some(504));
+    } else {
+        panic!("expected Content::Hitch");
+    }
 }
 
 #[test]
