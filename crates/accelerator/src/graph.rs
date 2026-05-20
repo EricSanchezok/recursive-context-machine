@@ -1,5 +1,7 @@
 use std::collections::{HashSet, VecDeque};
 
+use machine::hook;
+use tracing::{Instrument, warn};
 use utils::{GraphId, Name};
 
 use crate::accelerator::Accelerator;
@@ -254,6 +256,16 @@ pub enum ComponentKind {
     Condition(Condition),
 }
 
+impl ComponentKind {
+    fn name(&self) -> &'static str {
+        match self {
+            ComponentKind::Accelerator(_) => "accelerator",
+            ComponentKind::Flux(_) => "flux",
+            ComponentKind::Condition(_) => "condition",
+        }
+    }
+}
+
 struct GraphRun {
     graph: Graph,
     inputs: Vec<State>,
@@ -265,6 +277,7 @@ struct GraphRun {
     active_incoming: Vec<usize>,
     skipped: Vec<bool>,
     result: State,
+    next_frontier: u64,
 }
 
 impl GraphRun {
@@ -301,6 +314,7 @@ impl GraphRun {
             active_incoming: vec![0; component_count],
             skipped: vec![false; component_count],
             result: State::default(),
+            next_frontier: 1,
         };
 
         run.count_dependencies();
@@ -309,6 +323,7 @@ impl GraphRun {
     }
 
     async fn run(mut self) -> State {
+        hook!(event = "graph_start", graph = self.graph.name.as_str());
         let mut queue = VecDeque::new();
         for (index, count) in self.remaining_deps.iter().enumerate() {
             if *count == 0 {
@@ -324,6 +339,7 @@ impl GraphRun {
             }
         }
 
+        hook!(event = "graph_done", graph = self.graph.name.as_str());
         self.result
     }
 
@@ -339,43 +355,93 @@ impl GraphRun {
     }
 
     async fn run_frontier(&mut self, frontier: Vec<usize>) -> Vec<usize> {
+        let frontier_id = self.next_frontier;
+        self.next_frontier += 1;
+        hook!(
+            event = "frontier_start",
+            graph = self.graph.name.as_str(),
+            frontier = frontier_id,
+            count = frontier.len()
+        );
         let mut tasks = tokio::task::JoinSet::new();
         for index in frontier {
-            let component = self.graph.components[index].kind.clone();
+            let component = self.graph.components[index].clone();
             let input = self.inputs[index].clone();
             let flux_slots = self.flux_slots[index].clone();
             let condition_input = self.condition_inputs[index].clone();
-            tasks.spawn(async move {
-                let (state, branch) = match component {
-                    ComponentKind::Accelerator(accelerator) => {
-                        (accelerator.run_with(input).await, None)
-                    }
-                    ComponentKind::Flux(flux) => {
-                        let slots = flux_slots
-                            .into_iter()
-                            .map(|slot| slot.unwrap_or_default())
-                            .collect::<Vec<_>>();
-                        (flux.apply(&slots), None)
-                    }
-                    ComponentKind::Condition(condition) => {
-                        let state = condition_input.unwrap_or_default();
-                        let branch = condition.route(&state);
-                        (state, Some(branch))
-                    }
-                };
-                (index, state, branch)
-            });
+            let graph_name = self.graph.name.to_string();
+            let component_name = component.name.to_string();
+            let component_kind = component.kind.name();
+            let span = tracing::trace_span!(
+                target: "hook",
+                "component",
+                graph = graph_name.as_str(),
+                frontier = frontier_id,
+                component = component_name.as_str(),
+                component_index = index,
+                component_kind
+            );
+            tasks.spawn(
+                async move {
+                    hook!(
+                        event = "component_start",
+                        graph = graph_name.as_str(),
+                        frontier = frontier_id,
+                        component = component_name.as_str(),
+                        component_index = index,
+                        component_kind
+                    );
+                    let (state, branch) = match component.kind {
+                        ComponentKind::Accelerator(accelerator) => {
+                            (accelerator.run_with(input).await, None)
+                        }
+                        ComponentKind::Flux(flux) => {
+                            let slots = flux_slots
+                                .into_iter()
+                                .map(|slot| slot.unwrap_or_default())
+                                .collect::<Vec<_>>();
+                            (flux.apply(&slots), None)
+                        }
+                        ComponentKind::Condition(condition) => {
+                            let state = condition_input.unwrap_or_default();
+                            let branch = condition.route(&state);
+                            (state, Some(branch))
+                        }
+                    };
+                    hook!(
+                        event = "component_done",
+                        graph = graph_name.as_str(),
+                        frontier = frontier_id,
+                        component = component_name.as_str(),
+                        component_index = index,
+                        component_kind
+                    );
+                    (index, state, branch)
+                }
+                .instrument(span),
+            );
         }
 
         let mut completed = Vec::new();
         while let Some(result) = tasks.join_next().await {
-            let (index, state, branch) = result.expect("graph component task panicked");
+            let Ok((index, state, branch)) = result else {
+                if let Err(error) = result {
+                    warn!(?error, "graph component task panicked");
+                }
+                continue;
+            };
             if let Some(branch) = branch {
                 self.branches[index] = Some(branch);
             }
             self.outputs[index] = Some(state);
             completed.push(index);
         }
+        hook!(
+            event = "frontier_done",
+            graph = self.graph.name.as_str(),
+            frontier = frontier_id,
+            count = completed.len()
+        );
         completed
     }
 
@@ -523,6 +589,13 @@ impl GraphRun {
             queue.push_back(target);
         } else {
             self.skipped[target] = true;
+            hook!(
+                event = "component_skipped",
+                graph = self.graph.name.as_str(),
+                component = self.graph.components[target].name.as_str(),
+                component_index = target,
+                component_kind = self.graph.components[target].kind.name()
+            );
             self.propagate_skip(target, queue);
         }
     }
