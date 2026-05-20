@@ -319,6 +319,17 @@ impl Graph {
             }
         }
 
+        for (flux_index, flux) in self.fluxes.iter().enumerate() {
+            for slot in 0..flux.arity {
+                if !flux_slot_wires.contains_key(&(flux_index, slot)) {
+                    return Err(BuildError::UnwiredFluxSlot {
+                        flux: flux.name.to_string(),
+                        slot,
+                    });
+                }
+            }
+        }
+
         let mut is_sink = vec![true; num];
         for (from, _) in &self.wires {
             if let Port::Accel {
@@ -409,7 +420,7 @@ impl Default for Graph {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BuildError {
     Cycle,
     DuplicateConditionSource,
@@ -417,6 +428,7 @@ pub enum BuildError {
     MissingConditionSource,
     MissingConditionTrueBranch,
     MissingConditionFalseBranch,
+    UnwiredFluxSlot { flux: String, slot: usize },
 }
 
 #[derive(Clone, Copy, Debug, Default)]
