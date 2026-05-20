@@ -20,6 +20,7 @@ pub(crate) fn execute<'a>(
 
         let path = resolve_path(file_path, &env.cwd);
         let relative = relative_path(&path, &env.cwd);
+        let _lock = guard::acquire_write_lock(&path).await;
 
         // Guard: existing files must have been read first.
         let exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
@@ -49,10 +50,13 @@ pub(crate) fn execute<'a>(
             .map_err(|error| format!("failed to write file: {error}"))?;
 
         guard::mark_read(env.name.as_str(), &path);
+        let diagnostics = crate::lsp::touch_file(env, &path, true).await;
+        let mut result = relative.clone();
+        result.push_str(&crate::lsp::format_file_diagnostics(&path, &diagnostics));
 
         Ok(ToolResult {
             call_id: String::new(),
-            content: relative.clone(),
+            content: result,
             title: Some(format!("wrote {relative}")),
         })
     })

@@ -83,6 +83,11 @@ pub(crate) fn execute<'a>(
         let output = format_lines(&text, offset, limit, &path_str);
 
         guard::mark_read(env.name.as_str(), &resolved);
+        let lsp_env = env.clone();
+        let lsp_path = resolved.clone();
+        tokio::spawn(async move {
+            crate::lsp::touch_file(&lsp_env, &lsp_path, false).await;
+        });
 
         Ok(ToolResult {
             call_id: String::new(),

@@ -5,6 +5,7 @@ pub mod assembly;
 pub mod flux;
 pub mod graph;
 pub mod logging;
+pub mod lsp;
 pub mod mcp;
 pub mod model;
 pub mod policy;

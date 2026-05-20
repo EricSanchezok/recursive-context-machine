@@ -708,9 +708,15 @@ pub(crate) fn execute<'a>(
                 .map_err(|e| format!("failed to write {}: {e}", resolved.display()))?;
             guard::mark_read(env.name.as_str(), &resolved);
             let title = relative_path(&resolved, &env.cwd);
+            let diagnostics = crate::lsp::touch_file(env, &resolved, true).await;
+            let mut result = format!("Wrote {}", resolved.display());
+            result.push_str(&crate::lsp::format_file_diagnostics(
+                &resolved,
+                &diagnostics,
+            ));
             return Ok(ToolResult {
                 call_id: String::new(),
-                content: format!("Wrote {}", resolved.display()),
+                content: result,
                 title: Some(title),
             });
         }
@@ -729,9 +735,15 @@ pub(crate) fn execute<'a>(
         guard::mark_read(env.name.as_str(), &resolved);
 
         let title = relative_path(&resolved, &env.cwd);
+        let diagnostics = crate::lsp::touch_file(env, &resolved, true).await;
+        let mut result = format!("Successfully modified {}", resolved.display());
+        result.push_str(&crate::lsp::format_file_diagnostics(
+            &resolved,
+            &diagnostics,
+        ));
         Ok(ToolResult {
             call_id: String::new(),
-            content: format!("Successfully modified {}", resolved.display()),
+            content: result,
             title: Some(title),
         })
     })
