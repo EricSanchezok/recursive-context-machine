@@ -41,6 +41,12 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - Policy receives `&self` — use atomics for internal state, not `Mutex`.
 - All execution (LLM calls, tool calls) uses `tokio::time::timeout`.
   Defaults are defined once as module-level constants.
+- `Environment::new` must return an honest snapshot of the host the agent is
+  running on — inheriting host env vars, cwd, and platform tag. Sandbox
+  scenarios where the agent should not see host state must call
+  `Environment::empty` explicitly. The `Environment` ctor is the source of
+  truth for this boundary; do not paper over an empty `vars` HashMap inside
+  individual tools.
 
 ## Logging
 
