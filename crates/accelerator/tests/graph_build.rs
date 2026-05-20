@@ -9,10 +9,7 @@ fn unwired_flux_slot_rejected() {
     graph.wire(agent.ctx_out(), flux.slot(0));
 
     let result = graph.build();
-    assert!(matches!(
-        result,
-        Err(BuildError::UnwiredFluxSlot { .. })
-    ));
+    assert!(matches!(result, Err(BuildError::UnwiredFluxSlot { .. })));
 }
 
 #[test]
