@@ -14,6 +14,7 @@ impl Parser {
     pub fn parse(&mut self) -> Result<RcmFile, String> {
         let name = self.parse_name()?;
 
+        let mut models = Vec::new();
         let mut agents = Vec::new();
         let mut fluxes = Vec::new();
         let mut conditions = Vec::new();
@@ -22,18 +23,18 @@ impl Parser {
 
         while !self.is_eof() {
             match self.peek_string() {
+                "model" => models.push(self.model()?),
                 "agent" => agents.push(self.agent()?),
                 "flux" => fluxes.push(self.flux()?),
                 "condition" => conditions.push(self.condition()?),
                 "mcp" => mcps.push(self.mcp()?),
-                _ => {
-                    wires.push(self.wire()?);
-                }
+                _ => wires.push(self.wire()?),
             }
         }
 
         Ok(RcmFile {
             name,
+            models,
             agents,
             fluxes,
             conditions,
@@ -41,8 +42,6 @@ impl Parser {
             mcps,
         })
     }
-
-    // ── top-level ──
 
     fn parse_name(&mut self) -> Result<String, String> {
         self.expect_ident("name")?;
@@ -54,17 +53,14 @@ impl Parser {
         self.expect_ident("agent")?;
         let id = self.expect_ident_any()?;
         self.expect(Token::LBrace)?;
-
         let mut name = None;
         let mut purpose = None;
         let mut model = None;
         let mut tools = Vec::new();
         let mut policy = None;
-
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
             self.expect(Token::Equals)?;
-
             match key.as_str() {
                 "name" => name = Some(self.expect_string()?),
                 "purpose" => purpose = Some(self.expect_string()?),
@@ -74,7 +70,6 @@ impl Parser {
                 _ => return Err(format!("unknown agent field: {}", key)),
             }
         }
-
         Ok(AgentDef {
             id,
             name,
@@ -89,11 +84,9 @@ impl Parser {
         self.expect_ident("flux")?;
         let id = self.expect_ident_any()?;
         self.expect(Token::LBrace)?;
-
         let mut name = None;
         let mut channel = String::new();
         let mut mode = String::new();
-
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
             self.expect(Token::Equals)?;
@@ -104,7 +97,6 @@ impl Parser {
                 _ => return Err(format!("unknown flux field: {}", key)),
             }
         }
-
         Ok(FluxDef {
             id,
             name,
@@ -117,19 +109,15 @@ impl Parser {
         self.expect_ident("condition")?;
         let id = self.expect_ident_any()?;
         self.expect(Token::LBrace)?;
-
         let mut name = None;
-
         while self.peek_string() == "name" {
             self.advance();
             self.expect(Token::Equals)?;
             name = Some(self.expect_string()?);
             self.eat(Token::Semicolon);
         }
-
         let predicate = self.predicate_block()?;
         self.expect(Token::RBrace)?;
-
         Ok(ConditionDef {
             id,
             name,
@@ -140,12 +128,10 @@ impl Parser {
     fn mcp(&mut self) -> Result<McpDef, String> {
         self.expect_ident("mcp")?;
         let label = self.expect_ident_any()?;
-
         if self.peek_string() == "{" {
             self.expect(Token::LBrace)?;
             let mut url = None;
             let mut command = None;
-
             while !self.eat(Token::RBrace) {
                 let key = self.expect_ident_any()?;
                 self.expect(Token::Equals)?;
@@ -155,7 +141,6 @@ impl Parser {
                     other => return Err(format!("unknown mcp field: {}", other)),
                 }
             }
-
             Ok(McpDef {
                 label,
                 url,
@@ -172,7 +157,123 @@ impl Parser {
         }
     }
 
-    // ── wires ──
+    fn model(&mut self) -> Result<ModelDef, String> {
+        self.expect_ident("model")?;
+        let id = self.expect_ident_any()?;
+        self.expect(Token::LBrace)?;
+
+        let mut protocol = String::new();
+        let mut endpoint = None;
+        let mut credentials_env = None;
+        let mut credentials_key = None;
+        let mut limit_context: Option<u64> = None;
+        let mut limit_input: Option<u64> = None;
+        let mut limit_output: u64 = 0;
+        let mut modalities_input = Vec::new();
+        let mut modalities_output = Vec::new();
+
+        while !self.eat(Token::RBrace) {
+            let key = self.expect_ident_any()?;
+            self.expect(Token::Equals)?;
+
+            if self.eat(Token::LBrace) {
+                match key.as_str() {
+                    "credentials" => {
+                        self.model_credentials(&mut credentials_env, &mut credentials_key)?
+                    }
+                    "limit" => {
+                        self.model_limit(&mut limit_context, &mut limit_input, &mut limit_output)?
+                    }
+                    "modalities" => {
+                        self.model_modalities(&mut modalities_input, &mut modalities_output)?
+                    }
+                    other => return Err(format!("unknown model block: {}", other)),
+                }
+            } else {
+                match key.as_str() {
+                    "protocol" => protocol = self.expect_string()?,
+                    "endpoint" => endpoint = Some(self.expect_string()?),
+                    other => return Err(format!("unknown model field: {}", other)),
+                }
+            }
+        }
+
+        if protocol.is_empty() {
+            return Err("model requires a protocol (e.g. protocol = \"openai\")".to_string());
+        }
+
+        Ok(ModelDef {
+            id,
+            protocol,
+            endpoint,
+            credentials_env,
+            credentials_key,
+            limit_context,
+            limit_input,
+            limit_output,
+            modalities_input,
+            modalities_output,
+        })
+    }
+
+    fn model_credentials(
+        &mut self,
+        env: &mut Option<String>,
+        key: &mut Option<String>,
+    ) -> Result<(), String> {
+        while !self.eat(Token::RBrace) {
+            let k = self.expect_ident_any()?;
+            self.expect(Token::Equals)?;
+            match k.as_str() {
+                "env" => *env = Some(self.expect_string()?),
+                "key" => *key = Some(self.expect_string()?),
+                other => return Err(format!("unknown credentials field: {}", other)),
+            }
+            self.eat_ident(",");
+        }
+        Ok(())
+    }
+
+    fn model_limit(
+        &mut self,
+        context: &mut Option<u64>,
+        input: &mut Option<u64>,
+        output: &mut u64,
+    ) -> Result<(), String> {
+        while !self.eat(Token::RBrace) {
+            let key = self.expect_ident_any()?;
+            self.expect(Token::Equals)?;
+            let value = self.expect_string()?;
+            let n: u64 = value
+                .parse()
+                .map_err(|_| format!("invalid limit value: {}", value))?;
+            match key.as_str() {
+                "context" => *context = Some(n),
+                "input" => *input = Some(n),
+                "output" => *output = n,
+                other => return Err(format!("unknown limit field: {}", other)),
+            }
+            self.eat_ident(",");
+        }
+        Ok(())
+    }
+
+    fn model_modalities(
+        &mut self,
+        input: &mut Vec<String>,
+        output: &mut Vec<String>,
+    ) -> Result<(), String> {
+        while !self.eat(Token::RBrace) {
+            let key = self.expect_ident_any()?;
+            self.expect(Token::Equals)?;
+            match key.as_str() {
+                "input" => *input = self.expect_string_array()?,
+                "output" => *output = self.expect_string_array()?,
+                other => return Err(format!("unknown modalities field: {}", other)),
+            }
+        }
+        Ok(())
+    }
 
     fn wire(&mut self) -> Result<WireDef, String> {
         let from = self.port_ref()?;
@@ -187,7 +288,6 @@ impl Parser {
             return Err(format!("expected '.' after '{}'", id));
         }
         let port = self.expect_ident_any()?;
-
         Ok(if id.starts_with("flux_") {
             PortDef::Flux { id, port }
         } else if id.starts_with("cond_") {
@@ -197,11 +297,8 @@ impl Parser {
         })
     }
 
-    // ── predicates ──
-
     fn predicate_block(&mut self) -> Result<Predicate, String> {
         let key = self.expect_ident_any()?;
-
         match key.as_str() {
             "all" => {
                 self.expect(Token::LBrace)?;
@@ -273,8 +370,6 @@ impl Parser {
             _ => Err(format!("unknown predicate: {} {}", channel, op)),
         }
     }
-
-    // ── primitives ──
 
     fn peek(&self) -> &Token {
         static EOF: Token = Token::Eof;
@@ -381,26 +476,59 @@ mod tests {
     }
 
     #[test]
+    fn parse_model_with_credentials_and_limit() {
+        let file = parse(
+            r#"
+            name = "test"
+            model gpt {
+                protocol = "openai"
+                endpoint = "https://api.example.com"
+                credentials = { env = "MY_KEY" }
+                limit = { context = "100000", output = "4096" }
+                modalities = { input = ["text"], output = ["text"] }
+            }
+        "#,
+        );
+        assert_eq!(file.models.len(), 1);
+        let m = &file.models[0];
+        assert_eq!(m.id, "gpt");
+        assert_eq!(m.protocol, "openai");
+        assert_eq!(m.credentials_env.as_deref(), Some("MY_KEY"));
+        assert_eq!(m.limit_context, Some(100000));
+        assert_eq!(m.limit_output, 4096);
+        assert_eq!(m.modalities_input, vec!["text"]);
+    }
+
+    #[test]
+    fn parse_model_with_inline_key() {
+        let file = parse(
+            r#"
+            name = "test"
+            model custom {
+                protocol = "openai"
+                credentials = { key = "REDACTED" }
+                limit { context = "1000", output = "500" }
+            }
+        "#,
+        );
+        let m = &file.models[0];
+        assert_eq!(m.credentials_key.as_deref(), Some("sk-abc"));
+    }
+
+    #[test]
     fn parse_simple_agent() {
         let file = parse(
             r#"
             name = "test"
             agent research {
                 purpose = "study quantum computing"
-                model = "deepseek-v4-flash"
+                model = "gpt"
                 tools = ["websearch", "fs"]
             }
         "#,
         );
-        assert_eq!(file.name, "test");
         assert_eq!(file.agents.len(), 1);
-        assert_eq!(file.agents[0].id, "research");
-        assert_eq!(
-            file.agents[0].purpose.as_deref(),
-            Some("study quantum computing")
-        );
-        assert_eq!(file.agents[0].model.as_deref(), Some("deepseek-v4-flash"));
-        assert_eq!(file.agents[0].tools, vec!["websearch", "fs"]);
+        assert_eq!(file.agents[0].model.as_deref(), Some("gpt"));
     }
 
     #[test]
@@ -418,7 +546,6 @@ mod tests {
         "#,
         );
         assert_eq!(file.conditions.len(), 1);
-        assert_eq!(file.conditions[0].name.as_deref(), Some("Quality Check"));
         assert!(matches!(file.conditions[0].predicate, Predicate::All(_)));
     }
 

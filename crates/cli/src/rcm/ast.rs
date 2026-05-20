@@ -2,11 +2,26 @@
 #[derive(Debug, Clone)]
 pub struct RcmFile {
     pub name: String,
+    pub models: Vec<ModelDef>,
     pub agents: Vec<AgentDef>,
     pub fluxes: Vec<FluxDef>,
     pub conditions: Vec<ConditionDef>,
     pub wires: Vec<WireDef>,
     pub mcps: Vec<McpDef>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ModelDef {
+    pub id: String,
+    pub protocol: String,
+    pub endpoint: Option<String>,
+    pub credentials_env: Option<String>,
+    pub credentials_key: Option<String>,
+    pub limit_context: Option<u64>,
+    pub limit_input: Option<u64>,
+    pub limit_output: u64,
+    pub modalities_input: Vec<String>,
+    pub modalities_output: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

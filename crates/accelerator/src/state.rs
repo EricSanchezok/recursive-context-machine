@@ -48,8 +48,5 @@ pub fn kit() -> Resources {
         include_str!("prompts/captain.txt").to_string(),
     );
 
-    resources = resources.with_model(crate::model::deepseek_v4_flash());
-    resources = resources.with_model(crate::model::gpt4_1());
-
     resources
 }
