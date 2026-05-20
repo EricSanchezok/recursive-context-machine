@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use accelerator::{
-    Accelerator, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph, State,
+    Accelerator, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph, ResFlux, State,
 };
-use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources};
+use machine::{Action, Context, Environment, Fragment, Inbox, Model, Policy, Purpose, Resources};
 
 #[derive(Clone)]
 struct DonePolicy;
@@ -66,6 +66,13 @@ fn state_with_policy(purpose: &str, policy: Box<dyn Policy>) -> State {
         purpose: purpose.to_string(),
         policy,
         ..State::default()
+    }
+}
+
+fn model(name: &str) -> Model {
+    Model {
+        name: name.to_string(),
+        ..Default::default()
     }
 }
 
@@ -137,6 +144,36 @@ fn composite_accelerator_routes_context_to_output() {
     let output = run(Accelerator::composite_named("pipeline", graph));
 
     assert_eq!(output.ctx.fragments().len(), 1);
+}
+
+#[test]
+fn resource_flux_preserves_model_order_and_tool_pool() {
+    let mut first_state = state_with_purpose("first");
+    first_state.res = Resources::named("first")
+        .with_model(model("fast"))
+        .with_tool(Arc::new(accelerator::tools::FindTool));
+    let mut second_state = state_with_purpose("second");
+    second_state.res = Resources::named("second")
+        .with_model(model("careful"))
+        .with_tool(Arc::new(accelerator::tools::ShellTool));
+
+    let mut graph = Graph::new();
+    let first = graph.add_accelerator("first", Accelerator::primitive(first_state));
+    let second = graph.add_accelerator("second", Accelerator::primitive(second_state));
+    let join = graph.add_flux("join", FluxMode::Resources(ResFlux::Merge), 2);
+
+    graph.wire(first.resources(), join.slot(0, Channel::Resources));
+    graph.wire(second.resources(), join.slot(1, Channel::Resources));
+    graph.wire(
+        join.flux_out(Channel::Resources),
+        Graph::output(Endpoint::State(Channel::Resources)),
+    );
+
+    let output = run(Accelerator::composite_named("resources", graph));
+
+    assert_eq!(output.res.model_order, vec!["fast", "careful"]);
+    assert!(output.res.tools.contains_key("find"));
+    assert!(output.res.tools.contains_key("shell"));
 }
 
 #[test]

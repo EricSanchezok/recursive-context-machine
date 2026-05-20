@@ -1,30 +1,192 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-fn write_rcm(name: &str, source: &str) -> PathBuf {
+use accelerator::{Accelerator, AcceleratorBody};
+
+fn unique_path(name: &str, extension: &str) -> PathBuf {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "rica-{}-{}-{}.rcm",
+    std::env::temp_dir().join(format!(
+        "rica-{}-{}-{}.{}",
         name,
         std::process::id(),
-        nonce
-    ));
+        nonce,
+        extension
+    ))
+}
+
+fn write_rcm(name: &str, source: &str) -> PathBuf {
+    let path = unique_path(name, "rcm");
     fs::write(&path, source).unwrap();
     path
 }
 
-fn compile_result(source: &str) -> Result<accelerator::Accelerator, String> {
-    let path = write_rcm("compile", source);
+fn write_rcm_near(name: &str, source: &str, prompt_name: &str, prompt: &str) -> PathBuf {
+    let dir = unique_path(name, "dir");
+    fs::create_dir(&dir).unwrap();
+    fs::write(dir.join(prompt_name), prompt).unwrap();
+    let path = dir.join("main.rcm");
+    fs::write(&path, source).unwrap();
+    path
+}
+
+fn remove_compile_path(path: &Path) {
+    if let Some(parent) = path.parent() {
+        if parent
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with("rica-") && name.ends_with(".dir"))
+        {
+            let _ = fs::remove_dir_all(parent);
+            return;
+        }
+    }
+    let _ = fs::remove_file(path);
+}
+
+fn compile_path(path: &Path) -> Result<Accelerator, String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
-    let result = runtime.block_on(cli::rcm::compile::compile_file(&path));
-    let _ = fs::remove_file(path);
+    let result = runtime.block_on(cli::rcm::compile::compile_file(path));
+    remove_compile_path(path);
     result
+}
+
+fn compile_result(source: &str) -> Result<Accelerator, String> {
+    let path = write_rcm("compile", source);
+    compile_path(&path)
+}
+
+fn primitive_state(accelerator: &Accelerator) -> &accelerator::State {
+    match accelerator.body() {
+        AcceleratorBody::Primitive(primitive) => primitive.state(),
+        AcceleratorBody::Composite(_) => panic!("expected primitive accelerator"),
+    }
+}
+
+#[test]
+fn compile_selects_resource_pools_without_initial_activation() {
+    let source = r#"
+        name = "resources"
+        model fast {
+            protocol = "openai"
+            credentials = { key = "REDACTED" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        model careful {
+            protocol = "openai"
+            credentials = { key = "REDACTED" }
+            limit = { context = "2000", output = "200" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            purpose = "inspect"
+            models = ["fast", "careful"]
+            prompts = { captain = "Custom captain" }
+            tools = ["fs", "shell"]
+        }
+    "#;
+
+    let accelerator = compile_result(source).unwrap();
+    let state = primitive_state(&accelerator);
+
+    assert_eq!(state.res.models.len(), 2);
+    assert!(state.res.models.contains_key("fast"));
+    assert!(state.res.models.contains_key("careful"));
+    assert!(state.res.active_model.is_empty());
+    assert_eq!(state.res.prompts.len(), 1);
+    assert_eq!(
+        state.res.prompts.get("captain").map(String::as_str),
+        Some("Custom captain")
+    );
+    assert_eq!(state.res.tools.len(), 2);
+    assert!(state.res.tools.contains_key("fs"));
+    assert!(state.res.tools.contains_key("shell"));
+    assert!(state.res.active_tools.is_empty());
+}
+
+#[test]
+fn compile_keeps_default_tools_when_only_prompts_are_supplied() {
+    let source = r#"
+        name = "prompt only"
+        model gpt {
+            protocol = "openai"
+            credentials = { key = "REDACTED" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            purpose = "inspect"
+            models = ["gpt"]
+            prompts = { captain = "Custom captain" }
+        }
+    "#;
+
+    let accelerator = compile_result(source).unwrap();
+    let state = primitive_state(&accelerator);
+
+    assert_eq!(state.res.prompts.len(), 1);
+    assert_eq!(state.res.tools.len(), 5);
+    assert!(state.res.tools.contains_key("find"));
+    assert!(state.res.tools.contains_key("fs"));
+    assert!(state.res.tools.contains_key("lsp"));
+    assert!(state.res.tools.contains_key("shell"));
+    assert!(state.res.tools.contains_key("wait"));
+    assert!(state.res.active_tools.is_empty());
+}
+
+#[test]
+fn compile_reads_prompt_files_relative_to_rcm_file() {
+    let source = r#"
+        name = "file prompt"
+        model gpt {
+            protocol = "openai"
+            credentials = { key = "REDACTED" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            purpose = "inspect"
+            models = ["gpt"]
+            prompts = { captain = file "captain.txt" }
+        }
+    "#;
+    let path = write_rcm_near("prompt", source, "captain.txt", "File captain");
+
+    let accelerator = compile_path(&path).unwrap();
+    let state = primitive_state(&accelerator);
+
+    assert_eq!(
+        state.res.prompts.get("captain").map(String::as_str),
+        Some("File captain")
+    );
+}
+
+#[test]
+fn compile_requires_at_least_one_accelerator_model() {
+    let source = r#"
+        name = "missing models"
+        model gpt {
+            protocol = "openai"
+            credentials = { key = "REDACTED" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            purpose = "inspect"
+        }
+    "#;
+
+    let error = match compile_result(source) {
+        Ok(_) => panic!("expected compile error"),
+        Err(error) => error,
+    };
+    assert!(error.contains("accelerator requires at least one model"));
 }
 
 #[test]
@@ -40,7 +202,7 @@ fn compile_rejects_flux_slot_out_of_range() {
         graph {
             accelerator source {
                 purpose = "source"
-                model = "gpt"
+                models = ["gpt"]
             }
             flux joined {
                 channel = context
@@ -71,11 +233,11 @@ fn compile_rejects_graph_cycles() {
         graph {
             accelerator first {
                 purpose = "first"
-                model = "gpt"
+                models = ["gpt"]
             }
             accelerator second {
                 purpose = "second"
-                model = "gpt"
+                models = ["gpt"]
             }
             first.done -> second.trigger
             second.done -> first.trigger

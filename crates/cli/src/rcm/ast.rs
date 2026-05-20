@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone)]
 pub struct RcmFile {
     pub name: String,
@@ -19,11 +21,18 @@ pub enum AcceleratorBodyDef {
     Graph(GraphDef),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PromptSourceDef {
+    Inline(String),
+    File(String),
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PrimitiveDef {
     pub purpose: Option<String>,
-    pub model: Option<String>,
-    pub tools: Vec<String>,
+    pub models: Vec<String>,
+    pub prompts: Option<HashMap<String, PromptSourceDef>>,
+    pub tools: Option<Vec<String>>,
     pub policy: Option<String>,
 }
 

@@ -11,14 +11,14 @@ model deepseek-v4-flash {
 graph {
     accelerator inspect {
         purpose = "只读查看当前仓库的 Cargo workspace、crates 目录和 examples 目录，整理项目结构摘要。不要修改任何文件。"
-        model = "deepseek-v4-flash"
+        models = ["deepseek-v4-flash"]
         policy = "captain"
         tools = ["shell", "fs", "find"]
     }
 
     accelerator summarize {
         purpose = "基于上游上下文，用中文总结这个仓库的主要模块和 examples 的用途。不要修改任何文件。"
-        model = "deepseek-v4-flash"
+        models = ["deepseek-v4-flash"]
         policy = "captain"
         tools = ["shell", "fs", "find"]
     }

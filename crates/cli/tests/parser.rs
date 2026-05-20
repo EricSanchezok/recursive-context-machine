@@ -1,5 +1,7 @@
 use cli::rcm;
-use cli::rcm::{AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, PortOwnerDef};
+use cli::rcm::{
+    AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, PortOwnerDef, PromptSourceDef,
+};
 
 #[test]
 fn parse_primitive_accelerator_file() {
@@ -13,7 +15,11 @@ fn parse_primitive_accelerator_file() {
         }
         accelerator {
             purpose = "review code"
-            model = "gpt"
+            models = ["gpt"]
+            prompts = {
+                captain = file "./captain.txt"
+                review = "Review carefully"
+            }
             tools = ["fs", "shell"]
         }
     "#;
@@ -25,7 +31,17 @@ fn parse_primitive_accelerator_file() {
     match file.body {
         AcceleratorBodyDef::Primitive(primitive) => {
             assert_eq!(primitive.purpose.as_deref(), Some("review code"));
-            assert_eq!(primitive.tools, vec!["fs", "shell"]);
+            assert_eq!(primitive.models, vec!["gpt"]);
+            assert_eq!(primitive.tools, Some(vec!["fs".into(), "shell".into()]));
+            let prompts = primitive.prompts.as_ref().unwrap();
+            assert_eq!(
+                prompts.get("captain"),
+                Some(&PromptSourceDef::File("./captain.txt".into()))
+            );
+            assert_eq!(
+                prompts.get("review"),
+                Some(&PromptSourceDef::Inline("Review carefully".into()))
+            );
         }
         AcceleratorBodyDef::Graph(_) => panic!("expected primitive accelerator"),
     }
@@ -67,7 +83,7 @@ fn parse_graph_with_flux_and_condition_ports() {
         graph {
             accelerator source {
                 purpose = "source"
-                model = "gpt"
+                models = ["gpt"]
             }
             flux joined {
                 channel = context
@@ -107,7 +123,7 @@ fn parse_inline_graph_accelerator() {
         graph {
             accelerator fetch {
                 purpose = "fetch diff"
-                model = "gpt"
+                models = ["gpt"]
                 tools = ["shell"]
             }
         }

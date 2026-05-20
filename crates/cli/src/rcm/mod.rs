@@ -6,7 +6,7 @@ mod parser;
 pub use ast::{
     AcceleratorBodyDef, AcceleratorSourceDef, ConditionDef, EndpointDef, FluxDef,
     GraphAcceleratorDef, GraphDef, McpDef, ModelDef, PortDef, PortOwnerDef, Predicate,
-    PrimitiveDef, RcmFile, UseDef, WireDef,
+    PrimitiveDef, PromptSourceDef, RcmFile, UseDef, WireDef,
 };
 pub(crate) use parser::Parser;
 
