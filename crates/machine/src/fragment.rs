@@ -169,10 +169,15 @@ impl Fragment {
     /// `code` is an optional HTTP status code from the failed request.
     /// Policy may use it for retry strategy (e.g. 401/403 are permanent,
     /// 429/5xx are transient).
-    pub fn hitch(message: impl Into<String>, code: Option<u16>) -> Self {
+    ///
+    /// `role` should match the origin of the failure:
+    /// - tool errors → [`Role::Tool`]
+    /// - LLM errors → [`Role::Assistant`]
+    /// - system errors (stale ids, internal bugs) → [`Role::System`]
+    pub fn hitch(message: impl Into<String>, code: Option<u16>, role: Role) -> Self {
         Self {
             id: 0,
-            role: Role::System,
+            role,
             tag: "hitch".into(),
             content: Content::Hitch {
                 message: message.into(),
