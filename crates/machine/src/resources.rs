@@ -6,6 +6,17 @@ use utils::{Name, ResourcesId};
 use crate::model::Model;
 use crate::tool::Tool;
 
+/// Result of looking up a tool by name in [`Resources`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolStatus {
+    /// Tool is registered and currently active.
+    Active,
+    /// Tool is registered but currently disabled.
+    Disabled,
+    /// No tool registered with this name.
+    NotFound,
+}
+
 /// Resources — the pool of available tools and models with activation state.
 ///
 /// The Policy switches models and toggles tools via [`Action`](crate::Action).
@@ -118,7 +129,23 @@ impl Resources {
             .collect()
     }
 
+    /// Check the status of a tool by name, distinguishing between
+    /// active, disabled, and unregistered.
+    pub fn tool_status(&self, name: &str) -> ToolStatus {
+        if !self.tools.contains_key(name) {
+            return ToolStatus::NotFound;
+        }
+        if self.active_tools.contains(name) {
+            ToolStatus::Active
+        } else {
+            ToolStatus::Disabled
+        }
+    }
+
     /// Look up an active tool by name.
+    ///
+    /// Returns `None` for both disabled and unregistered tools.
+    /// Use [`tool_status`](Self::tool_status) to distinguish the two cases.
     pub fn lookup(&self, name: &str) -> Option<&dyn Tool> {
         if !self.active_tools.contains(name) {
             return None;

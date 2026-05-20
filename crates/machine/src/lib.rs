@@ -36,5 +36,5 @@ pub use machine::Machine;
 pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
 pub use policy::{Action, Phase, PhaseOutcome, Policy};
 pub use purpose::Purpose;
-pub use resources::Resources;
+pub use resources::{Resources, ToolStatus};
 pub use tool::Tool;
