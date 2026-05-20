@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Instant;
 
 use accelerator::mcp::{McpRegistry, McpServerConfig};
-use accelerator::{Graph, State};
+use accelerator::{Graph, State, resolve_model};
 use tracing_subscriber::prelude::*;
 
 use crate::args::{Format, RunArgs};
@@ -14,6 +14,10 @@ use crate::output;
 pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     let (hook_tx, hook_rx) = mpsc::channel();
     init_tracing(hook_tx);
+
+    // ── Model resolution (fail fast with a clear, actionable error) ──
+    let model = resolve_model(args.model.as_deref())
+        .map_err(|error| anyhow::anyhow!("{}", error))?;
 
     // ── MCP setup ──
     let configs: Vec<McpServerConfig> = args
@@ -37,6 +41,7 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
         purpose: args.prompt_text(),
         ..State::default()
     };
+    state.res = state.res.with_model(model);
 
     for tool in &mcp_tools {
         let name = tool.name().to_string();

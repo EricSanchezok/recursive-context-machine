@@ -8,8 +8,8 @@ pub mod graph;
 pub mod logging;
 pub mod lsp;
 pub mod mcp;
-pub mod model;
 pub mod policy;
+pub mod provider;
 pub mod state;
 pub mod tools;
 
@@ -22,4 +22,7 @@ pub use condition::{
 };
 pub use flux::{ContextFlux, EnvFlux, FluxMode, FluxRef, PolicyFlux, PurposeFlux, ResFlux};
 pub use graph::{BuildError, Graph};
+pub use provider::{
+    MODEL_PRESETS, ModelPreset, PROVIDERS, Provider, ResolveError, resolve_model,
+};
 pub use state::State;

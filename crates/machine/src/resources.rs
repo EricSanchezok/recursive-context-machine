@@ -84,29 +84,29 @@ impl Resources {
         self.active_tools.remove(&name.into());
     }
 
-    /// Switch the active model.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the model is not registered.
-    pub fn use_model(&mut self, name: impl Into<String>) {
+    /// Switch the active model. Returns the previous active-model name on
+    /// success, or [`ModelNotRegistered`] if no model with that name has been
+    /// registered.
+    pub fn use_model(&mut self, name: impl Into<String>) -> Result<String, ModelNotRegistered> {
         let name = name.into();
-        assert!(
-            self.models.contains_key(&name),
-            "model '{name}' not registered"
-        );
-        self.active_model = name;
+        if !self.models.contains_key(&name) {
+            return Err(ModelNotRegistered(name));
+        }
+        let previous = std::mem::replace(&mut self.active_model, name);
+        Ok(previous)
     }
 
-    /// The currently active model.
+    /// The currently active model, if any has been registered and selected.
     ///
-    /// # Panics
-    ///
-    /// Panics when no model has been registered.
-    pub fn active_model(&self) -> &Model {
-        self.models
-            .get(&self.active_model)
-            .expect("active model not found")
+    /// Returns `None` when no model has been registered, or when the active
+    /// name does not point at a registered model (which can only happen if
+    /// `active_model` was mutated through public field access — kept here for
+    /// safety).
+    pub fn active_model(&self) -> Option<&Model> {
+        if self.active_model.is_empty() {
+            return None;
+        }
+        self.models.get(&self.active_model)
     }
 
     /// All active tools.
@@ -126,3 +126,17 @@ impl Resources {
         self.tools.get(name).map(|t| t.as_ref())
     }
 }
+
+/// Returned by [`Resources::use_model`] when the requested model has not been
+/// registered. Carries the offending name so the caller can build a useful
+/// hitch / error message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelNotRegistered(pub String);
+
+impl std::fmt::Display for ModelNotRegistered {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "model '{}' not registered", self.0)
+    }
+}
+
+impl std::error::Error for ModelNotRegistered {}

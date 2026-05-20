@@ -9,15 +9,33 @@ use crate::model::{Model, Protocol};
 use crate::resources::Resources;
 use tracing::{debug, warn};
 
+/// The bare model name to send on the wire. When a `Model` is constructed via
+/// the accelerator's provider table, `name` is `"<provider>/<model>"` and the
+/// bare model name is stashed in `extra["wire_name"]`. Hand-built `Model`s
+/// without that extra fall back to `name` directly.
+fn wire_name(model: &Model) -> &str {
+    model
+        .extra
+        .get("wire_name")
+        .and_then(|value| value.as_str())
+        .unwrap_or(&model.name)
+}
+
 /// Call the active LLM and return the response fragments or an error.
 ///
 /// Dispatches by `Protocol` (3 arms) to the corresponding rig module.
 /// `endpoint` optionally overrides the provider's default base URL.
 ///
 /// On failure, returns `Content::Hitch` so the caller (Policy) can
-/// decide to retry, switch model, or abort.
+/// decide to retry, switch model, or abort. If no model is registered or
+/// active, returns a hitch instead of panicking.
 pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
-    let model = resources.active_model();
+    let Some(model) = resources.active_model() else {
+        warn!("no active model registered");
+        return vec![Fragment::hitch(
+            "no active model registered; configure a provider via --model or set a provider env var",
+        )];
+    };
 
     let messages: Vec<Message> = ctx.fragments().iter().filter_map(encode).collect();
 
@@ -40,6 +58,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
 
     let api_key = model.credentials.as_deref().unwrap_or("");
     let endpoint_url = model.endpoint.as_deref();
+    let wire_name = wire_name(model);
 
     let result = match model.protocol {
         Protocol::OpenAI => {
@@ -50,7 +69,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
             let endpoint = builder
                 .build()
                 .expect("failed to build openai client")
-                .completion_model(&model.name);
+                .completion_model(wire_name);
             send(&endpoint, model, &messages, &tools).await
         }
         Protocol::Anthropic => {
@@ -61,7 +80,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
             let endpoint = builder
                 .build()
                 .expect("failed to build anthropic client")
-                .completion_model(&model.name);
+                .completion_model(wire_name);
             send(&endpoint, model, &messages, &tools).await
         }
         Protocol::Gemini => {
@@ -72,7 +91,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
             let endpoint = builder
                 .build()
                 .expect("failed to build gemini client")
-                .completion_model(&model.name);
+                .completion_model(wire_name);
             send(&endpoint, model, &messages, &tools).await
         }
     };

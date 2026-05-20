@@ -1,6 +1,7 @@
 use crate::context::Context;
 use crate::env::Environment;
 use crate::event::{content_kind, preview, role_name};
+use crate::fragment::Fragment;
 use crate::hook;
 use crate::inbox::Inbox;
 use crate::policy::{Action, Phase, PhaseOutcome, Policy};
@@ -103,10 +104,14 @@ impl Machine {
                 }
 
                 *round += 1;
+                let model_name = resources
+                    .active_model()
+                    .map(|model| model.name.as_str())
+                    .unwrap_or("<none>");
                 hook!(
                     event = "halt",
                     round = *round,
-                    model = %resources.active_model().name,
+                    model = %model_name,
                     messages = ctx.fragments().len(),
                     tools = resources.active_tools.len(),
                 );
@@ -170,7 +175,10 @@ impl Machine {
             }
             Action::Model(name) => {
                 hook!(event = "model", name);
-                resources.use_model(name);
+                if let Err(error) = resources.use_model(&name) {
+                    warn!(?error, "use_model failed");
+                    inbox.push(Fragment::hitch(error.to_string()));
+                }
             }
             Action::Activate(name) => {
                 hook!(event = "activate", name);

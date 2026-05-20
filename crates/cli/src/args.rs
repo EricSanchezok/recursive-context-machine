@@ -39,6 +39,13 @@ pub struct RunArgs {
     /// Repeatable — each `--mcp-server` adds one server.
     #[arg(long = "mcp-server")]
     pub mcp_servers: Vec<String>,
+
+    /// Model selector in `<provider>/<model>` form (e.g. `sii/gpt-4.1`).
+    ///
+    /// Provider-only (e.g. `--model sii`) uses the provider's default model.
+    /// Omit to auto-detect: the first provider whose env var is set wins.
+    #[arg(long, value_name = "PROVIDER/MODEL")]
+    pub model: Option<String>,
 }
 
 impl RunArgs {
