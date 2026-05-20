@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use machine::{Environment, Model, Policy, Resources, Tool};
+use machine::{Environment, Policy, Resources, Tool};
 
 /// A registry of named, built-in components.
+///
+/// Built at startup by calling each module's `register()` function.
+/// The compiler resolves `.rcm` names against this table at compile time.
 #[derive(Default)]
 pub struct Catalog {
-    pub models: HashMap<String, Model>,
     pub policies: HashMap<String, fn() -> Box<dyn Policy>>,
     pub tools: HashMap<String, Arc<dyn Tool>>,
     pub prompts: HashMap<String, String>,
@@ -18,7 +20,6 @@ impl Catalog {
     pub fn new() -> Self {
         let mut catalog = Self::default();
 
-        crate::model::register(&mut catalog);
         crate::policy::register(&mut catalog);
         crate::tools::register(&mut catalog);
         crate::prompts::register(&mut catalog);
@@ -37,12 +38,8 @@ impl Catalog {
             .ok_or_else(|| format!("unknown resource preset: {}", preset))?;
 
         for tool in self.tools.values() {
-            let name = tool.name().to_string();
+            let _name = tool.name().to_string();
             res = res.with_tool(tool.clone());
-        }
-
-        for (name, model) in &self.models {
-            res = res.with_model(model.clone());
         }
 
         for (name, content) in &self.prompts {

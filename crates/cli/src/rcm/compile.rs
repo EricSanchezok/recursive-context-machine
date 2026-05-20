@@ -5,6 +5,7 @@ use accelerator::{
     ContextFlux, ContextPredicate, EnvFlux, EnvironmentPredicate, FluxMode, Graph, PolicyFlux,
     Predicate as AccelPredicate, PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, State,
 };
+use machine::{Limit, Modalities, Modality, Model, Protocol};
 
 use super::ast::{self, PortDef, Predicate, RcmFile};
 
@@ -12,13 +13,16 @@ use super::ast::{self, PortDef, Predicate, RcmFile};
 pub fn compile(file: &RcmFile) -> Result<Graph, String> {
     let catalog = Catalog::new();
 
+    // Build model registry from .rcm model declarations.
+    let models = build_models(&file.models)?;
+
     let mut graph = Graph::named(file.name.as_str());
     let mut agent_map: HashMap<String, _> = HashMap::new();
     let mut flux_map: HashMap<String, _> = HashMap::new();
     let mut condition_map: HashMap<String, _> = HashMap::new();
 
     for agent_def in &file.agents {
-        let state = build_state(&catalog, agent_def)?;
+        let state = build_state(&catalog, &models, agent_def)?;
         let ref_ = graph.spawn_named(
             agent_def.name.as_deref().unwrap_or(agent_def.id.as_str()),
             state,
@@ -54,12 +58,99 @@ pub fn compile(file: &RcmFile) -> Result<Graph, String> {
     Ok(graph)
 }
 
-fn build_state(catalog: &Catalog, def: &ast::AgentDef) -> Result<State, String> {
-    let model_name = def.model.as_deref().unwrap_or("deepseek-v4-flash");
-    catalog
-        .models
-        .get(model_name)
-        .ok_or_else(|| format!("unknown model: {}", model_name))?;
+fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String> {
+    let mut models = HashMap::new();
+    for def in defs {
+        let protocol = parse_protocol(&def.protocol)?;
+        let modalities = build_modalities(&def.modalities_input, &def.modalities_output)?;
+        let credentials = match (&def.credentials_env, &def.credentials_key) {
+            (Some(env_var), None) => std::env::var(env_var).ok(),
+            (None, Some(key)) => Some(key.clone()),
+            (None, None) => None,
+            (Some(_), Some(_)) => {
+                return Err("credentials cannot have both 'env' and 'key'".to_string());
+            }
+        };
+
+        let (input, context) = match (def.limit_context, def.limit_input) {
+            (Some(ctx), None) => (ctx, ctx),
+            (None, Some(inp)) => (inp, inp),
+            (Some(ctx), Some(inp)) => (inp, ctx),
+            (None, None) => {
+                return Err("model limit requires at least one of 'context' or 'input'".to_string());
+            }
+        };
+
+        let model = Model {
+            name: def.id.clone(),
+            protocol,
+            endpoint: def.endpoint.clone(),
+            credentials,
+            limit: Some(Limit {
+                context,
+                input: Some(input),
+                output: def.limit_output,
+            }),
+            cost: None,
+            modalities: Some(modalities),
+            ..Default::default()
+        };
+
+        if models.contains_key(&def.id) {
+            return Err(format!("duplicate model: {}", def.id));
+        }
+        models.insert(def.id.clone(), model);
+    }
+    Ok(models)
+}
+
+fn parse_protocol(name: &str) -> Result<Protocol, String> {
+    match name {
+        "openai" => Ok(Protocol::OpenAI),
+        "anthropic" => Ok(Protocol::Anthropic),
+        "gemini" => Ok(Protocol::Gemini),
+        _ => Err(format!(
+            "unknown protocol '{}' (expected openai, anthropic, or gemini)",
+            name
+        )),
+    }
+}
+
+fn build_modalities(input: &[String], output: &[String]) -> Result<Modalities, String> {
+    let parse_list = |names: &[String]| -> Result<Vec<Modality>, String> {
+        names
+            .iter()
+            .map(|n| match n.as_str() {
+                "text" => Ok(Modality::Text),
+                "audio" => Ok(Modality::Audio),
+                "image" => Ok(Modality::Image),
+                "video" => Ok(Modality::Video),
+                "pdf" => Ok(Modality::Pdf),
+                _ => Err(format!("unknown modality '{}'", n)),
+            })
+            .collect()
+    };
+    Ok(Modalities {
+        input: parse_list(input)?,
+        output: parse_list(output)?,
+    })
+}
+
+fn build_state(
+    catalog: &Catalog,
+    models: &HashMap<String, Model>,
+    def: &ast::AgentDef,
+) -> Result<State, String> {
+    let model_name = def
+        .model
+        .as_deref()
+        .ok_or_else(|| "agent requires a model (e.g. model = \"gpt-4.1\")".to_string())?;
+    let model = models.get(model_name).ok_or_else(|| {
+        format!(
+            "unknown model '{}' (declare it with a 'model' block)",
+            model_name
+        )
+    })?;
 
     let policy_name = def.policy.as_deref().unwrap_or("captain");
     let policy = catalog
@@ -68,6 +159,7 @@ fn build_state(catalog: &Catalog, def: &ast::AgentDef) -> Result<State, String> 
         .ok_or_else(|| format!("unknown policy: {}", policy_name))?;
 
     let mut resources = catalog.build_resources("kit")?;
+    resources = resources.with_model(model.clone());
     resources.use_model(model_name);
 
     for tool_name in &def.tools {
