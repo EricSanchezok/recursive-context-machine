@@ -3,8 +3,8 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
+use accelerator::Graph;
 use accelerator::mcp::{McpRegistry, McpServerConfig};
-use accelerator::{Graph, State};
 use tracing_subscriber::prelude::*;
 
 use crate::args::{Format, RunArgs};
@@ -15,6 +15,23 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     let (hook_tx, hook_rx) = mpsc::channel();
     init_tracing(hook_tx);
 
+    let prompt = args.prompt_text();
+
+    // Detect `.rcm` files by extension.
+    let graph = if prompt.ends_with(".rcm") {
+        let source = std::fs::read_to_string(&prompt)
+            .map_err(|e| anyhow::anyhow!("failed to read '{}': {}", prompt, e))?;
+        let file = crate::rcm::parse(&source).map_err(anyhow::Error::msg)?;
+        crate::rcm::compile::compile(&file).map_err(anyhow::Error::msg)?
+    } else {
+        let mut graph = Graph::new();
+        graph.spawn(accelerator::State {
+            purpose: prompt,
+            ..Default::default()
+        });
+        graph
+    };
+
     // ── MCP setup ──
     let configs: Vec<McpServerConfig> = args
         .mcp_servers
@@ -23,7 +40,7 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(anyhow::Error::msg)?;
 
-    let mcp_tools: Vec<Arc<dyn machine::Tool>> = if configs.is_empty() {
+    let _mcp_tools: Vec<Arc<dyn machine::Tool>> = if configs.is_empty() {
         Vec::new()
     } else {
         let registry: McpRegistry = McpRegistry::start(&configs)
@@ -31,18 +48,6 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
             .map_err(anyhow::Error::msg)?;
         registry.tools()
     };
-
-    // ── State ──
-    let mut state = State {
-        purpose: args.prompt_text(),
-        ..State::default()
-    };
-
-    for tool in &mcp_tools {
-        let name = tool.name().to_string();
-        state.res = state.res.with_tool(tool.clone());
-        state.res.enable(name);
-    }
 
     // ── Accelerator ──
     let start = Instant::now();
@@ -54,8 +59,6 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
             .build()
             .expect("tokio runtime");
         runtime.block_on(async {
-            let mut graph = Graph::new();
-            let _agent = graph.spawn(state);
             let outputs = graph.build().expect("assembly").run().await;
             let output = outputs.into_iter().next().expect("agent output");
             let _ = ctx_tx.send(output.ctx);

@@ -2,6 +2,7 @@ mod args;
 mod cmd;
 mod hook;
 mod output;
+mod rcm;
 
 use clap::Parser;
 
