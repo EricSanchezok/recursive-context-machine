@@ -197,9 +197,9 @@ impl Machine {
                 hook!(event = "done");
                 return true;
             }
-            Action::Halt => {
-                warn!("apply_action received Halt, this should be handled by apply()");
-            }
+            Action::Halt => unreachable!(
+                "apply_action never receives Halt; apply() intercepts it before delegating"
+            ),
         }
         false
     }
