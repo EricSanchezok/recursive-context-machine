@@ -1,6 +1,9 @@
 use rig::OneOrMany;
 use rig::client::CompletionClient;
-use rig::completion::{AssistantContent, CompletionModel, Message, ToolDefinition};
+use rig::completion::{
+    AssistantContent, CompletionError, CompletionModel, Message, ToolDefinition,
+};
+use rig::http_client;
 use tokio::time::{Duration, timeout};
 
 use crate::context::Context;
@@ -120,11 +123,23 @@ async fn send(
 
     match timeout(Duration::from_secs(model.timeout), request.send()).await {
         Ok(Ok(response)) => Ok(response.choice),
-        Ok(Err(error)) => Err(Fragment::hitch(format!("{}", error))),
-        Err(_) => Err(Fragment::hitch(format!(
-            "request timed out after {}s",
-            model.timeout
-        ))),
+        Ok(Err(error)) => {
+            let code = match &error {
+                CompletionError::HttpError(http_client::Error::InvalidStatusCode(s)) => {
+                    Some(s.as_u16())
+                }
+                CompletionError::HttpError(http_client::Error::InvalidStatusCodeWithMessage(
+                    s,
+                    _,
+                )) => Some(s.as_u16()),
+                _ => None,
+            };
+            Err(Fragment::hitch(error.to_string(), code))
+        }
+        Err(_) => Err(Fragment::hitch(
+            format!("request timed out after {}s", model.timeout),
+            None,
+        )),
     }
 }
 

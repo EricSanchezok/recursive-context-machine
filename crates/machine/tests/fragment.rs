@@ -20,7 +20,7 @@ fn as_text_none_for_nontinuitive_types() {
 
 #[test]
 fn hitch_content() {
-    let f = Fragment::hitch("broken");
+    let f = Fragment::hitch("broken", None);
     assert!(matches!(f.content, Content::Hitch { message, .. } if message == "broken"));
     assert_eq!(f.role, Role::System);
 }
