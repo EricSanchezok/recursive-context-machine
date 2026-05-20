@@ -88,6 +88,7 @@ impl Graph {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_flux_inputs()?;
         self.validate_conditions()?;
         self.validate_acyclic()
     }
@@ -105,7 +106,42 @@ impl Graph {
     }
 
     pub async fn run(self, input: State) -> State {
+        self.validate().expect("invalid graph");
         GraphRun::new(self, input).run().await
+    }
+
+    fn validate_flux_inputs(&self) -> Result<(), String> {
+        let mut filled_slots = self
+            .components
+            .iter()
+            .map(|component| match &component.kind {
+                ComponentKind::Flux(flux) => vec![false; flux.arity],
+                _ => Vec::new(),
+            })
+            .collect::<Vec<_>>();
+
+        for wire in &self.wires {
+            let Some(component) = component_id(&wire.to) else {
+                continue;
+            };
+            let Endpoint::FluxSlot { slot, .. } = wire.to.endpoint else {
+                continue;
+            };
+            if let Some(slot_filled) = filled_slots[component.index()].get_mut(slot) {
+                *slot_filled = true;
+            }
+        }
+
+        for (index, slots) in filled_slots.iter().enumerate() {
+            if let Some(slot) = slots.iter().position(|filled| !filled) {
+                return Err(format!(
+                    "flux {} missing input for slot {}",
+                    self.components[index].name.as_str(),
+                    slot
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn validate_conditions(&self) -> Result<(), String> {
@@ -225,8 +261,8 @@ struct GraphRun {
     flux_slots: Vec<Vec<Option<State>>>,
     condition_inputs: Vec<Option<State>>,
     branches: Vec<Option<ConditionBranch>>,
-    pending: Vec<usize>,
-    active_inputs: Vec<usize>,
+    remaining_deps: Vec<usize>,
+    active_incoming: Vec<usize>,
     skipped: Vec<bool>,
     result: State,
 }
@@ -261,8 +297,8 @@ impl GraphRun {
             flux_slots,
             condition_inputs: vec![None; component_count],
             branches: vec![None; component_count],
-            pending: vec![0; component_count],
-            active_inputs: vec![0; component_count],
+            remaining_deps: vec![0; component_count],
+            active_incoming: vec![0; component_count],
             skipped: vec![false; component_count],
             result: State::default(),
         };
@@ -274,21 +310,73 @@ impl GraphRun {
 
     async fn run(mut self) -> State {
         let mut queue = VecDeque::new();
-        for (index, count) in self.pending.iter().enumerate() {
+        for (index, count) in self.remaining_deps.iter().enumerate() {
             if *count == 0 {
                 queue.push_back(index);
             }
         }
 
+        while !queue.is_empty() {
+            let frontier = self.drain_ready_frontier(&mut queue);
+            let completed = self.run_frontier(frontier).await;
+            for index in completed {
+                self.propagate_component(index, &mut queue);
+            }
+        }
+
+        self.result
+    }
+
+    fn drain_ready_frontier(&self, queue: &mut VecDeque<usize>) -> Vec<usize> {
+        let mut frontier = Vec::new();
         while let Some(index) = queue.pop_front() {
             if self.skipped[index] || self.outputs[index].is_some() {
                 continue;
             }
-            self.run_component(index).await;
-            self.propagate_component(index, &mut queue);
+            frontier.push(index);
+        }
+        frontier
+    }
+
+    async fn run_frontier(&mut self, frontier: Vec<usize>) -> Vec<usize> {
+        let mut tasks = tokio::task::JoinSet::new();
+        for index in frontier {
+            let component = self.graph.components[index].kind.clone();
+            let input = self.inputs[index].clone();
+            let flux_slots = self.flux_slots[index].clone();
+            let condition_input = self.condition_inputs[index].clone();
+            tasks.spawn(async move {
+                let (state, branch) = match component {
+                    ComponentKind::Accelerator(accelerator) => {
+                        (accelerator.run_with(input).await, None)
+                    }
+                    ComponentKind::Flux(flux) => {
+                        let slots = flux_slots
+                            .into_iter()
+                            .map(|slot| slot.unwrap_or_default())
+                            .collect::<Vec<_>>();
+                        (flux.apply(&slots), None)
+                    }
+                    ComponentKind::Condition(condition) => {
+                        let state = condition_input.unwrap_or_default();
+                        let branch = condition.route(&state);
+                        (state, Some(branch))
+                    }
+                };
+                (index, state, branch)
+            });
         }
 
-        self.result
+        let mut completed = Vec::new();
+        while let Some(result) = tasks.join_next().await {
+            let (index, state, branch) = result.expect("graph component task panicked");
+            if let Some(branch) = branch {
+                self.branches[index] = Some(branch);
+            }
+            self.outputs[index] = Some(state);
+            completed.push(index);
+        }
+        completed
     }
 
     fn count_dependencies(&mut self) {
@@ -301,49 +389,41 @@ impl GraphRun {
                 continue;
             };
             if source != target && dependencies.insert((source.index(), target.index())) {
-                self.pending[target.index()] += 1;
+                self.remaining_deps[target.index()] += 1;
             }
         }
     }
 
     fn apply_boundary_input(&mut self, input: &State) {
-        let wires = self.graph.wires.clone();
-        for wire in wires {
-            if wire.from.owner != PortOwner::BoundaryInput {
-                continue;
-            }
+        let wire_indices = self
+            .graph
+            .wires
+            .iter()
+            .enumerate()
+            .filter_map(|(index, wire)| {
+                (wire.from.owner == PortOwner::BoundaryInput).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        for index in wire_indices {
+            let wire = self.graph.wires[index].clone();
             self.apply_wire(&wire, input);
         }
     }
 
-    async fn run_component(&mut self, index: usize) {
-        match self.graph.components[index].kind.clone() {
-            ComponentKind::Accelerator(accelerator) => {
-                let output = accelerator.run_with(self.inputs[index].clone()).await;
-                self.outputs[index] = Some(output);
-            }
-            ComponentKind::Flux(flux) => {
-                let slots = self.flux_slots[index]
-                    .iter()
-                    .map(|slot| slot.clone().expect("flux slot missing input"))
-                    .collect::<Vec<_>>();
-                self.outputs[index] = Some(flux.apply(&slots));
-            }
-            ComponentKind::Condition(condition) => {
-                let state = self.condition_inputs[index].clone().unwrap_or_default();
-                self.branches[index] = Some(condition.route(&state));
-                self.outputs[index] = Some(state);
-            }
-        }
-    }
-
     fn propagate_component(&mut self, source: usize, queue: &mut VecDeque<usize>) {
-        let wires = self.graph.wires.clone();
+        let source_id = ComponentId::new(source);
+        let wire_indices = self
+            .graph
+            .wires
+            .iter()
+            .enumerate()
+            .filter_map(|(index, wire)| {
+                (component_id(&wire.from) == Some(source_id)).then_some(index)
+            })
+            .collect::<Vec<_>>();
         let mut released = HashSet::new();
-        for wire in wires {
-            if component_id(&wire.from) != Some(ComponentId::new(source)) {
-                continue;
-            }
+        for index in wire_indices {
+            let wire = self.graph.wires[index].clone();
             let active = self.branch_is_active(source, &wire.from.endpoint);
             if active {
                 let state = self.source_state(source, &wire.from.endpoint);
@@ -352,22 +432,29 @@ impl GraphRun {
             if let Some(target) = component_id(&wire.to)
                 && released.insert(target.index())
             {
-                self.release(target.index(), active, queue);
+                self.resolve_dependency(target.index(), active, queue);
             }
         }
     }
 
     fn propagate_skip(&mut self, source: usize, queue: &mut VecDeque<usize>) {
-        let wires = self.graph.wires.clone();
+        let source_id = ComponentId::new(source);
+        let wire_indices = self
+            .graph
+            .wires
+            .iter()
+            .enumerate()
+            .filter_map(|(index, wire)| {
+                (component_id(&wire.from) == Some(source_id)).then_some(index)
+            })
+            .collect::<Vec<_>>();
         let mut released = HashSet::new();
-        for wire in wires {
-            if component_id(&wire.from) != Some(ComponentId::new(source)) {
-                continue;
-            }
+        for index in wire_indices {
+            let wire = self.graph.wires[index].clone();
             if let Some(target) = component_id(&wire.to)
                 && released.insert(target.index())
             {
-                self.release(target.index(), false, queue);
+                self.resolve_dependency(target.index(), false, queue);
             }
         }
     }
@@ -416,18 +503,23 @@ impl GraphRun {
         }
     }
 
-    fn release(&mut self, target: usize, active: bool, queue: &mut VecDeque<usize>) {
+    fn resolve_dependency(
+        &mut self,
+        target: usize,
+        active_branch: bool,
+        queue: &mut VecDeque<usize>,
+    ) {
         if self.skipped[target] || self.outputs[target].is_some() {
             return;
         }
-        if active {
-            self.active_inputs[target] += 1;
+        if active_branch {
+            self.active_incoming[target] += 1;
         }
-        self.pending[target] -= 1;
-        if self.pending[target] != 0 {
+        self.remaining_deps[target] -= 1;
+        if self.remaining_deps[target] != 0 {
             return;
         }
-        if self.active_inputs[target] > 0 {
+        if self.active_incoming[target] > 0 {
             queue.push_back(target);
         } else {
             self.skipped[target] = true;
