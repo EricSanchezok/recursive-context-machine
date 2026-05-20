@@ -223,9 +223,7 @@ impl Machine {
                 hook!(event = "done", step, round_counts = ?round_counts);
                 return true;
             }
-            Action::Halt => {
-                // Halt is handled by apply(); this arm is never reached from phases.
-            }
+            Action::Halt => unreachable!("dispatch never receives Halt; apply() intercepts it"),
         }
         false
     }
