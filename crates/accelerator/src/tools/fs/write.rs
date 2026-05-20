@@ -45,14 +45,17 @@ pub(crate) fn execute<'a>(
                 .map_err(|error| format!("failed to create parent directory: {error}"))?;
         }
 
+        let before = crate::lsp::snapshot(env, &path).await;
+
         tokio::fs::write(&path, content)
             .await
             .map_err(|error| format!("failed to write file: {error}"))?;
 
         guard::mark_read(env.name.as_str(), &path);
-        let diagnostics = crate::lsp::touch_file(env, &path, true).await;
+        let diagnostics = crate::lsp::touch_file_with_text(env, &path, content, true).await;
+        let new_errors = crate::lsp::new_error_diagnostics(&before, &diagnostics);
         let mut result = relative.clone();
-        result.push_str(&crate::lsp::format_file_diagnostics(&path, &diagnostics));
+        result.push_str(&crate::lsp::format_file_diagnostics(&path, &new_errors));
 
         Ok(ToolResult {
             call_id: String::new(),

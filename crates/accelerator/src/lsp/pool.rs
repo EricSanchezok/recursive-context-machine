@@ -1,16 +1,19 @@
 //! LSP client pool.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
+use std::time::{Duration, Instant};
 
 use machine::Environment;
 use tokio::sync::{Mutex, Notify};
 use tracing::{debug, warn};
 
 use super::client::LspClient;
-use super::diagnostics::Diagnostic;
+use super::diagnostics::{Diagnostic, DiagnosticSnapshot};
 use super::servers::{ServerSpec, find_root, server_for_file};
+
+const BROKEN_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct ClientKey {
@@ -18,78 +21,113 @@ struct ClientKey {
     root: PathBuf,
 }
 
+enum ClientState {
+    Starting { notify: Arc<Notify> },
+    Running { client: Arc<LspClient> },
+    Broken { reason: String, since: Instant },
+}
+
 struct LspPool {
-    clients: Mutex<HashMap<ClientKey, Arc<LspClient>>>,
-    broken: Mutex<HashSet<ClientKey>>,
-    spawning: Mutex<HashMap<ClientKey, Arc<Notify>>>,
+    states: Mutex<HashMap<ClientKey, ClientState>>,
 }
 
 static POOL: LazyLock<LspPool> = LazyLock::new(|| LspPool {
-    clients: Mutex::new(HashMap::new()),
-    broken: Mutex::new(HashSet::new()),
-    spawning: Mutex::new(HashMap::new()),
+    states: Mutex::new(HashMap::new()),
 });
 
-pub async fn touch_file(env: &Environment, path: &Path, wait: bool) -> Vec<Diagnostic> {
-    let Some(server) = server_for_file(path) else {
+pub async fn snapshot(env: &Environment, path: &Path) -> DiagnosticSnapshot {
+    let Some((key, _server)) = key_for_file(env, path) else {
+        return DiagnosticSnapshot::empty();
+    };
+
+    let states = POOL.states.lock().await;
+    match states.get(&key) {
+        Some(ClientState::Running { client }) => client.snapshot(path),
+        _ => DiagnosticSnapshot::empty(),
+    }
+}
+
+pub async fn touch_file_from_disk(env: &Environment, path: &Path, wait: bool) -> Vec<Diagnostic> {
+    let Some((key, server)) = key_for_file(env, path) else {
         return Vec::new();
     };
 
-    let Some(root) = find_root(path, server, env) else {
-        debug!(path = %path.display(), server = server.id, "lsp root not found");
+    let Some(client) = get_or_start_client(key.clone(), server).await else {
         return Vec::new();
     };
 
-    let key = ClientKey {
-        server_id: server.id,
-        root,
-    };
-
-    let client_key = key.clone();
-    let Some(client) = get_or_start_client(key, server).await else {
-        return Vec::new();
-    };
-
-    match client.touch_file(path, wait).await {
+    match client.touch_file_from_disk(path, wait).await {
         Ok(diagnostics) => diagnostics,
         Err(error) => {
-            POOL.clients.lock().await.remove(&client_key);
+            remove_client(&key).await;
             warn!(server = server.id, path = %path.display(), ?error, "lsp touch failed");
             Vec::new()
         }
     }
 }
 
+pub async fn touch_file_with_text(
+    env: &Environment,
+    path: &Path,
+    text: &str,
+    wait: bool,
+) -> Vec<Diagnostic> {
+    let Some((key, server)) = key_for_file(env, path) else {
+        return Vec::new();
+    };
+
+    let Some(client) = get_or_start_client(key.clone(), server).await else {
+        return Vec::new();
+    };
+
+    match client.touch_file_with_text(path, text, wait).await {
+        Ok(diagnostics) => diagnostics,
+        Err(error) => {
+            remove_client(&key).await;
+            warn!(server = server.id, path = %path.display(), ?error, "lsp touch failed");
+            Vec::new()
+        }
+    }
+}
+
+fn key_for_file(env: &Environment, path: &Path) -> Option<(ClientKey, ServerSpec)> {
+    let server = server_for_file(path)?;
+    let root = find_root(path, server, env)?;
+    Some((
+        ClientKey {
+            server_id: server.id,
+            root,
+        },
+        server,
+    ))
+}
+
 async fn get_or_start_client(key: ClientKey, server: ServerSpec) -> Option<Arc<LspClient>> {
     loop {
-        if POOL.broken.lock().await.contains(&key) {
-            return None;
-        }
-
-        if let Some(client) = POOL.clients.lock().await.get(&key).cloned() {
-            return Some(client);
-        }
-
-        let waiter = {
-            let mut spawning = POOL.spawning.lock().await;
-
-            if POOL.broken.lock().await.contains(&key) {
-                return None;
-            }
-            if let Some(client) = POOL.clients.lock().await.get(&key).cloned() {
-                return Some(client);
-            }
-
-            if let Some(waiter) = spawning.get(&key) {
-                Some(Arc::clone(waiter))
-            } else {
-                spawning.insert(key.clone(), Arc::new(Notify::new()));
-                None
+        let wait = {
+            let mut states = POOL.states.lock().await;
+            match states.get(&key) {
+                Some(ClientState::Running { client }) => return Some(Arc::clone(client)),
+                Some(ClientState::Starting { notify }) => Some(Arc::clone(notify)),
+                Some(ClientState::Broken { reason, since }) if since.elapsed() < BROKEN_TTL => {
+                    debug!(server = key.server_id, root = %key.root.display(), reason, "lsp server is marked broken");
+                    return None;
+                }
+                Some(ClientState::Broken { .. }) | None => {
+                    let notify = Arc::new(Notify::new());
+                    states.insert(
+                        key.clone(),
+                        ClientState::Starting {
+                            notify: Arc::clone(&notify),
+                        },
+                    );
+                    None
+                }
             }
         };
 
-        if let Some(waiter) = waiter {
-            waiter.notified().await;
+        if let Some(wait) = wait {
+            wait.notified().await;
             continue;
         }
 
@@ -100,23 +138,63 @@ async fn get_or_start_client(key: ClientKey, server: ServerSpec) -> Option<Arc<L
 async fn start_client(key: ClientKey, server: ServerSpec) -> Option<Arc<LspClient>> {
     let result = LspClient::start(server, key.root.clone()).await;
 
-    let waiter = POOL.spawning.lock().await.remove(&key);
+    let mut states = POOL.states.lock().await;
+    let notify = match states.remove(&key) {
+        Some(ClientState::Starting { notify }) => Some(notify),
+        _ => None,
+    };
 
-    match result {
+    let client = match result {
         Ok(client) => {
-            POOL.clients.lock().await.insert(key, Arc::clone(&client));
-            if let Some(waiter) = waiter {
-                waiter.notify_waiters();
-            }
+            states.insert(
+                key,
+                ClientState::Running {
+                    client: Arc::clone(&client),
+                },
+            );
             Some(client)
         }
         Err(error) => {
             warn!(server = server.id, root = %key.root.display(), ?error, "lsp unavailable");
-            POOL.broken.lock().await.insert(key);
-            if let Some(waiter) = waiter {
-                waiter.notify_waiters();
-            }
+            states.insert(
+                key,
+                ClientState::Broken {
+                    reason: error,
+                    since: Instant::now(),
+                },
+            );
             None
         }
+    };
+
+    if let Some(notify) = notify {
+        notify.notify_waiters();
+    }
+
+    client
+}
+
+async fn remove_client(key: &ClientKey) {
+    let mut states = POOL.states.lock().await;
+    if matches!(states.get(key), Some(ClientState::Running { .. })) {
+        states.remove(key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_key_hashes_root_and_server() {
+        let first = ClientKey {
+            server_id: "rust-analyzer",
+            root: PathBuf::from("/a"),
+        };
+        let second = ClientKey {
+            server_id: "rust-analyzer",
+            root: PathBuf::from("/b"),
+        };
+        assert_ne!(first, second);
     }
 }

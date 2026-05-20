@@ -696,6 +696,8 @@ pub(crate) fn execute<'a>(
             guard::require_read(env.name.as_str(), &resolved)?;
         }
 
+        let before = crate::lsp::snapshot(env, &resolved).await;
+
         if old_string.is_empty() {
             let parent = resolved
                 .parent()
@@ -708,12 +710,11 @@ pub(crate) fn execute<'a>(
                 .map_err(|e| format!("failed to write {}: {e}", resolved.display()))?;
             guard::mark_read(env.name.as_str(), &resolved);
             let title = relative_path(&resolved, &env.cwd);
-            let diagnostics = crate::lsp::touch_file(env, &resolved, true).await;
+            let diagnostics =
+                crate::lsp::touch_file_with_text(env, &resolved, new_string, true).await;
+            let new_errors = crate::lsp::new_error_diagnostics(&before, &diagnostics);
             let mut result = format!("Wrote {}", resolved.display());
-            result.push_str(&crate::lsp::format_file_diagnostics(
-                &resolved,
-                &diagnostics,
-            ));
+            result.push_str(&crate::lsp::format_file_diagnostics(&resolved, &new_errors));
             return Ok(ToolResult {
                 call_id: String::new(),
                 content: result,
@@ -735,12 +736,11 @@ pub(crate) fn execute<'a>(
         guard::mark_read(env.name.as_str(), &resolved);
 
         let title = relative_path(&resolved, &env.cwd);
-        let diagnostics = crate::lsp::touch_file(env, &resolved, true).await;
+        let diagnostics =
+            crate::lsp::touch_file_with_text(env, &resolved, &new_content, true).await;
+        let new_errors = crate::lsp::new_error_diagnostics(&before, &diagnostics);
         let mut result = format!("Successfully modified {}", resolved.display());
-        result.push_str(&crate::lsp::format_file_diagnostics(
-            &resolved,
-            &diagnostics,
-        ));
+        result.push_str(&crate::lsp::format_file_diagnostics(&resolved, &new_errors));
         Ok(ToolResult {
             call_id: String::new(),
             content: result,

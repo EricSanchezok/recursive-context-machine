@@ -33,6 +33,7 @@ pub fn server_for_file(path: &Path) -> Option<ServerSpec> {
 pub fn find_root(file: &Path, server: ServerSpec, env: &Environment) -> Option<PathBuf> {
     let boundary = env.root.as_ref().unwrap_or(&env.cwd);
     let mut current = file.parent()?;
+    let mut best = None;
 
     loop {
         if server
@@ -40,11 +41,11 @@ pub fn find_root(file: &Path, server: ServerSpec, env: &Environment) -> Option<P
             .iter()
             .any(|marker| current.join(marker).exists())
         {
-            return Some(current.to_path_buf());
+            best = Some(current.to_path_buf());
         }
 
         if current == boundary {
-            return None;
+            return best;
         }
 
         current = current.parent()?;
@@ -54,7 +55,6 @@ pub fn find_root(file: &Path, server: ServerSpec, env: &Environment) -> Option<P
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn rust_server_matches_rs() {
         assert_eq!(
@@ -62,5 +62,22 @@ mod tests {
             "rust-analyzer"
         );
         assert!(server_for_file(Path::new("src/lib.ts")).is_none());
+    }
+
+    #[test]
+    fn root_detection_uses_topmost_marker_inside_boundary() {
+        let dir = std::env::temp_dir().join(format!("rcm_lsp_root_test_{}", std::process::id()));
+        let nested = dir.join("crates/accelerator/src");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(dir.join("Cargo.toml"), "[workspace]").unwrap();
+        std::fs::write(dir.join("crates/accelerator/Cargo.toml"), "[package]").unwrap();
+        let file = nested.join("lib.rs");
+        std::fs::write(&file, "fn main() {}").unwrap();
+
+        let mut env = Environment::named("test", dir.clone());
+        env.root = Some(dir.clone());
+
+        assert_eq!(find_root(&file, RUST_ANALYZER, &env).unwrap(), dir);
+        std::fs::remove_dir_all(&env.cwd).ok();
     }
 }

@@ -86,7 +86,7 @@ pub(crate) fn execute<'a>(
         let lsp_env = env.clone();
         let lsp_path = resolved.clone();
         tokio::spawn(async move {
-            crate::lsp::touch_file(&lsp_env, &lsp_path, false).await;
+            crate::lsp::touch_file_from_disk(&lsp_env, &lsp_path, false).await;
         });
 
         Ok(ToolResult {
