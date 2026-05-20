@@ -1,4 +1,5 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "accelerate", version, about = "RCM accelerator CLI")]
@@ -9,15 +10,15 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
-    /// Run the accelerator on a prompt.
+    /// Run a .rcm file.
     Run(RunArgs),
 }
 
 #[derive(Args)]
 pub struct RunArgs {
-    /// Prompt passed to the accelerator.
-    #[arg(required = true, num_args = 1..)]
-    pub prompt: Vec<String>,
+    /// Path to a .rcm file.
+    #[arg(required = true)]
+    pub file: PathBuf,
 
     /// Delay between tape-machine animation steps, in milliseconds.
     #[arg(long, default_value_t = 50)]
@@ -30,20 +31,11 @@ pub struct RunArgs {
     /// Show the full context instead of only the final assistant message.
     #[arg(long)]
     pub context: bool,
-
-    /// MCP server to launch.
-    ///
-    /// Stdio: `label=command arg1 arg2`
-    /// HTTP:  `label=https://url|HeaderName:Value|HeaderName:Value`
-    ///
-    /// Repeatable — each `--mcp-server` adds one server.
-    #[arg(long = "mcp-server")]
-    pub mcp_servers: Vec<String>,
 }
 
 impl RunArgs {
     pub fn prompt_text(&self) -> String {
-        self.prompt.join(" ")
+        self.file.display().to_string()
     }
 }
 

@@ -2,7 +2,8 @@
 #[derive(Debug, Clone)]
 pub struct RcmFile {
     pub name: String,
-    pub agents: Vec<AgentDef>,
+    pub models: Vec<ModelDef>,
+    pub accelerators: Vec<AcceleratorDef>,
     pub fluxes: Vec<FluxDef>,
     pub conditions: Vec<ConditionDef>,
     pub wires: Vec<WireDef>,
@@ -10,7 +11,21 @@ pub struct RcmFile {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct AgentDef {
+pub struct ModelDef {
+    pub id: String,
+    pub protocol: String,
+    pub endpoint: Option<String>,
+    pub credentials_env: Option<String>,
+    pub credentials_key: Option<String>,
+    pub limit_context: Option<u64>,
+    pub limit_input: Option<u64>,
+    pub limit_output: u64,
+    pub modalities_input: Vec<String>,
+    pub modalities_output: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AcceleratorDef {
     pub id: String,
     pub name: Option<String>,
     pub purpose: Option<String>,
@@ -20,7 +35,7 @@ pub(crate) struct AgentDef {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FluxDef {
+pub struct FluxDef {
     pub id: String,
     pub name: Option<String>,
     pub channel: String,
@@ -28,27 +43,27 @@ pub(crate) struct FluxDef {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ConditionDef {
+pub struct ConditionDef {
     pub id: String,
     pub name: Option<String>,
     pub predicate: Predicate,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct WireDef {
+pub struct WireDef {
     pub from: PortDef,
     pub to: PortDef,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum PortDef {
-    Agent { id: String, port: String },
+pub enum PortDef {
+    Accelerator { id: String, port: String },
     Flux { id: String, port: String },
     Condition { id: String, port: String },
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct McpDef {
+pub struct McpDef {
     pub label: String,
     pub url: Option<String>,
     pub command: Option<String>,
@@ -56,7 +71,7 @@ pub(crate) struct McpDef {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum Predicate {
+pub enum Predicate {
     PurposeContains(String),
     PurposeEquals(String),
     PurposeStartsWith(String),
