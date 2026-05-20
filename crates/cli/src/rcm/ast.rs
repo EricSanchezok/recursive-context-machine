@@ -11,7 +11,7 @@ pub struct RcmFile {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ModelDef {
+pub struct ModelDef {
     pub id: String,
     pub protocol: String,
     pub endpoint: Option<String>,
@@ -25,7 +25,7 @@ pub(crate) struct ModelDef {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct AgentDef {
+pub struct AgentDef {
     pub id: String,
     pub name: Option<String>,
     pub purpose: Option<String>,
@@ -35,7 +35,7 @@ pub(crate) struct AgentDef {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FluxDef {
+pub struct FluxDef {
     pub id: String,
     pub name: Option<String>,
     pub channel: String,
@@ -43,27 +43,27 @@ pub(crate) struct FluxDef {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ConditionDef {
+pub struct ConditionDef {
     pub id: String,
     pub name: Option<String>,
     pub predicate: Predicate,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct WireDef {
+pub struct WireDef {
     pub from: PortDef,
     pub to: PortDef,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum PortDef {
+pub enum PortDef {
     Agent { id: String, port: String },
     Flux { id: String, port: String },
     Condition { id: String, port: String },
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct McpDef {
+pub struct McpDef {
     pub label: String,
     pub url: Option<String>,
     pub command: Option<String>,
@@ -71,7 +71,7 @@ pub(crate) struct McpDef {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum Predicate {
+pub enum Predicate {
     PurposeContains(String),
     PurposeEquals(String),
     PurposeStartsWith(String),

@@ -7,6 +7,10 @@ edition = "2024"
 name = "accelerate"
 path = "src/main.rs"
 
+[lib]
+name = "cli"
+path = "src/lib.rs"
+
 [dependencies]
 machine = { path = "../machine" }
 accelerator = { path = "../accelerator" }

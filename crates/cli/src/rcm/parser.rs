@@ -271,6 +271,7 @@ impl Parser {
                 "output" => *output = self.expect_string_array()?,
                 other => return Err(format!("unknown modalities field: {}", other)),
             }
+            self.eat_ident(",");
         }
         Ok(())
     }
@@ -462,103 +463,5 @@ impl Parser {
             }
             _ => false,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::rcm::lexer;
-
-    fn parse(source: &str) -> RcmFile {
-        let tokens = lexer::tokenize(source);
-        Parser::new(tokens).parse().unwrap()
-    }
-
-    #[test]
-    fn parse_model_with_credentials_and_limit() {
-        let file = parse(
-            r#"
-            name = "test"
-            model gpt {
-                protocol = "openai"
-                endpoint = "https://api.example.com"
-                credentials = { env = "MY_KEY" }
-                limit = { context = "100000", output = "4096" }
-                modalities = { input = ["text"], output = ["text"] }
-            }
-        "#,
-        );
-        assert_eq!(file.models.len(), 1);
-        let m = &file.models[0];
-        assert_eq!(m.id, "gpt");
-        assert_eq!(m.protocol, "openai");
-        assert_eq!(m.credentials_env.as_deref(), Some("MY_KEY"));
-        assert_eq!(m.limit_context, Some(100000));
-        assert_eq!(m.limit_output, 4096);
-        assert_eq!(m.modalities_input, vec!["text"]);
-    }
-
-    #[test]
-    fn parse_model_with_inline_key() {
-        let file = parse(
-            r#"
-            name = "test"
-            model custom {
-                protocol = "openai"
-                credentials = { key = "REDACTED" }
-                limit { context = "1000", output = "500" }
-            }
-        "#,
-        );
-        let m = &file.models[0];
-        assert_eq!(m.credentials_key.as_deref(), Some("sk-abc"));
-    }
-
-    #[test]
-    fn parse_simple_agent() {
-        let file = parse(
-            r#"
-            name = "test"
-            agent research {
-                purpose = "study quantum computing"
-                model = "gpt"
-                tools = ["websearch", "fs"]
-            }
-        "#,
-        );
-        assert_eq!(file.agents.len(), 1);
-        assert_eq!(file.agents[0].model.as_deref(), Some("gpt"));
-    }
-
-    #[test]
-    fn parse_condition() {
-        let file = parse(
-            r#"
-            name = "test"
-            condition check {
-                name = "Quality Check"
-                all {
-                    purpose contains "done"
-                    context has_tag "results"
-                }
-            }
-        "#,
-        );
-        assert_eq!(file.conditions.len(), 1);
-        assert!(matches!(file.conditions[0].predicate, Predicate::All(_)));
-    }
-
-    #[test]
-    fn parse_wires() {
-        let file = parse(
-            r#"
-            name = "test"
-            agent a {}
-            agent b {}
-            a.pulse -> b.pulse
-        "#,
-        );
-        assert_eq!(file.wires.len(), 1);
     }
 }
