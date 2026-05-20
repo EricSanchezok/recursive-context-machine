@@ -209,14 +209,22 @@ impl Machine {
                 let frag = ctx.get(id).expect("just replaced");
                 hook!(event = "replaced", id, step, role = role_name(frag.role), kind = content_kind(frag), preview = %preview(frag));
             }
-            Action::Remove(id) => ctx.remove(id),
-            Action::Swap(id1, id2) => ctx.swap(id1, id2),
+            Action::Remove(id) => {
+                ctx.remove(id);
+                hook!(event = "removed", id, step);
+            }
+            Action::Swap(id1, id2) => {
+                ctx.swap(id1, id2);
+                hook!(event = "swapped", id1, id2, step);
+            }
             Action::Model(name) => resources.use_model(name),
             Action::Activate(name) => resources.enable(name),
             Action::Deactivate(name) => resources.disable(name),
             Action::Take => {
                 if let Some(frag) = inbox.pop() {
-                    ctx.append(frag);
+                    let id = ctx.append(frag);
+                    let frag = ctx.get(id).expect("just taken");
+                    hook!(event = "appended", id, step, role = role_name(frag.role), kind = content_kind(frag), preview = %preview(frag));
                 }
             }
             Action::Done => {
