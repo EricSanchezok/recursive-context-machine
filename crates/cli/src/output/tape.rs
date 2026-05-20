@@ -18,8 +18,7 @@ use crate::hook::{
 
 const IDLE_TICK: Duration = Duration::from_millis(50);
 const CELL_WIDTH: usize = 2;
-const VIEW_ROWS: u16 = 18;
-const MAX_EXPANDED_TAPES: usize = 3;
+const VIEW_ROWS: u16 = 30;
 
 #[derive(Clone)]
 struct TapeCell {
@@ -196,6 +195,7 @@ struct ViewState {
     frontier: Option<u64>,
     frontier_count: usize,
     tapes: BTreeMap<String, TapeState>,
+    tape_order: Vec<String>,
     summary: Summary,
     origin_y: u16,
 }
@@ -222,6 +222,7 @@ pub(crate) fn run_animation(
         frontier: None,
         frontier_count: 0,
         tapes: BTreeMap::new(),
+        tape_order: Vec::new(),
         summary: Summary {
             fragments: 0,
             tool_calls: 0,
@@ -459,6 +460,9 @@ fn apply_graph_event(view: &mut ViewState, event: GraphEvent) {
 fn apply_component_event(view: &mut ViewState, event: ComponentEvent) {
     match event {
         ComponentEvent::Start(meta) => {
+            if meta.kind != "accelerator" {
+                return;
+            }
             let tape = tape_for_source(view, Some(&meta));
             tape.name = meta.name;
             tape.kind = meta.kind;
@@ -467,6 +471,9 @@ fn apply_component_event(view: &mut ViewState, event: ComponentEvent) {
             tape.status = "start".into();
         }
         ComponentEvent::Done(meta) => {
+            if meta.kind != "accelerator" {
+                return;
+            }
             let tape = tape_for_source(view, Some(&meta));
             tape.name = meta.name;
             tape.kind = meta.kind;
@@ -475,6 +482,9 @@ fn apply_component_event(view: &mut ViewState, event: ComponentEvent) {
             tape.status = "done".into();
         }
         ComponentEvent::Skipped(meta) => {
+            if meta.kind != "accelerator" {
+                return;
+            }
             let tape = tape_for_source(view, Some(&meta));
             tape.name = meta.name;
             tape.kind = meta.kind;
@@ -557,10 +567,15 @@ fn tape_for_source<'a>(
     source: Option<&ComponentMeta>,
 ) -> &'a mut TapeState {
     let key = source.map(component_key).unwrap_or_else(|| "main".into());
-    view.tapes.entry(key).or_insert_with(|| match source {
-        Some(meta) => TapeState::new(meta.name.clone(), meta.kind.clone()),
-        None => TapeState::new("accelerator", "accelerator"),
-    })
+    if !view.tapes.contains_key(&key) {
+        view.tape_order.push(key.clone());
+        let tape = match source {
+            Some(meta) => TapeState::new(meta.name.clone(), meta.kind.clone()),
+            None => TapeState::new("accelerator", "accelerator"),
+        };
+        view.tapes.insert(key.clone(), tape);
+    }
+    view.tapes.get_mut(&key).expect("tape was just inserted")
 }
 
 fn component_key(meta: &ComponentMeta) -> String {
@@ -645,18 +660,13 @@ fn render_frame(view: &ViewState) {
     draw_graph_status(&mut out, view.origin_y + 1, inner, view);
 
     let mut row = view.origin_y + 2;
-    for tape in expanded_tapes(view).into_iter().take(MAX_EXPANDED_TAPES) {
+    let last_body_row = view.origin_y + VIEW_ROWS - 2;
+    for tape in ordered_tapes(view) {
+        if row + 2 > last_body_row {
+            break;
+        }
         draw_tape_card(&mut out, row, inner, tape);
         row += 3;
-    }
-
-    let compact = compact_tapes(view);
-    for tape in compact
-        .into_iter()
-        .take((VIEW_ROWS.saturating_sub(row - view.origin_y + 1)) as usize)
-    {
-        draw_compact_tape(&mut out, row, inner, tape);
-        row += 1;
     }
 
     draw_footer(&mut out, view.origin_y + VIEW_ROWS - 1, width, view);
@@ -675,17 +685,17 @@ fn draw_graph_status(out: &mut std::io::Stdout, row: u16, inner: usize, view: &V
     let running = view
         .tapes
         .values()
-        .filter(|tape| tape.lifecycle == TapeStatus::Running)
+        .filter(|tape| tape.kind == "accelerator" && tape.lifecycle == TapeStatus::Running)
         .count();
     let done = view
         .tapes
         .values()
-        .filter(|tape| tape.lifecycle == TapeStatus::Done)
+        .filter(|tape| tape.kind == "accelerator" && tape.lifecycle == TapeStatus::Done)
         .count();
     let skipped = view
         .tapes
         .values()
-        .filter(|tape| tape.lifecycle == TapeStatus::Skipped)
+        .filter(|tape| tape.kind == "accelerator" && tape.lifecycle == TapeStatus::Skipped)
         .count();
     let frontier = view
         .frontier
@@ -706,44 +716,14 @@ fn draw_tape_card(out: &mut std::io::Stdout, row: u16, inner: usize, tape: &Tape
     let title = format!("{} {}{}", tape.name, tape.lifecycle.glyph(), frontier);
     draw_inside(out, row, inner, &title, tape.lifecycle.color());
     draw_tape(out, row + 1, tape, inner);
-    let status = format!(
-        "⚙ {} · {} · {} cells · {} tools",
-        one_line(&tape.status),
-        position_text(tape),
-        tape.cells.len(),
-        tape.tool_calls
-    );
-    draw_inside(out, row + 2, inner, &status, Color::DarkCyan);
+    draw_tape_status(out, row + 2, inner, tape);
 }
 
-fn draw_compact_tape(out: &mut std::io::Stdout, row: u16, inner: usize, tape: &TapeState) {
-    let line = format!(
-        "{} {} · {} · {} cells · {} tools",
-        tape.lifecycle.glyph(),
-        tape.name,
-        tape.kind,
-        tape.cells.len(),
-        tape.tool_calls
-    );
-    draw_inside(out, row, inner, &line, tape.lifecycle.color());
-}
-
-fn expanded_tapes(view: &ViewState) -> Vec<&TapeState> {
-    let mut tapes = view
-        .tapes
-        .values()
-        .filter(|tape| tape.lifecycle == TapeStatus::Running)
-        .collect::<Vec<_>>();
-    if tapes.is_empty() {
-        tapes = view.tapes.values().take(1).collect();
-    }
-    tapes
-}
-
-fn compact_tapes(view: &ViewState) -> Vec<&TapeState> {
-    view.tapes
-        .values()
-        .filter(|tape| tape.lifecycle != TapeStatus::Running)
+fn ordered_tapes(view: &ViewState) -> Vec<&TapeState> {
+    view.tape_order
+        .iter()
+        .filter_map(|key| view.tapes.get(key))
+        .filter(|tape| tape.kind == "accelerator")
         .collect()
 }
 
@@ -819,6 +799,34 @@ fn draw_tape(out: &mut std::io::Stdout, row: u16, tape: &TapeState, inner: usize
         write!(out, "{}", "…".with(Color::DarkGrey)).ok();
     }
     write!(out, "{}", "│".with(Color::DarkGrey)).ok();
+}
+
+fn draw_tape_status(out: &mut std::io::Stdout, row: u16, inner: usize, tape: &TapeState) {
+    execute!(out, MoveTo(0, row), Clear(ClearType::CurrentLine)).ok();
+    let (start, _) = visible_window(tape, inner);
+    let ellipsis_offset = if start > 0 { 2 } else { 0 };
+    let pointer_offset = tape.pointer.saturating_sub(start) * CELL_WIDTH;
+    let gear_col = (ellipsis_offset + pointer_offset).min(inner.saturating_sub(2));
+    let status = format!(
+        "{} · {} · {} cells · {} tools",
+        one_line(&tape.status),
+        position_text(tape),
+        tape.cells.len(),
+        tape.tool_calls
+    );
+    let status = trim_to_width(&status, inner.saturating_sub(gear_col + 2));
+    let used = gear_col + 2 + status.chars().count();
+    write!(
+        out,
+        "{} {}{} {}{}{}",
+        "│".with(Color::DarkGrey),
+        " ".repeat(gear_col),
+        "⚙".with(Color::Cyan).bold(),
+        status.with(Color::DarkCyan),
+        " ".repeat(inner.saturating_sub(used)),
+        "│".with(Color::DarkGrey),
+    )
+    .ok();
 }
 
 fn visible_window(tape: &TapeState, inner: usize) -> (usize, usize) {
