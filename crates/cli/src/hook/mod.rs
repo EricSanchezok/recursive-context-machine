@@ -17,7 +17,7 @@ pub(crate) enum HookEvent {
 #[derive(Debug, Clone)]
 pub(crate) enum MachineEvent {
     Start,
-    Halt { round: u32 },
+    Halt { step: u64 },
     Done,
 }
 
@@ -125,10 +125,6 @@ impl HookFields {
         }
     }
 
-    fn u32(&self, name: &str) -> Option<u32> {
-        self.u64(name).map(|value| value as u32)
-    }
-
     fn usize(&self, name: &str) -> Option<usize> {
         self.u64(name).map(|value| value as usize)
     }
@@ -188,7 +184,7 @@ impl HookEvent {
         match fields.string("event")?.as_str() {
             "machine_start" => Some(Self::Machine(MachineEvent::Start)),
             "halt" => Some(Self::Machine(MachineEvent::Halt {
-                round: fields.u32("round").unwrap_or(0),
+                step: fields.u64("step").unwrap_or(0),
             })),
             "done" => Some(Self::Machine(MachineEvent::Done)),
             "completion_start" => Some(Self::Completion(CompletionEvent::Start)),
