@@ -5,7 +5,7 @@ use accelerator::{
     EnvironmentPredicate, FluxMode, Graph, Predicate, PurposePredicate, ResourcesPredicate, State,
 };
 use common::DonePolicy;
-use machine::{Environment, Fragment};
+use machine::Fragment;
 
 fn state_with_purpose(purpose: &str) -> State {
     State {
