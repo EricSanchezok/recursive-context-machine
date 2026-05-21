@@ -81,36 +81,6 @@ button:disabled {
   color: var(--foreground);
 }
 
-.rcm-home-holos {
-  width: 30px;
-  height: 30px;
-  object-fit: contain;
-}
-
-.rcm-home-divider {
-  width: 1px;
-  height: 28px;
-  background: var(--border);
-}
-
-.rcm-home-brand-copy {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.1;
-}
-
-.rcm-home-brand-copy span {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--foreground);
-}
-
-.rcm-home-brand-copy small {
-  margin-top: 3px;
-  font-size: 11px;
-  color: var(--muted-foreground);
-}
-
 .rcm-home-card {
   position: absolute;
   left: 50%;
@@ -135,15 +105,6 @@ button:disabled {
   width: 52px;
   height: 52px;
   object-fit: contain;
-}
-
-.rcm-home-kicker {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
 }
 
 .rcm-home-card h1 {

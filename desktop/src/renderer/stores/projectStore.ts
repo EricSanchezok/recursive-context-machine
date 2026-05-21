@@ -63,7 +63,8 @@ export async function openProject(): Promise<void> {
   store.activeTab = null
   try {
     store.inventory = JSON.parse(await api.inventory(projectPath))
-  } catch {
+  } catch (err) {
+    console.error('accelerate inventory failed:', err)
     store.inventory = null
   }
   emit()
