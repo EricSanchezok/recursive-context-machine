@@ -1,33 +1,57 @@
 import { useEffect, useState } from 'react'
 import { FolderOpen } from 'lucide-react'
-import { openProject, subscribe, getStore, type ProjectStore } from '../stores/projectStore'
+import { openProject, subscribe, getStore } from '../stores/projectStore'
+import holosLogo from '../../../resources/holos-dark.svg'
+import siiLogo from '../../../resources/sii-logo.png'
 
 export function Home() {
   const [store, setStore] = useState(getStore())
+  const [error, setError] = useState<string | null>(null)
+  const [opening, setOpening] = useState(false)
 
-  useEffect(() => subscribe((s) => setStore(s)), [])
+  useEffect(() => subscribe((nextStore) => setStore(nextStore)), [])
+
+  async function handleOpenProject() {
+    setError(null)
+    setOpening(true)
+    try {
+      await openProject()
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      setError(message)
+    } finally {
+      setOpening(false)
+    }
+  }
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-[var(--workspace-bg)]">
-      <div className="text-center space-y-6">
-        <h1 className="text-4xl font-bold" style={{ color: 'var(--foreground)' }}>
-          RICA
-        </h1>
-        <p className="text-lg" style={{ color: 'var(--muted-foreground)' }}>
-          Composable AI Pipelines
+    <main className="rcm-home figjam-grid">
+      <header className="rcm-home-brand floating-panel">
+        <img className="rcm-home-sii" src={siiLogo} alt="SII" />
+        <div className="rcm-home-divider" />
+        <img className="rcm-home-holos" src={holosLogo} alt="Holos" />
+        <div className="rcm-home-brand-copy">
+          <span>Holos Lab</span>
+          <small>Recursive Context Machine</small>
+        </div>
+      </header>
+
+      <section className="rcm-home-card floating-panel">
+        <div className="rcm-home-mark">
+          <img src={holosLogo} alt="Holos" />
+        </div>
+        <p className="rcm-home-kicker">RCM</p>
+        <h1>递归上下文机</h1>
+        <p className="rcm-home-subtitle">
+          Compose accelerators into recursive context graphs.
         </p>
-        <button
-          onClick={openProject}
-          className="flex items-center gap-2 px-6 py-3 rounded-xl text-white font-medium
-                     transition-colors shadow-lg hover:shadow-xl"
-          style={{ backgroundColor: 'var(--primary)' }}
-        >
-          <FolderOpen size={20} />
-          Open Project
+        <button className="rcm-home-open" onClick={handleOpenProject} disabled={opening}>
+          <FolderOpen size={18} />
+          {opening ? 'Opening…' : 'Open Project'}
         </button>
-      </div>
-    </div>
+        {store.projectPath && <p className="rcm-home-path">{store.projectPath}</p>}
+        {error && <p className="rcm-home-error">{error}</p>}
+      </section>
+    </main>
   )
 }
-
-Home.shouldDisplay = (store: ProjectStore) => !store.projectPath
