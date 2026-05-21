@@ -20,6 +20,7 @@ function createWindow(): void {
   const rendererUrl = process.env['ELECTRON_RENDERER_URL']
   if (rendererUrl) {
     mainWindow.loadURL(rendererUrl)
+    mainWindow.webContents.openDevTools()
   } else if (!app.isPackaged) {
     mainWindow.loadURL('http://localhost:5173/')
   } else {

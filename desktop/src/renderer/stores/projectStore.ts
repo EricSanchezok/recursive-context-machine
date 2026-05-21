@@ -9,7 +9,8 @@ async function listRcmFiles(dir: string): Promise<string[]> {
     return entries
       .filter((e) => e.extension === 'rcm')
       .map((e) => e.path)
-  } catch {
+  } catch (err) {
+    console.error('listRcmFiles failed:', rcmDir, err)
     return []
   }
 }
@@ -56,13 +57,19 @@ function emit(): void {
 export async function openProject(): Promise<void> {
   const api = getAPI()
   const projectPath = await api.openProject()
+  console.log('openProject returned:', projectPath)
   if (!projectPath) return
   store.projectPath = projectPath
+
   store.rcmFiles = await listRcmFiles(projectPath)
+  console.log('listRcmFiles result:', store.rcmFiles)
+
   store.tabs = []
   store.activeTab = null
   try {
-    store.inventory = JSON.parse(await api.inventory(projectPath))
+    const raw = await api.inventory(projectPath)
+    console.log('accelerate inventory raw output (first 200 chars):', raw.slice(0, 200))
+    store.inventory = JSON.parse(raw)
   } catch (err) {
     console.error('accelerate inventory failed:', err)
     store.inventory = null
