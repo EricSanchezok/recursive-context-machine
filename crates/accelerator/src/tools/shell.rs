@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use machine::{Environment, Tool, ToolResult};
 use serde_json::Value;
-use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 const MAX_TIMEOUT_SECS: u64 = 180;
@@ -111,16 +110,18 @@ impl Tool for ShellTool {
 }
 
 async fn collect_output(child: &mut tokio::process::Child) -> (Vec<u8>, Vec<u8>, Option<i32>) {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    use tokio::io::AsyncReadExt;
+
+    let mut stdout = Vec::with_capacity(OUTPUT_CAP_BYTES);
+    let mut stderr = Vec::with_capacity(OUTPUT_CAP_BYTES);
 
     if let Some(out) = child.stdout.take() {
-        let mut r = tokio::io::BufReader::new(out);
-        let _ = r.read_to_end(&mut stdout).await;
+        let mut reader = tokio::io::BufReader::new(out).take(OUTPUT_CAP_BYTES as u64);
+        let _ = reader.read_to_end(&mut stdout).await;
     }
     if let Some(err) = child.stderr.take() {
-        let mut r = tokio::io::BufReader::new(err);
-        let _ = r.read_to_end(&mut stderr).await;
+        let mut reader = tokio::io::BufReader::new(err).take(OUTPUT_CAP_BYTES as u64);
+        let _ = reader.read_to_end(&mut stderr).await;
     }
 
     let exit_code = child.wait().await.ok().and_then(|s| s.code());

@@ -2,12 +2,67 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use accelerator::Captain;
+use accelerator::policy::Captain;
 use machine::{
-    Action, Context, Environment, Inbox, Machine, Model, Phase, Policy, Purpose, Resources, Tool,
-    ToolResult,
+    Action, Context, Environment, Fragment, Inbox, Machine, Model, Phase, Policy, Purpose,
+    Resources, Tool, ToolResult,
 };
 use serde_json::json;
+
+// ── Regression tests for Captain::clone semantics ──
+
+async fn decide_with_captain(captain: &Captain, ctx: &Context, inbox: &Inbox) -> Action {
+    captain
+        .decide(
+            &Purpose::default(),
+            ctx,
+            &Environment::new("."),
+            &Resources::new(),
+            inbox,
+        )
+        .await
+}
+
+#[tokio::test]
+async fn fresh_captain_halts_on_first_call() {
+    let captain = Captain::new();
+    let ctx = Context::new();
+    let inbox = Inbox::new();
+
+    let action = decide_with_captain(&captain, &ctx, &inbox).await;
+    assert!(matches!(action, Action::Halt));
+}
+
+#[tokio::test]
+async fn cloned_captain_halts_on_first_call() {
+    let original = Captain::new();
+    let ctx = Context::new();
+    let inbox = Inbox::new();
+
+    let _ = decide_with_captain(&original, &ctx, &inbox).await;
+
+    let cloned = original.clone();
+    let action = decide_with_captain(&cloned, &ctx, &inbox).await;
+    assert!(
+        matches!(action, Action::Halt),
+        "cloned Captain should treat its first call as a fresh start"
+    );
+}
+
+#[tokio::test]
+async fn started_captain_dones_on_non_tool() {
+    let captain = Captain::new();
+    let mut ctx = Context::new();
+    let inbox = Inbox::new();
+
+    let _ = decide_with_captain(&captain, &ctx, &inbox).await;
+
+    ctx.append(Fragment::assistant("hello"));
+    let action = decide_with_captain(&captain, &ctx, &inbox).await;
+    assert!(matches!(action, Action::Done));
+}
+
+// ── CaptainResourceSetup integration tests ──
 
 #[derive(Clone)]
 struct CaptainSetupOnly;
