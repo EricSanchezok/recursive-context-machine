@@ -1,17 +1,20 @@
-import { Home as HomePage } from '@workbench/Home'
+import { useState, useEffect } from 'react'
+import { Home } from '@workbench/Home'
 import { TabBar } from '@workbench/TabBar'
 import { ToolBar } from '@workbench/ToolBar'
-import { getStore, subscribe } from '../stores/projectStore'
+import { getStore, subscribe, type ProjectStore } from '../stores/projectStore'
 
 export function App() {
-  const store = getStore()
+  const [store, setStore] = useState(getStore())
+
+  useEffect(() => subscribe((s) => setStore(s)), [])
 
   if (!store.projectPath) {
     return (
       <div className="w-screen h-screen flex flex-col">
         <TabBar />
         <div className="flex-1">
-          <HomePage />
+          <Home />
         </div>
       </div>
     )
@@ -26,7 +29,7 @@ export function App() {
           onAddAccelerator={() => {}}
           onAddFlux={() => {}}
           onAddCondition={() => {}}
-          onStartWire={() => {}}
+          onAddWire={() => {}}
           onRun={() => {}}
           isRunning={false}
         />
@@ -41,7 +44,7 @@ function Workspace() {
       className="w-full h-full flex items-center justify-center"
       style={{ backgroundColor: 'var(--workspace-bg)' }}
     >
-      <p className="text-gray-400 text-sm">Workspace Canvas</p>
+      <p className="text-muted-foreground text-sm">Workspace Canvas</p>
     </div>
   )
 }

@@ -1,6 +1,9 @@
 /* KEEP_IN_SYNC(fullscreen/resources/figmake/shadcn/globals.css) */
 
 :root {
+  --workspace-bg: #f8f9fa;
+  --node-flux-border: #fde68a;
+  --node-condition-border: #fdba74;
   --font-size: 16px;
   --background: #ffffff;
   --foreground: oklch(0.145 0 0);
@@ -42,6 +45,9 @@
 }
 
 .dark {
+  --workspace-bg: oklch(0.165 0 0);
+  --node-flux-border: #d4a017;
+  --node-condition-border: #d97706;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.145 0 0);

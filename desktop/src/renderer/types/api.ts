@@ -22,12 +22,6 @@ export interface ModelSummary {
   endpoint?: string
 }
 
-export interface PortOutput {
-  direction: 'in' | 'out'
-  name: string
-  channel: string
-}
-
 export interface RcmAst {
   name: string
   body: { Primitive: PrimitiveParse } | { Graph: GraphParse }

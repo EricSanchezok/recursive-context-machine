@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import type { NodeData } from '../../../types/graph'
 
 interface ConditionNodeProps {
@@ -6,6 +7,20 @@ interface ConditionNodeProps {
 }
 
 export function ConditionNode({ node, onMove }: ConditionNodeProps) {
+  const startDrag = useCallback(
+    (e: React.MouseEvent) => {
+      const startX = e.clientX - node.x
+      const startY = e.clientY - node.y
+      const onMouseMove = (ev: MouseEvent) => onMove(ev.clientX - startX, ev.clientY - startY)
+      const onMouseUp = () => {
+        document.removeEventListener('mousemove', onMouseMove)
+        document.removeEventListener('mouseup', onMouseUp)
+      }
+      document.addEventListener('mousemove', onMouseMove)
+      document.addEventListener('mouseup', onMouseUp)
+    },
+    [node.x, node.y, onMove],
+  )
   return (
     <div
       data-node
@@ -14,10 +29,10 @@ export function ConditionNode({ node, onMove }: ConditionNodeProps) {
     >
       <div
         className="rounded-2xl shadow-lg border"
-        style={{ backgroundColor: 'var(--card)', borderColor: 'var(--orange-300, #fdba74)' }}
+        style={{ backgroundColor: 'var(--card)', borderColor: 'var(--node-condition-border)' }}
       >
         <div
-          onMouseDown={(e) => { /* drag stub */ }}
+          onMouseDown={startDrag}
           className="px-4 py-3 cursor-move"
           style={{ borderColor: 'var(--border)' }}
         >

@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import type { NodeData } from '../../../types/graph'
 
 interface FluxNodeProps {
@@ -6,6 +7,20 @@ interface FluxNodeProps {
 }
 
 export function FluxNode({ node, onMove }: FluxNodeProps) {
+  const startDrag = useCallback(
+    (e: React.MouseEvent) => {
+      const startX = e.clientX - node.x
+      const startY = e.clientY - node.y
+      const onMouseMove = (ev: MouseEvent) => onMove(ev.clientX - startX, ev.clientY - startY)
+      const onMouseUp = () => {
+        document.removeEventListener('mousemove', onMouseMove)
+        document.removeEventListener('mouseup', onMouseUp)
+      }
+      document.addEventListener('mousemove', onMouseMove)
+      document.addEventListener('mouseup', onMouseUp)
+    },
+    [node.x, node.y, onMove],
+  )
   return (
     <div
       data-node
@@ -14,10 +29,10 @@ export function FluxNode({ node, onMove }: FluxNodeProps) {
     >
       <div
         className="rounded-2xl shadow-lg border"
-        style={{ backgroundColor: 'var(--card)', borderColor: 'var(--amber-200, #fde68a)' }}
+        style={{ backgroundColor: 'var(--card)', borderColor: 'var(--node-flux-border)' }}
       >
         <div
-          onMouseDown={(e) => { /* drag stub */ }}
+          onMouseDown={startDrag}
           className="px-4 py-3 cursor-move"
           style={{ borderColor: 'var(--border)' }}
         >

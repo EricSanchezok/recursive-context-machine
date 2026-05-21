@@ -46,7 +46,7 @@ export function accelerateHandlers(): void {
 
   ipcMain.handle(
     'accelerate:run',
-    (_event, filePath: string, onEvent: (line: string) => void): Promise<string> => {
+    (_event, filePath: string, onLine: (line: string) => void): Promise<string> => {
       return new Promise((resolve, reject) => {
         const child = spawn(ACCELERATE_BIN, ['run', filePath, '--stream'], {
           cwd: process.cwd(),
@@ -55,7 +55,7 @@ export function accelerateHandlers(): void {
         let stderr = ''
         child.stdout.on('data', (chunk: Buffer) => {
           for (const line of chunk.toString().split('\n').filter(Boolean)) {
-            onEvent(line)
+            onLine(line)
           }
         })
         child.stderr.on('data', (chunk: Buffer) => {
