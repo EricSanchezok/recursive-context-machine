@@ -25,7 +25,7 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
             .build()
             .expect("tokio runtime");
         runtime.block_on(async {
-            let output = accelerator.run().await;
+            let output = accelerator.run_with(accelerator::State::default()).await;
             let _ = ctx_tx.send(output.ctx);
         });
     });

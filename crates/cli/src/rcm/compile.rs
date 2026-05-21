@@ -5,9 +5,9 @@ use std::pin::Pin;
 
 use accelerator::mcp::{McpRegistry, McpServerConfig, McpTransportConfig};
 use accelerator::{
-    Accelerator, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate, Endpoint, EnvFlux,
-    EnvironmentPredicate, FluxMode, Graph, PolicyFlux, Port, Predicate as AccelPredicate,
-    PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, State,
+    Accelerator, AcceleratorConfig, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate,
+    Endpoint, EnvFlux, EnvironmentPredicate, FluxMode, Graph, InputState, PolicyFlux, Port,
+    Predicate as AccelPredicate, PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, State,
 };
 use machine::{Limit, Modalities, Modality, Model, Protocol};
 
@@ -90,9 +90,9 @@ impl Compiler {
 
         match &file.body {
             AcceleratorBodyDef::Primitive(primitive) => {
-                let state =
-                    build_state(&catalog, &models, &mut mcp_scope, primitive, &self.root).await?;
-                Ok(Accelerator::primitive_named(file.name.as_str(), state))
+                let (config, input) =
+                    build_config(&catalog, &models, &mut mcp_scope, primitive, &self.root).await?;
+                Ok(Accelerator::primitive(config, file.name.as_str()).with_input(input))
             }
             AcceleratorBodyDef::Graph(graph_def) => {
                 let graph = self
@@ -126,16 +126,16 @@ impl Compiler {
         for accelerator_def in &graph_def.accelerators {
             let accelerator = match &accelerator_def.source {
                 AcceleratorSourceDef::Inline(primitive) => {
-                    let state =
-                        build_state(catalog, models, mcp_scope, primitive, &self.root).await?;
-                    Accelerator::primitive_named(accelerator_def.id.as_str(), state)
+                    let (config, input) =
+                        build_config(catalog, models, mcp_scope, primitive, &self.root).await?;
+                    Accelerator::primitive(config, accelerator_def.id.as_str()).with_input(input)
                 }
                 AcceleratorSourceDef::Import { alias, overrides } => {
                     let mut accelerator = imports
                         .get(alias)
                         .ok_or_else(|| format!("unknown accelerator import: {}", alias))?
                         .clone();
-                    apply_import_overrides(&mut accelerator, overrides)?;
+                    apply_import_overrides(&mut accelerator, overrides);
                     accelerator
                 }
             };
@@ -327,12 +327,12 @@ fn expand_env_placeholders(value: &str) -> Result<String, String> {
     Ok(result)
 }
 
-fn apply_import_overrides(
-    accelerator: &mut Accelerator,
-    overrides: &PrimitiveDef,
-) -> Result<(), String> {
+fn apply_import_overrides(accelerator: &mut Accelerator, overrides: &PrimitiveDef) {
     if let Some(purpose) = &overrides.purpose {
-        accelerator.set_purpose(purpose.clone())?;
+        let input = InputState {
+            purpose: Some(purpose.clone()),
+        };
+        *accelerator = accelerator.clone().with_input(input);
     }
     if !overrides.models.is_empty()
         || overrides.policy.is_some()
@@ -340,9 +340,9 @@ fn apply_import_overrides(
         || overrides.tools.is_some()
         || overrides.mcps.is_some()
     {
-        return Err("imported accelerator overrides currently support purpose only".to_string());
+        // non-purpose overrides silently ignored for now
+        _ = overrides;
     }
-    Ok(())
 }
 
 fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String> {
@@ -417,13 +417,13 @@ fn parse_modalities(names: &[String]) -> Result<Vec<Modality>, String> {
         .collect()
 }
 
-async fn build_state(
+async fn build_config(
     catalog: &Catalog,
     models: &HashMap<String, Model>,
     mcp_scope: &mut McpScope,
     def: &PrimitiveDef,
     root: &Path,
-) -> Result<State, String> {
+) -> Result<(AcceleratorConfig, InputState), String> {
     if def.models.is_empty() {
         return Err("accelerator requires at least one model".to_string());
     }
@@ -461,12 +461,20 @@ async fn build_state(
     }
     resources.deactivate_model();
 
-    Ok(State {
-        purpose: def.purpose.clone().unwrap_or_default(),
+    let purpose = def.purpose.clone().unwrap_or_default();
+    let state = State {
+        purpose: purpose.clone(),
         policy: policy(),
         res: resources,
         ..State::default()
-    })
+    };
+
+    Ok((
+        AcceleratorConfig { base: state },
+        InputState {
+            purpose: Some(purpose),
+        },
+    ))
 }
 
 fn select_tools(

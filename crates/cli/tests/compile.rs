@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use accelerator::{Accelerator, AcceleratorBody};
+use accelerator::Accelerator;
 
 fn unique_path(name: &str, extension: &str) -> PathBuf {
     let nonce = std::time::SystemTime::now()
@@ -62,10 +62,7 @@ fn compile_result(source: &str) -> Result<Accelerator, String> {
 }
 
 fn primitive_state(accelerator: &Accelerator) -> &accelerator::State {
-    match accelerator.body() {
-        AcceleratorBody::Primitive(primitive) => primitive.state(),
-        AcceleratorBody::Composite(_) => panic!("expected primitive accelerator"),
-    }
+    accelerator.state().expect("expected primitive accelerator")
 }
 
 #[test]
