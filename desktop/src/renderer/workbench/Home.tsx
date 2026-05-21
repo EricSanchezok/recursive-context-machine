@@ -35,10 +35,8 @@ export function Home() {
         <div className="rcm-home-mark">
           <img src={holosLogo} alt="Holos" />
         </div>
-        <h1>Holos</h1>
-        <p className="rcm-home-subtitle">
-          Compose accelerators into recursive context graphs.
-        </p>
+        <h1>Holos Lab</h1>
+        <p className="rcm-home-subtitle">Recursive Context Machine</p>
         <button className="rcm-home-open" onClick={handleOpenProject} disabled={opening}>
           <FolderOpen size={18} />
           {opening ? 'Opening…' : 'Open Project'}
