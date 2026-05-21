@@ -1,6 +1,6 @@
-# RICA — Composable AI Pipelines
+# RCM — Composable AI Pipelines
 
-RICA (RCM Integrated Context Accelerator) is a tool for building composable AI pipelines using `.rcm` files. Each `.rcm` file exports an accelerator — either a primitive (single LLM call with tools) or a composite graph (multiple accelerators wired together).
+RCM (Recursive Context Machine) is a tool for building composable AI pipelines using `.rcm` files. Each `.rcm` file exports an accelerator — either a primitive (single LLM call with tools) or a composite graph (multiple accelerators wired together).
 
 ---
 
@@ -42,18 +42,28 @@ npm install
 ### Development
 
 ```bash
-cd desktop
-npm run dev
+# One command — builds the CLI, sets up desktop, and starts everything
+./dev.sh
 ```
 
-This starts both the Vite dev server and an Electron window. Hot reload is enabled.
+This script will:
+1. Build the `accelerate` CLI binary (`cargo build -p cli --bin accelerate`)
+2. Set `ACCELERATE_PATH` so Electron can find it
+3. Install desktop dependencies (only on first run)
+4. Start the Vite dev server and Electron window with hot reload
+
+You can also start the desktop app manually:
+```bash
+cargo build -p cli --bin accelerate
+ACCELERATE_PATH="$PWD/target/debug/accelerate" cd desktop && npm install && npm run dev
+```
 
 ### Environment
 
 The desktop app calls the `accelerate` CLI binary. Make sure `accelerate` is in your `PATH`:
 
 ```bash
-# From the RICA project root
+# From the RCM project root
 cargo build -p cli --bin accelerate
 export ACCELERATE_PATH="$PWD/target/debug/accelerate"
 ```
@@ -87,7 +97,7 @@ accelerate
 
 ```text
 project/
-├── rica.toml              Project metadata
+├── rcm.toml               Project metadata
 ├── rcm/                   .rcm files
 │   ├── weather.rcm
 │   └── pipeline.rcm
@@ -121,4 +131,4 @@ cd desktop && npx tsc --noEmit
 | `rcm/arxiv_search.rcm` | Built-in arxiv search tool |
 | `rcm/arxiv_pipeline.rcm` | Graph with `use` cross-file import + wire + output |
 | `prompts/reviewer.txt` | External prompt loaded via `inventory` |
-| `rica.toml` | Project metadata |
+| `rcm.toml` | Project metadata |

@@ -163,7 +163,7 @@ async fn execute_search(args: Value) -> Result<ToolResult, String> {
 
     let response = client
         .get(&url)
-        .header("User-Agent", "RICA/0.1 (mailto:research@rica.dev)")
+        .header("User-Agent", "RCM/0.1 (mailto:research@rcm.dev)")
         .send()
         .await
         .map_err(|e| format!("arXiv API request failed: {e}"))?;
@@ -289,7 +289,7 @@ async fn execute_download(args: Value, env: &Environment) -> Result<ToolResult, 
 
     let response = client
         .get(&pdf_url)
-        .header("User-Agent", "RICA/0.1")
+        .header("User-Agent", "RCM/0.1")
         .send()
         .await
         .map_err(|e| format!("arXiv download failed: {e}"))?;

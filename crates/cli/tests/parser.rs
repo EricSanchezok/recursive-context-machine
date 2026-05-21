@@ -64,7 +64,7 @@ fn parse_mcp_transports() {
         mcp remote {
             transport = http
             url = "https://example.com/mcp"
-            headers = { Authorization = env "DOCS_TOKEN" X_Project = "RICA" }
+            headers = { Authorization = env "DOCS_TOKEN" X_Project = "RCM" }
         }
         mcp legacy {
             transport = sse
@@ -105,7 +105,7 @@ fn parse_mcp_transports() {
             );
             assert_eq!(
                 headers.get("X_Project"),
-                Some(&McpValueDef::Literal("RICA".into()))
+                Some(&McpValueDef::Literal("RCM".into()))
             );
         }
         _ => panic!("expected http transport"),
