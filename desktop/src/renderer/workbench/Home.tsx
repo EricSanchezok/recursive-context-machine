@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FolderOpen } from 'lucide-react'
-import { openProject, getStore, subscribe, type ProjectStore } from '../stores/projectStore'
+import { openProject, subscribe, getStore, type ProjectStore } from '../stores/projectStore'
 
 export function Home() {
-  const [, setTick] = useState(0)
+  const [store, setStore] = useState(getStore())
+
+  useEffect(() => subscribe((s) => setStore(s)), [])
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-center bg-[var(--workspace-bg)]">
@@ -15,10 +17,7 @@ export function Home() {
           Composable AI Pipelines
         </p>
         <button
-          onClick={async () => {
-            await openProject()
-            setTick((t) => t + 1)
-          }}
+          onClick={openProject}
           className="flex items-center gap-2 px-6 py-3 rounded-xl text-white font-medium
                      transition-colors shadow-lg hover:shadow-xl"
           style={{ backgroundColor: 'var(--primary)' }}

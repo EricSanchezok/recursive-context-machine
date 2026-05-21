@@ -1,10 +1,10 @@
-import { Play, Plus, Network, GitMerge, GitFork, ArrowRight } from 'lucide-react'
+import { Play, Network, GitMerge, GitFork, ArrowRight } from 'lucide-react'
 
 interface ToolBarProps {
   onAddAccelerator: () => void
   onAddFlux: () => void
   onAddCondition: () => void
-  onStartWire: () => void
+  onAddWire: () => void
   onRun: () => void
   isRunning: boolean
 }
@@ -13,7 +13,7 @@ export function ToolBar({
   onAddAccelerator,
   onAddFlux,
   onAddCondition,
-  onStartWire,
+  onAddWire,
   onRun,
   isRunning,
 }: ToolBarProps) {
@@ -22,18 +22,16 @@ export function ToolBar({
       className="h-12 flex items-center px-3 gap-4 border-t"
       style={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)' }}
     >
-      {/* 左侧构建工具 */}
       <div className="flex items-center gap-1">
         <ToolButton icon={<Network size={16} />} label="Accelerator" onClick={onAddAccelerator} />
         <ToolButton icon={<GitMerge size={16} />} label="Flux" onClick={onAddFlux} />
         <ToolButton icon={<GitFork size={16} />} label="Condition" onClick={onAddCondition} />
         <div className="w-px h-6 bg-gray-300 mx-2" />
-        <ToolButton icon={<ArrowRight size={16} />} label="Wire" onClick={onStartWire} />
+        <ToolButton icon={<ArrowRight size={16} />} label="Wire" onClick={onAddWire} />
       </div>
 
       <div className="flex-1" />
 
-      {/* 右侧运行 */}
       <button
         onClick={onRun}
         disabled={isRunning}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Home, Plus, X } from 'lucide-react'
 import { getStore, addTab, closeTab, setActiveTab, renameTab, subscribe, type ProjectStore } from '../stores/projectStore'
 
@@ -7,9 +7,7 @@ export function TabBar() {
   const [editingTab, setEditingTab] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
 
-  useState(() =>
-    subscribe((s) => setStore(s))
-  )
+  useEffect(() => subscribe((s) => setStore(s)), [])
 
   if (!store.projectPath) return null
 

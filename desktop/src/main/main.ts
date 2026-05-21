@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { fileSystemHandlers } from './ipc-handlers/fileSystem'
 import { accelerateHandlers } from './ipc-handlers/accelerate'
