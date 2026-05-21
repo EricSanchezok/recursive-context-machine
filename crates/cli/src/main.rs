@@ -1,5 +1,5 @@
 use clap::Parser;
 
 fn main() -> anyhow::Result<()> {
-    cli::cmd::run(cli::Cli::parse())
+    cli::cmd::dispatch(cli::Cli::parse())
 }

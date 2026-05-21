@@ -7,7 +7,7 @@ use accelerator::{
     Accelerator, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph, ResFlux, State,
 };
 use common::DonePolicy;
-use machine::{Environment, Fragment, Inbox, Model, Policy, Purpose, Resources};
+use machine::{Environment, Fragment, Model, Policy, Purpose, Resources};
 
 use std::future::Future;
 use std::pin::Pin;

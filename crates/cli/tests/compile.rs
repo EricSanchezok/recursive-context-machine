@@ -1,20 +1,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use accelerator::Accelerator;
 
+static FILE_SEQ: AtomicU64 = AtomicU64::new(0);
+
 fn unique_path(name: &str, extension: &str) -> PathBuf {
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    std::env::temp_dir().join(format!(
-        "rica-{}-{}-{}.{}",
-        name,
-        std::process::id(),
-        nonce,
-        extension
-    ))
+    let seq = FILE_SEQ.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("rica-{}-{}.{}", name, seq, extension))
 }
 
 fn write_rcm(name: &str, source: &str) -> PathBuf {
