@@ -1,0 +1,6 @@
+[project]
+name = "RICA Research Assistant"
+description = "A demo project showcasing RICA's accelerator and graph capabilities"
+
+[env]
+DEEPSEEK_API_KEY = "REDACTED"
