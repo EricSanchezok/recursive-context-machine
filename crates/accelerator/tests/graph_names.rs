@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use accelerator::{
-    Accelerator, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph, ResFlux, State,
+    Accelerator, AcceleratorConfig, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph,
+    ResFlux, State,
 };
 use machine::{Action, Context, Environment, Fragment, Inbox, Model, Policy, Purpose, Resources};
 
@@ -53,14 +54,6 @@ impl Policy for BarrierPolicy {
     }
 }
 
-fn state_with_purpose(purpose: &str) -> State {
-    State {
-        purpose: purpose.to_string(),
-        policy: Box::new(DonePolicy),
-        ..State::default()
-    }
-}
-
 fn state_with_policy(purpose: &str, policy: Box<dyn Policy>) -> State {
     State {
         purpose: purpose.to_string(),
@@ -69,11 +62,35 @@ fn state_with_policy(purpose: &str, policy: Box<dyn Policy>) -> State {
     }
 }
 
-fn model(name: &str) -> Model {
-    Model {
-        name: name.to_string(),
-        ..Default::default()
-    }
+fn primitive(purpose: &str) -> Accelerator {
+    Accelerator::primitive(
+        AcceleratorConfig {
+            base: State {
+                purpose: purpose.to_string(),
+                policy: Box::new(DonePolicy),
+                ..State::default()
+            },
+        },
+        purpose,
+    )
+}
+
+fn primitive_with_preset(state: State) -> Accelerator {
+    Accelerator::primitive(
+        AcceleratorConfig {
+            base: state.clone(),
+        },
+        &state.purpose,
+    )
+}
+
+fn primitive_with_policy(purpose: &str, policy: Box<dyn Policy>) -> Accelerator {
+    Accelerator::primitive(
+        AcceleratorConfig {
+            base: state_with_policy(purpose, policy),
+        },
+        purpose,
+    )
 }
 
 fn run(accelerator: Accelerator) -> State {
@@ -81,12 +98,12 @@ fn run(accelerator: Accelerator) -> State {
         .enable_all()
         .build()
         .unwrap();
-    runtime.block_on(async { accelerator.run().await })
+    runtime.block_on(async { accelerator.run_with(State::default()).await })
 }
 
 #[test]
 fn primitive_accelerator_keeps_its_id_when_cloned() {
-    let accelerator = Accelerator::primitive_named("review", state_with_purpose("review"));
+    let accelerator = primitive("review");
     let clone = accelerator.clone();
 
     assert_eq!(accelerator.id(), clone.id());
@@ -95,11 +112,8 @@ fn primitive_accelerator_keeps_its_id_when_cloned() {
 #[test]
 fn graph_components_have_stable_component_ids() {
     let mut graph = Graph::new();
-    let first = graph.add_accelerator("first", Accelerator::primitive(state_with_purpose("first")));
-    let second = graph.add_accelerator(
-        "second",
-        Accelerator::primitive(state_with_purpose("second")),
-    );
+    let first = graph.add_accelerator("first", primitive("first"));
+    let second = graph.add_accelerator("second", primitive("second"));
 
     assert_ne!(first.id(), second.id());
 }
@@ -107,10 +121,7 @@ fn graph_components_have_stable_component_ids() {
 #[test]
 fn graph_and_component_names_are_independent() {
     let mut graph = Graph::named("pipeline");
-    graph.add_accelerator(
-        "pipeline",
-        Accelerator::primitive(state_with_purpose("leaf")),
-    );
+    graph.add_accelerator("pipeline", primitive("leaf"));
 
     assert_eq!(graph.name.as_str(), "pipeline");
 }
@@ -118,7 +129,7 @@ fn graph_and_component_names_are_independent() {
 #[test]
 fn flux_and_accelerator_are_distinct_component_kinds() {
     let mut graph = Graph::new();
-    graph.add_accelerator("agent", Accelerator::primitive(state_with_purpose("agent")));
+    graph.add_accelerator("agent", primitive("agent"));
     graph.add_flux("join", FluxMode::Context(ContextFlux::Append), 1);
 
     let accelerator = &graph.components()[0];
@@ -130,11 +141,15 @@ fn flux_and_accelerator_are_distinct_component_kinds() {
 
 #[test]
 fn composite_accelerator_routes_context_to_output() {
-    let mut source_state = state_with_purpose("source");
+    let mut source_state = State {
+        purpose: "source".into(),
+        policy: Box::new(DonePolicy),
+        ..State::default()
+    };
     source_state.ctx.append(Fragment::assistant("done"));
 
     let mut graph = Graph::new();
-    let source = graph.add_accelerator("source", Accelerator::primitive(source_state));
+    let source = graph.add_accelerator("source", primitive_with_preset(source_state.clone()));
     graph.wire(
         source.context(),
         Graph::output(Endpoint::State(Channel::Context)),
@@ -148,18 +163,32 @@ fn composite_accelerator_routes_context_to_output() {
 
 #[test]
 fn resource_flux_preserves_model_order_and_tool_pool() {
-    let mut first_state = state_with_purpose("first");
+    let mut first_state = State {
+        purpose: "first".into(),
+        policy: Box::new(DonePolicy),
+        ..State::default()
+    };
     first_state.res = Resources::named("first")
-        .with_model(model("fast"))
+        .with_model(Model {
+            name: "fast".into(),
+            ..Default::default()
+        })
         .with_tool(Arc::new(accelerator::tools::FindTool));
-    let mut second_state = state_with_purpose("second");
+    let mut second_state = State {
+        purpose: "second".into(),
+        policy: Box::new(DonePolicy),
+        ..State::default()
+    };
     second_state.res = Resources::named("second")
-        .with_model(model("careful"))
+        .with_model(Model {
+            name: "careful".into(),
+            ..Default::default()
+        })
         .with_tool(Arc::new(accelerator::tools::ShellTool));
 
     let mut graph = Graph::new();
-    let first = graph.add_accelerator("first", Accelerator::primitive(first_state));
-    let second = graph.add_accelerator("second", Accelerator::primitive(second_state));
+    let first = graph.add_accelerator("first", primitive_with_preset(first_state));
+    let second = graph.add_accelerator("second", primitive_with_preset(second_state));
     let join = graph.add_flux("join", FluxMode::Resources(ResFlux::Merge), 2);
 
     graph.wire(first.resources(), join.slot(0, Channel::Resources));
@@ -182,19 +211,16 @@ fn independent_accelerators_run_in_parallel() {
     let mut graph = Graph::new();
     graph.add_accelerator(
         "first",
-        Accelerator::primitive(state_with_policy(
+        primitive_with_policy(
             "first",
             Box::new(BarrierPolicy {
                 barrier: barrier.clone(),
             }),
-        )),
+        ),
     );
     graph.add_accelerator(
         "second",
-        Accelerator::primitive(state_with_policy(
-            "second",
-            Box::new(BarrierPolicy { barrier }),
-        )),
+        primitive_with_policy("second", Box::new(BarrierPolicy { barrier })),
     );
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -205,7 +231,7 @@ fn independent_accelerators_run_in_parallel() {
     let completed = runtime.block_on(async {
         tokio::time::timeout(
             Duration::from_millis(200),
-            Accelerator::composite_named("parallel", graph).run(),
+            Accelerator::composite_named("parallel", graph).run_with(State::default()),
         )
         .await
         .is_ok()
@@ -216,14 +242,22 @@ fn independent_accelerators_run_in_parallel() {
 
 #[test]
 fn downstream_waits_for_parallel_sources() {
-    let mut first_state = state_with_purpose("first");
+    let mut first_state = State {
+        purpose: "first".into(),
+        policy: Box::new(DonePolicy),
+        ..State::default()
+    };
     first_state.ctx.append(Fragment::assistant("first"));
-    let mut second_state = state_with_purpose("second");
+    let mut second_state = State {
+        purpose: "second".into(),
+        policy: Box::new(DonePolicy),
+        ..State::default()
+    };
     second_state.ctx.append(Fragment::assistant("second"));
 
     let mut graph = Graph::new();
-    let first = graph.add_accelerator("first", Accelerator::primitive(first_state));
-    let second = graph.add_accelerator("second", Accelerator::primitive(second_state));
+    let first = graph.add_accelerator("first", primitive_with_preset(first_state));
+    let second = graph.add_accelerator("second", primitive_with_preset(second_state));
     let join = graph.add_flux("join", FluxMode::Context(ContextFlux::Append), 2);
 
     graph.wire(first.context(), join.slot(0, Channel::Context));
