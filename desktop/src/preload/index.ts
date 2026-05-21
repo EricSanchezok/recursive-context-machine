@@ -6,12 +6,13 @@ const api = {
   writeFile: (filePath: string, content: string): Promise<void> =>
     ipcRenderer.invoke('fs:writeFile', filePath, content),
   listDir: (dirPath: string): Promise<FileEntry[]> => ipcRenderer.invoke('fs:listDir', dirPath),
-  inventory: (projectPath: string): Promise<string> =>
-    ipcRenderer.invoke('accelerate:inventory', projectPath),
-  parse: (filePath: string): Promise<string> =>
-    ipcRenderer.invoke('accelerate:parse', filePath),
-  runStream: (filePath: string, onLine: (line: string) => void): Promise<string> =>
-    ipcRenderer.invoke('accelerate:run', filePath, onLine),
+  inventory: (projectPath: string): Promise<string> => ipcRenderer.invoke('accelerate:inventory', projectPath),
+  onRunLine: (callback: (line: string) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, line: string) => callback(line)
+    ipcRenderer.on('accelerate:run-line', handler)
+    return () => ipcRenderer.removeListener('accelerate:run-line', handler)
+  },
+  runStream: (filePath: string): Promise<string> => ipcRenderer.invoke('accelerate:run', filePath),
 }
 
 contextBridge.exposeInMainWorld('electronAPI', api)
