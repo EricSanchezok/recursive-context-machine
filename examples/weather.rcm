@@ -1,4 +1,4 @@
-name = "Repository Readonly Review"
+name = "Weather"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,8 +9,8 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "只读检查当前仓库的根目录结构和最近的 Git 状态，简要说明这个项目看起来在做什么。不要修改任何文件，不要运行会写入文件的命令。"
+    purpose = "你现在是一个天气预报助手。用中文查询杭州今天的天气，然后以友好的语气告诉用户今天要不要带伞。使用 shell 工具调用 curl wttr.in 获取天气数据。"
     models = ["deepseek-v4-flash"]
     policy = "captain"
-    tools = ["shell", "fs", "find"]
+    tools = ["shell"]
 }
