@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Home, Plus, X } from 'lucide-react'
-import { getStore, addTab, closeTab, setActiveTab, renameTab, subscribe, type ProjectStore } from '../stores/projectStore'
+import { Plus, X } from 'lucide-react'
+import { getStore, addTab, closeTab, setActiveTab, renameTab, subscribe } from '../stores/projectStore'
 
 export function TabBar() {
   const [store, setStore] = useState(getStore())
@@ -12,78 +12,70 @@ export function TabBar() {
   if (!store.projectPath) return null
 
   return (
-    <div
-      className="h-12 flex items-center px-2 gap-2 border-b"
-      style={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)' }}
-    >
-      <HomeButton />
-      <div className="flex-1 flex items-center gap-1 overflow-x-auto">
-        {store.tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className={`
-              group flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer
-              transition-all min-w-[120px] max-w-[200px]
-              ${store.activeTab === tab.id
-                ? 'bg-purple-100 text-purple-900'
-                : 'hover:bg-gray-100 text-gray-700'
-              }
-            `}
-            onClick={() => setActiveTab(tab.id)}
-            onDoubleClick={() => {
-              setEditingTab(tab.id)
-              setEditName(tab.name)
-            }}
-          >
-            {editingTab === tab.id ? (
-              <input
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                onBlur={() => {
-                  renameTab(tab.id, editName)
-                  setEditingTab(null)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    renameTab(tab.id, editName)
-                    setEditingTab(null)
-                  }
-                }}
-                className="flex-1 bg-transparent outline-none text-sm"
-                autoFocus
-              />
-            ) : (
-              <span className="flex-1 text-sm truncate">{tab.name}</span>
-            )}
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                closeTab(tab.id)
+    <div style={{
+      height: 48,
+      display: 'flex',
+      alignItems: 'center',
+      padding: '0 8px',
+      gap: 8,
+      borderBottom: '1px solid var(--border)',
+      backgroundColor: 'var(--card)',
+    }}>
+      <div style={{ display: 'flex', flex: 1, alignItems: 'center', gap: 4, overflow: 'auto' }}>
+        {store.tabs.map((tab) => {
+          const active = store.activeTab === tab.id
+          return (
+            <div
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              onDoubleClick={() => { setEditingTab(tab.id); setEditName(tab.name) }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 12px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                minWidth: 120,
+                maxWidth: 200,
+                backgroundColor: active ? 'var(--primary)' : 'transparent',
+                color: active ? 'var(--primary-foreground)' : 'var(--foreground)',
+                fontWeight: active ? 600 : 400,
               }}
-              className="opacity-0 group-hover:opacity-100 hover:bg-white/50 rounded p-0.5 transition-opacity"
             >
-              <X size={14} />
-            </button>
-          </div>
-        ))}
+              {editingTab === tab.id ? (
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onBlur={() => { renameTab(tab.id, editName); setEditingTab(null) }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { renameTab(tab.id, editName); setEditingTab(null) }
+                  }}
+                  style={{ flex: 1, background: 'transparent', outline: 'none', border: 'none', fontSize: 13 }}
+                  autoFocus
+                />
+              ) : (
+                <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {tab.name}
+                </span>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); closeTab(tab.id) }}
+                style={{ opacity: 0.4, background: 'none', border: 'none', cursor: 'pointer', padding: 2, borderRadius: 4 }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )
+        })}
         <button
-          onClick={() =>
-            addTab({ id: crypto.randomUUID(), name: 'untitled.rcm' })
-          }
-          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          onClick={() => addTab({ id: crypto.randomUUID(), name: 'untitled.rcm' })}
+          style={{ padding: 8, background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8 }}
         >
-          <Plus size={18} className="text-gray-600" />
+          <Plus size={18} style={{ color: 'var(--muted-foreground)' }} />
         </button>
       </div>
     </div>
-  )
-}
-
-function HomeButton() {
-  return (
-    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Home">
-      <Home size={20} className="text-gray-600" />
-    </button>
   )
 }
