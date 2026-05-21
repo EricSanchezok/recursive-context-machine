@@ -5,9 +5,9 @@ use std::pin::Pin;
 
 use accelerator::mcp::{McpRegistry, McpServerConfig, McpTransportConfig};
 use accelerator::{
-    Accelerator, AcceleratorConfig, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate,
-    Endpoint, EnvFlux, EnvironmentPredicate, FluxMode, Graph, PolicyFlux, Port,
-    Predicate as AccelPredicate, PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, State,
+    Accelerator, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate, Endpoint, EnvFlux,
+    EnvironmentPredicate, FluxMode, Graph, PolicyFlux, Port, Predicate as AccelPredicate,
+    PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, State,
 };
 use machine::{Limit, Modalities, Modality, Model, Protocol};
 
@@ -90,9 +90,9 @@ impl Compiler {
 
         match &file.body {
             AcceleratorBodyDef::Primitive(primitive) => {
-                let config =
-                    build_config(&catalog, &models, &mut mcp_scope, primitive, &self.root).await?;
-                Ok(Accelerator::primitive(config, file.name.as_str()))
+                let state =
+                    build_state(&catalog, &models, &mut mcp_scope, primitive, &self.root).await?;
+                Ok(Accelerator::primitive(state, file.name.as_str()))
             }
             AcceleratorBodyDef::Graph(graph_def) => {
                 let graph = self
@@ -126,9 +126,9 @@ impl Compiler {
         for accelerator_def in &graph_def.accelerators {
             let accelerator = match &accelerator_def.source {
                 AcceleratorSourceDef::Inline(primitive) => {
-                    let config =
-                        build_config(catalog, models, mcp_scope, primitive, &self.root).await?;
-                    Accelerator::primitive(config, accelerator_def.id.as_str())
+                    let state =
+                        build_state(catalog, models, mcp_scope, primitive, &self.root).await?;
+                    Accelerator::primitive(state, accelerator_def.id.as_str())
                 }
                 AcceleratorSourceDef::Import { alias, overrides } => {
                     let mut accelerator = imports
@@ -143,7 +143,7 @@ impl Compiler {
             };
             let component = graph.add_accelerator(accelerator_def.id.as_str(), accelerator);
             insert_symbol(&mut symbols, accelerator_def.id.as_str(), component)?;
-            component_kinds.insert(accelerator_def.id.clone(), ComponentKindDef::Accelerator);
+            component_kinds.insert(accelerator_def.id.clone(), ComponentTag::Accelerator);
         }
 
         for flux_def in &graph_def.fluxes {
@@ -163,7 +163,7 @@ impl Compiler {
             insert_symbol(&mut symbols, flux_def.id.as_str(), component)?;
             component_kinds.insert(
                 flux_def.id.clone(),
-                ComponentKindDef::Flux {
+                ComponentTag::Flux {
                     channel,
                     arity: flux_def.arity,
                 },
@@ -180,7 +180,7 @@ impl Compiler {
                 predicate,
             );
             insert_symbol(&mut symbols, condition_def.id.as_str(), component)?;
-            component_kinds.insert(condition_def.id.clone(), ComponentKindDef::Condition);
+            component_kinds.insert(condition_def.id.clone(), ComponentTag::Condition);
         }
 
         let mut flux_slots = flux_slot_map(graph_def);
@@ -199,7 +199,7 @@ impl Compiler {
 }
 
 #[derive(Clone, Copy)]
-enum ComponentKindDef {
+enum ComponentTag {
     Accelerator,
     Flux { channel: Channel, arity: usize },
     Condition,
@@ -401,13 +401,13 @@ fn parse_modalities(names: &[String]) -> Result<Vec<Modality>, String> {
         .collect()
 }
 
-async fn build_config(
+async fn build_state(
     catalog: &Catalog,
     models: &HashMap<String, Model>,
     mcp_scope: &mut McpScope,
     def: &PrimitiveDef,
     root: &Path,
-) -> Result<AcceleratorConfig, String> {
+) -> Result<State, String> {
     if def.models.is_empty() {
         return Err("accelerator requires at least one model".to_string());
     }
@@ -445,15 +445,12 @@ async fn build_config(
     }
     resources.deactivate_model();
 
-    let purpose = def.purpose.clone().unwrap_or_default();
-    let state = State {
-        purpose: purpose.clone(),
+    Ok(State {
+        purpose: def.purpose.clone().unwrap_or_default(),
         policy: policy(),
         res: resources,
         ..State::default()
-    };
-
-    Ok(AcceleratorConfig { base: state })
+    })
 }
 
 fn select_tools(
@@ -507,7 +504,7 @@ fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {
 fn resolve_port(
     def: &PortDef,
     symbols: &HashMap<String, ComponentRef>,
-    kinds: &HashMap<String, ComponentKindDef>,
+    kinds: &HashMap<String, ComponentTag>,
 ) -> Result<Port, String> {
     match &def.owner {
         PortOwnerDef::Input => Ok(boundary_port(true, &def.endpoint)?),
@@ -544,29 +541,29 @@ fn boundary_port(is_input: bool, endpoint: &EndpointDef) -> Result<Port, String>
 
 fn component_port(
     component: &ComponentRef,
-    kind: ComponentKindDef,
+    kind: ComponentTag,
     endpoint: &EndpointDef,
 ) -> Result<Port, String> {
     match (kind, endpoint) {
-        (ComponentKindDef::Accelerator, EndpointDef::Trigger) => Ok(component.trigger()),
-        (ComponentKindDef::Accelerator, EndpointDef::Done) => Ok(component.done()),
-        (ComponentKindDef::Accelerator, EndpointDef::State(channel)) => {
+        (ComponentTag::Accelerator, EndpointDef::Trigger) => Ok(component.trigger()),
+        (ComponentTag::Accelerator, EndpointDef::Done) => Ok(component.done()),
+        (ComponentTag::Accelerator, EndpointDef::State(channel)) => {
             Ok(component.port_state(parse_channel(channel)?))
         }
-        (ComponentKindDef::Flux { channel, .. }, EndpointDef::FluxOut) => {
+        (ComponentTag::Flux { channel, .. }, EndpointDef::FluxOut) => {
             Ok(component.flux_out(channel))
         }
-        (ComponentKindDef::Flux { channel, arity }, EndpointDef::FluxSlot(slot)) => {
+        (ComponentTag::Flux { channel, arity }, EndpointDef::FluxSlot(slot)) => {
             if *slot >= arity {
                 return Err(format!("flux slot {} is out of range", slot));
             }
             Ok(component.slot(*slot, channel))
         }
-        (ComponentKindDef::Condition, EndpointDef::Trigger) => Ok(component.condition_in()),
-        (ComponentKindDef::Condition, EndpointDef::ConditionTrue) => {
+        (ComponentTag::Condition, EndpointDef::Trigger) => Ok(component.condition_in()),
+        (ComponentTag::Condition, EndpointDef::ConditionTrue) => {
             Ok(component.condition_out(accelerator::ConditionBranch::True))
         }
-        (ComponentKindDef::Condition, EndpointDef::ConditionFalse) => {
+        (ComponentTag::Condition, EndpointDef::ConditionFalse) => {
             Ok(component.condition_out(accelerator::ConditionBranch::False))
         }
         _ => Err("endpoint does not match component type".to_string()),

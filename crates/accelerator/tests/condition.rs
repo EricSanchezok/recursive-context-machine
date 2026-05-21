@@ -1,32 +1,11 @@
-use std::future::Future;
-use std::pin::Pin;
+mod common;
 
 use accelerator::{
-    Accelerator, AcceleratorConfig, Channel, ConditionBranch, ContextFlux, ContextPredicate,
-    Endpoint, EnvironmentPredicate, FluxMode, Graph, Predicate, PurposePredicate,
-    ResourcesPredicate, State,
+    Accelerator, Channel, ConditionBranch, ContextFlux, ContextPredicate, Endpoint,
+    EnvironmentPredicate, FluxMode, Graph, Predicate, PurposePredicate, ResourcesPredicate, State,
 };
-use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources};
-
-#[derive(Clone)]
-struct DonePolicy;
-
-impl Policy for DonePolicy {
-    fn clone_box(&self) -> Box<dyn Policy> {
-        Box::new(self.clone())
-    }
-
-    fn decide<'a>(
-        &'a self,
-        _purpose: &'a Purpose,
-        _ctx: &'a Context,
-        _env: &'a Environment,
-        _resources: &'a Resources,
-        _inbox: &'a Inbox,
-    ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
-        Box::pin(async { Action::Done })
-    }
-}
+use common::DonePolicy;
+use machine::{Environment, Fragment};
 
 fn state_with_purpose(purpose: &str) -> State {
     State {
@@ -46,26 +25,8 @@ fn state_with_context(text: &str) -> State {
     state
 }
 
-fn primitive(purpose: &str) -> Accelerator {
-    Accelerator::primitive(
-        AcceleratorConfig {
-            base: State {
-                purpose: purpose.to_string(),
-                policy: Box::new(DonePolicy),
-                ..State::default()
-            },
-        },
-        purpose,
-    )
-}
-
 fn primitive_with_context(text: &str) -> Accelerator {
-    Accelerator::primitive(
-        AcceleratorConfig {
-            base: state_with_context(text),
-        },
-        text,
-    )
+    Accelerator::primitive(state_with_context(text), text)
 }
 
 fn run(graph: Graph) -> State {
@@ -112,9 +73,9 @@ fn context_and_resources_predicates_cover_common_cases() {
 #[test]
 fn condition_routes_true_branch() {
     let mut graph = Graph::new();
-    let source = graph.add_accelerator("source", primitive("done"));
-    let true_target = graph.add_accelerator("true", primitive("true-target"));
-    let false_target = graph.add_accelerator("false", primitive("false-target"));
+    let source = graph.add_accelerator("source", common::primitive("done"));
+    let true_target = graph.add_accelerator("true", common::primitive("true-target"));
+    let false_target = graph.add_accelerator("false", common::primitive("false-target"));
     let condition = graph.add_condition(
         "route",
         Predicate::Purpose(PurposePredicate::Contains("done".into())),
@@ -145,9 +106,9 @@ fn condition_routes_true_branch() {
 #[test]
 fn condition_routes_false_branch() {
     let mut graph = Graph::new();
-    let source = graph.add_accelerator("source", primitive("retry"));
-    let true_target = graph.add_accelerator("true", primitive("true-target"));
-    let false_target = graph.add_accelerator("false", primitive("false-target"));
+    let source = graph.add_accelerator("source", common::primitive("retry"));
+    let true_target = graph.add_accelerator("true", common::primitive("true-target"));
+    let false_target = graph.add_accelerator("false", common::primitive("false-target"));
     let condition = graph.add_condition(
         "route",
         Predicate::Purpose(PurposePredicate::Contains("done".into())),
@@ -178,10 +139,10 @@ fn condition_routes_false_branch() {
 #[test]
 fn selected_branch_can_rejoin_after_unselected_branch_is_skipped() {
     let mut graph = Graph::new();
-    let source = graph.add_accelerator("source", primitive("done"));
-    let true_target = graph.add_accelerator("true", primitive("true-target"));
-    let false_target = graph.add_accelerator("false", primitive("false-target"));
-    let join = graph.add_accelerator("join", primitive("joined"));
+    let source = graph.add_accelerator("source", common::primitive("done"));
+    let true_target = graph.add_accelerator("true", common::primitive("true-target"));
+    let false_target = graph.add_accelerator("false", common::primitive("false-target"));
+    let join = graph.add_accelerator("join", common::primitive("joined"));
     let condition = graph.add_condition(
         "route",
         Predicate::Purpose(PurposePredicate::Contains("done".into())),
@@ -210,7 +171,7 @@ fn selected_branch_can_rejoin_after_unselected_branch_is_skipped() {
 #[test]
 fn skipped_branch_contributes_empty_flux_slot() {
     let mut graph = Graph::new();
-    let source = graph.add_accelerator("source", primitive("done"));
+    let source = graph.add_accelerator("source", common::primitive("done"));
     let true_target = graph.add_accelerator("true", primitive_with_context("true"));
     let false_target = graph.add_accelerator("false", primitive_with_context("false"));
     let join = graph.add_flux("join", FluxMode::Context(ContextFlux::Append), 2);
