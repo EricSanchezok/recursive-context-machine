@@ -2,7 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 
 use machine::{
-    Action, Content, Context, Environment, Inbox, Phase, Policy, Purpose, Resources, Role,
+    Action, Content, Context, Environment, Inbox, Phase, PhaseOutcome, Policy, Purpose, Resources,
+    Role,
 };
 use tracing::{trace, warn};
 
@@ -49,6 +50,43 @@ impl Captain {
     }
 }
 
+#[derive(Clone)]
+struct CaptainResourceSetup;
+
+impl Phase for CaptainResourceSetup {
+    fn clone_box(&self) -> Box<dyn Phase> {
+        Box::new(Self)
+    }
+
+    fn name(&self) -> &str {
+        "captain_resources"
+    }
+
+    fn decide(
+        &self,
+        _purpose: &Purpose,
+        _ctx: &Context,
+        _env: &Environment,
+        resources: &Resources,
+    ) -> PhaseOutcome {
+        if resources.active_model.is_empty() {
+            if let Some(model_name) = resources.model_order.first() {
+                return PhaseOutcome::Action(Action::Model(model_name.clone()));
+            }
+        }
+
+        if let Some(tool_name) = resources
+            .tools
+            .keys()
+            .find(|tool_name| !resources.active_tools.contains(*tool_name))
+        {
+            return PhaseOutcome::Action(Action::Activate(tool_name.clone()));
+        }
+
+        PhaseOutcome::Done
+    }
+}
+
 impl Policy for Captain {
     fn clone_box(&self) -> Box<dyn Policy> {
         Box::new(self.clone())
@@ -63,6 +101,7 @@ impl Policy for Captain {
             Box::new(Bootstrap::new("captain")),
             Box::new(Instructions),
             Box::new(phases::Purpose),
+            Box::new(CaptainResourceSetup),
         ]
     }
 

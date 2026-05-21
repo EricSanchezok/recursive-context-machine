@@ -10,6 +10,8 @@ pub(crate) enum Token {
     Dot,
     Semicolon,
     Equals,
+    LParen,
+    RParen,
     Eof,
 }
 
@@ -29,13 +31,6 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
 
         // Line comments — skipped entirely.
         if ch == '/' && pos + 1 < chars.len() && chars[pos + 1] == '/' {
-            while pos < chars.len() && chars[pos] != '\n' {
-                pos += 1;
-            }
-            continue;
-        }
-
-        if ch == ';' && pos + 1 < chars.len() && chars[pos + 1] == ';' {
             while pos < chars.len() && chars[pos] != '\n' {
                 pos += 1;
             }
@@ -86,6 +81,16 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
         }
         if ch == ';' {
             tokens.push(Token::Semicolon);
+            pos += 1;
+            continue;
+        }
+        if ch == '(' {
+            tokens.push(Token::LParen);
+            pos += 1;
+            continue;
+        }
+        if ch == ')' {
+            tokens.push(Token::RParen);
             pos += 1;
             continue;
         }

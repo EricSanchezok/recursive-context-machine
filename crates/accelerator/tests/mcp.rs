@@ -1,73 +1,75 @@
-use accelerator::mcp::McpServerConfig;
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use accelerator::mcp::{McpServerConfig, McpTransportConfig};
 
 #[test]
-fn parse_stdio_simple_command() {
-    let cfg = McpServerConfig::parse("gh=npx -y @modelcontextprotocol/server-github").unwrap();
-    assert_eq!(cfg.label, "gh");
-    assert_eq!(cfg.command.as_deref(), Some("npx"));
-    assert_eq!(cfg.args, vec!["-y", "@modelcontextprotocol/server-github"]);
-    assert!(cfg.url.is_none());
-    assert!(cfg.headers.is_empty());
+fn stdio_config_keeps_process_parameters() {
+    let mut env = HashMap::new();
+    env.insert("API_KEY".to_string(), "secret".to_string());
+    let config = McpServerConfig {
+        label: "docs".into(),
+        transport: McpTransportConfig::Stdio {
+            command: "npx".into(),
+            args: vec!["-y".into(), "@example/server".into()],
+            env,
+            cwd: Some(PathBuf::from(".")),
+        },
+    };
+
+    match config.transport {
+        McpTransportConfig::Stdio {
+            command,
+            args,
+            env,
+            cwd,
+        } => {
+            assert_eq!(command, "npx");
+            assert_eq!(args, vec!["-y", "@example/server"]);
+            assert_eq!(env.get("API_KEY").map(String::as_str), Some("secret"));
+            assert_eq!(cwd, Some(PathBuf::from(".")));
+        }
+        _ => panic!("expected stdio config"),
+    }
 }
 
 #[test]
-fn parse_stdio_no_args() {
-    let cfg = McpServerConfig::parse("myapp=./my-server").unwrap();
-    assert_eq!(cfg.label, "myapp");
-    assert_eq!(cfg.command.as_deref(), Some("./my-server"));
-    assert!(cfg.args.is_empty());
-    assert!(cfg.url.is_none());
+fn http_config_keeps_endpoint_and_headers() {
+    let config = McpServerConfig {
+        label: "remote".into(),
+        transport: McpTransportConfig::Http {
+            url: "https://example.com/mcp".into(),
+            headers: vec![
+                ("Authorization".into(), "Bearer token".into()),
+                ("X-Project".into(), "RICA".into()),
+            ],
+        },
+    };
+
+    match config.transport {
+        McpTransportConfig::Http { url, headers } => {
+            assert_eq!(url, "https://example.com/mcp");
+            assert_eq!(headers.len(), 2);
+        }
+        _ => panic!("expected http config"),
+    }
 }
 
 #[test]
-fn parse_http_bare_url() {
-    let cfg = McpServerConfig::parse("search=https://api.anysearch.com/mcp").unwrap();
-    assert_eq!(cfg.label, "search");
-    assert!(cfg.command.is_none());
-    assert_eq!(cfg.url.as_deref(), Some("https://api.anysearch.com/mcp"));
-    assert!(cfg.headers.is_empty());
-}
+fn sse_config_marks_legacy_transport_explicitly() {
+    let config = McpServerConfig {
+        label: "legacy".into(),
+        transport: McpTransportConfig::Sse {
+            url: "https://example.com/sse".into(),
+            headers: Vec::new(),
+        },
+    };
 
-#[test]
-fn parse_http_with_headers() {
-    let cfg = McpServerConfig::parse(
-        "search=https://api.anysearch.com/mcp|Authorization:Bearer tok123|X-Custom:val",
-    )
-    .unwrap();
-    assert_eq!(cfg.label, "search");
-    assert_eq!(cfg.url.as_deref(), Some("https://api.anysearch.com/mcp"));
-    assert_eq!(
-        cfg.headers,
-        vec![
-            ("Authorization".into(), "Bearer tok123".into()),
-            ("X-Custom".into(), "val".into()),
-        ]
-    );
-}
-
-#[test]
-fn parse_http_with_colon_in_value() {
-    let cfg = McpServerConfig::parse(
-        "search=https://api.anysearch.com/mcp|Authorization:Bearer tok:123:456",
-    )
-    .unwrap();
-    assert_eq!(
-        cfg.headers[0],
-        ("Authorization".into(), "Bearer tok:123:456".into())
-    );
-}
-
-#[test]
-fn parse_missing_label() {
-    assert!(McpServerConfig::parse("=npx foo").is_err());
-}
-
-#[test]
-fn parse_missing_value() {
-    assert!(McpServerConfig::parse("myapp=").is_err());
-}
-
-#[test]
-fn parse_no_equals() {
-    assert!(McpServerConfig::parse("justatext").is_err());
+    match config.transport {
+        McpTransportConfig::Sse { url, headers } => {
+            assert_eq!(url, "https://example.com/sse");
+            assert!(headers.is_empty());
+        }
+        _ => panic!("expected sse config"),
+    }
 }

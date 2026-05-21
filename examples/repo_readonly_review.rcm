@@ -1,0 +1,16 @@
+name = "Repository Readonly Review"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+accelerator {
+    purpose = "只读检查当前仓库的根目录结构和最近的 Git 状态，简要说明这个项目看起来在做什么。不要修改任何文件，不要运行会写入文件的命令。"
+    models = ["deepseek-v4-flash"]
+    policy = "captain"
+    tools = ["shell", "fs", "find"]
+}
