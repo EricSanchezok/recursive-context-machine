@@ -1,6 +1,7 @@
 use cli::rcm;
 use cli::rcm::{
-    AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, PortOwnerDef, PromptSourceDef,
+    AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, McpTransportDef, McpValueDef,
+    PortOwnerDef, PromptSourceDef,
 };
 
 #[test]
@@ -21,6 +22,7 @@ fn parse_primitive_accelerator_file() {
                 review = "Review carefully"
             }
             tools = ["fs", "shell"]
+            mcps = ["docs"]
         }
     "#;
 
@@ -33,6 +35,7 @@ fn parse_primitive_accelerator_file() {
             assert_eq!(primitive.purpose.as_deref(), Some("review code"));
             assert_eq!(primitive.models, vec!["gpt"]);
             assert_eq!(primitive.tools, Some(vec!["fs".into(), "shell".into()]));
+            assert_eq!(primitive.mcps, Some(vec!["docs".into()]));
             let prompts = primitive.prompts.as_ref().unwrap();
             assert_eq!(
                 prompts.get("captain"),
@@ -45,6 +48,72 @@ fn parse_primitive_accelerator_file() {
         }
         AcceleratorBodyDef::Graph(_) => panic!("expected primitive accelerator"),
     }
+}
+
+#[test]
+fn parse_mcp_transports() {
+    let source = r#"
+        name = "mcp demo"
+        mcp docs {
+            transport = stdio
+            command = "npx"
+            args = ["-y", "@example/server"]
+            env = { API_KEY = env "DOCS_API_KEY" }
+            cwd = "."
+        }
+        mcp remote {
+            transport = http
+            url = "https://example.com/mcp"
+            headers = { Authorization = env "DOCS_TOKEN" X_Project = "RICA" }
+        }
+        mcp legacy {
+            transport = sse
+            url = "https://example.com/sse"
+        }
+        accelerator {
+            models = ["gpt"]
+            mcps = ["docs", "remote"]
+        }
+    "#;
+
+    let file = rcm::parse(source).unwrap();
+
+    assert_eq!(file.mcps.len(), 3);
+    match &file.mcps[0].transport {
+        McpTransportDef::Stdio {
+            command,
+            args,
+            env,
+            cwd,
+        } => {
+            assert_eq!(command, "npx");
+            assert_eq!(args, &vec!["-y".to_string(), "@example/server".to_string()]);
+            assert_eq!(
+                env.get("API_KEY"),
+                Some(&McpValueDef::Env("DOCS_API_KEY".into()))
+            );
+            assert_eq!(cwd.as_deref(), Some("."));
+        }
+        _ => panic!("expected stdio transport"),
+    }
+    match &file.mcps[1].transport {
+        McpTransportDef::Http { url, headers } => {
+            assert_eq!(url, "https://example.com/mcp");
+            assert_eq!(
+                headers.get("Authorization"),
+                Some(&McpValueDef::Env("DOCS_TOKEN".into()))
+            );
+            assert_eq!(
+                headers.get("X_Project"),
+                Some(&McpValueDef::Literal("RICA".into()))
+            );
+        }
+        _ => panic!("expected http transport"),
+    }
+    assert!(matches!(
+        file.mcps[2].transport,
+        McpTransportDef::Sse { .. }
+    ));
 }
 
 #[test]
