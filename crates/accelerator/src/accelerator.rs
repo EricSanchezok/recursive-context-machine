@@ -15,11 +15,11 @@ pub struct Accelerator {
 }
 
 impl Accelerator {
-    pub fn primitive(config: AcceleratorConfig, name: impl Into<String>) -> Self {
+    pub fn primitive(state: State, name: impl Into<String>) -> Self {
         Self {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
-            body: AcceleratorBody::Primitive(PrimitiveAccelerator { config }),
+            body: AcceleratorBody::Primitive(PrimitiveAccelerator { state }),
             purpose_override: None,
         }
     }
@@ -57,9 +57,9 @@ impl Accelerator {
         })
     }
 
-    pub fn state(&self) -> Option<&State> {
+    pub fn internal_state(&self) -> Option<&State> {
         match &self.body {
-            AcceleratorBody::Primitive(p) => Some(&p.config.base),
+            AcceleratorBody::Primitive(primitive) => Some(&primitive.state),
             AcceleratorBody::Composite(_) => None,
         }
     }
@@ -67,7 +67,7 @@ impl Accelerator {
     fn merge_input(&self, input: State, purpose_override: Option<String>) -> State {
         let mut state = input;
         if let AcceleratorBody::Primitive(primitive) = &self.body {
-            let base = &primitive.config.base;
+            let base = &primitive.state;
             if state.purpose.is_empty() {
                 state.purpose.clone_from(&base.purpose);
             }
@@ -99,21 +99,8 @@ enum AcceleratorBody {
 }
 
 #[derive(Clone)]
-pub struct AcceleratorConfig {
-    pub base: State,
-}
-
-impl Default for AcceleratorConfig {
-    fn default() -> Self {
-        Self {
-            base: State::default(),
-        }
-    }
-}
-
-#[derive(Clone)]
 struct PrimitiveAccelerator {
-    config: AcceleratorConfig,
+    state: State,
 }
 
 impl PrimitiveAccelerator {

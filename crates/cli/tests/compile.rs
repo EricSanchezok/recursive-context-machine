@@ -62,7 +62,9 @@ fn compile_result(source: &str) -> Result<Accelerator, String> {
 }
 
 fn primitive_state(accelerator: &Accelerator) -> &accelerator::State {
-    accelerator.state().expect("expected primitive accelerator")
+    accelerator
+        .internal_state()
+        .expect("expected primitive accelerator")
 }
 
 #[test]
