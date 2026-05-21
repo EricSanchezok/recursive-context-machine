@@ -28,14 +28,14 @@ export function Home() {
     <main className="rcm-home figjam-grid">
       <header className="rcm-home-brand floating-panel">
         <img className="rcm-home-sii" src={siiLogo} alt="SII" />
+        <span className="rcm-home-sii-text">SII</span>
       </header>
 
       <section className="rcm-home-card floating-panel">
         <div className="rcm-home-mark">
           <img src={holosLogo} alt="Holos" />
         </div>
-        <p className="rcm-home-kicker">RCM</p>
-        <h1>Recursive Context Machine</h1>
+        <h1>Holos</h1>
         <p className="rcm-home-subtitle">
           Compose accelerators into recursive context graphs.
         </p>
