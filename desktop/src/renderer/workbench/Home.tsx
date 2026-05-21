@@ -28,12 +28,6 @@ export function Home() {
     <main className="rcm-home figjam-grid">
       <header className="rcm-home-brand floating-panel">
         <img className="rcm-home-sii" src={siiLogo} alt="SII" />
-        <div className="rcm-home-divider" />
-        <img className="rcm-home-holos" src={holosLogo} alt="Holos" />
-        <div className="rcm-home-brand-copy">
-          <span>Holos Lab</span>
-          <small>Recursive Context Machine</small>
-        </div>
       </header>
 
       <section className="rcm-home-card floating-panel">
@@ -41,7 +35,7 @@ export function Home() {
           <img src={holosLogo} alt="Holos" />
         </div>
         <p className="rcm-home-kicker">RCM</p>
-        <h1>递归上下文机</h1>
+        <h1>Recursive Context Machine</h1>
         <p className="rcm-home-subtitle">
           Compose accelerators into recursive context graphs.
         </p>
