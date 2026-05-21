@@ -63,8 +63,8 @@ button:disabled {
   left: 22px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
+  gap: 14px;
+  padding: 8px 18px;
   border-radius: 18px;
 }
 
@@ -72,6 +72,13 @@ button:disabled {
   width: 34px;
   height: 34px;
   object-fit: contain;
+}
+
+.rcm-home-sii-text {
+  font-size: 29px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  color: var(--foreground);
 }
 
 .rcm-home-holos {
