@@ -1,6 +1,19 @@
 import { getAPI } from '../platform/ipc'
 import type { Inventory } from '../types/api'
 
+async function listRcmFiles(dir: string): Promise<string[]> {
+  const api = getAPI()
+  const rcmDir = `${dir}/rcm`
+  try {
+    const entries = await api.listDir(rcmDir)
+    return entries
+      .filter((e) => e.extension === 'rcm')
+      .map((e) => e.path)
+  } catch {
+    return []
+  }
+}
+
 export interface Tab {
   id: string
   name: string
@@ -8,6 +21,7 @@ export interface Tab {
 
 export interface ProjectStore {
   projectPath: string | null
+  rcmFiles: string[]
   inventory: Inventory | null
   tabs: Tab[]
   activeTab: string | null
@@ -15,6 +29,7 @@ export interface ProjectStore {
 
 let store: ProjectStore = {
   projectPath: null,
+  rcmFiles: [],
   inventory: null,
   tabs: [],
   activeTab: null,
@@ -43,6 +58,7 @@ export async function openProject(): Promise<void> {
   const projectPath = await api.openProject()
   if (!projectPath) return
   store.projectPath = projectPath
+  store.rcmFiles = await listRcmFiles(projectPath)
   store.tabs = []
   store.activeTab = null
   try {
