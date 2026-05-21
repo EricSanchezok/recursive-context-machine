@@ -122,6 +122,7 @@ impl Parser {
                 "policy" => def.policy = Some(self.expect_string()?),
                 "prompts" => def.prompts = Some(self.prompt_sources()?),
                 "tools" => def.tools = Some(self.expect_string_array()?),
+                "mcps" => def.mcps = Some(self.expect_string_array()?),
                 _ => return Err(format!("unknown accelerator field: {}", key)),
             }
         }
@@ -200,32 +201,71 @@ impl Parser {
     fn mcp(&mut self) -> Result<McpDef, String> {
         self.expect_ident("mcp")?;
         let label = self.expect_ident_any()?;
-        if self.eat(Token::LBrace) {
-            let mut url = None;
-            let mut command = None;
-            while !self.eat(Token::RBrace) {
-                let key = self.expect_ident_any()?;
-                self.expect(Token::Equals)?;
-                match key.as_str() {
-                    "url" => url = Some(self.expect_string()?),
-                    "command" => command = Some(self.expect_string()?),
-                    other => return Err(format!("unknown mcp field: {}", other)),
-                }
+        self.expect(Token::LBrace)?;
+
+        let mut transport = None;
+        let mut command = None;
+        let mut args = Vec::new();
+        let mut env = std::collections::HashMap::new();
+        let mut cwd = None;
+        let mut url = None;
+        let mut headers = std::collections::HashMap::new();
+
+        while !self.eat(Token::RBrace) {
+            let key = self.expect_ident_any()?;
+            self.expect(Token::Equals)?;
+            match key.as_str() {
+                "transport" => transport = Some(self.expect_ident_any()?),
+                "command" => command = Some(self.expect_string()?),
+                "args" => args = self.expect_string_array()?,
+                "env" => env = self.mcp_values()?,
+                "cwd" => cwd = Some(self.expect_string()?),
+                "url" => url = Some(self.expect_string()?),
+                "headers" => headers = self.mcp_values()?,
+                other => return Err(format!("unknown mcp field: {}", other)),
             }
-            Ok(McpDef {
-                label,
-                url,
-                command,
-                headers: Vec::new(),
-            })
-        } else {
-            Ok(McpDef {
-                label,
-                url: None,
-                command: None,
-                headers: Vec::new(),
-            })
+            self.eat(Token::Semicolon);
         }
+
+        let transport = match transport.as_deref() {
+            Some("stdio") => McpTransportDef::Stdio {
+                command: command.ok_or_else(|| "stdio mcp requires command".to_string())?,
+                args,
+                env,
+                cwd,
+            },
+            Some("http") => McpTransportDef::Http {
+                url: url.ok_or_else(|| "http mcp requires url".to_string())?,
+                headers,
+            },
+            Some("sse") => McpTransportDef::Sse {
+                url: url.ok_or_else(|| "sse mcp requires url".to_string())?,
+                headers,
+            },
+            Some(other) => return Err(format!("unknown mcp transport: {}", other)),
+            None => return Err("mcp requires transport".to_string()),
+        };
+
+        Ok(McpDef { label, transport })
+    }
+
+    fn mcp_values(&mut self) -> Result<std::collections::HashMap<String, McpValueDef>, String> {
+        self.expect(Token::LBrace)?;
+        let mut values = std::collections::HashMap::new();
+        while !self.eat(Token::RBrace) {
+            let name = self.expect_ident_any()?;
+            self.expect(Token::Equals)?;
+            let value = if self.eat_ident("env") {
+                McpValueDef::Env(self.expect_string()?)
+            } else {
+                McpValueDef::Literal(self.expect_string()?)
+            };
+            if values.insert(name.clone(), value).is_some() {
+                return Err(format!("duplicate mcp value: {}", name));
+            }
+            self.eat(Token::Semicolon);
+        }
+        Ok(values)
     }
 
     fn model(&mut self) -> Result<ModelDef, String> {

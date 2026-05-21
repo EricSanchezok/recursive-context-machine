@@ -1,25 +1,22 @@
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tracing::{debug, info};
 
 use super::http::HttpTransport;
+use super::sse::SseTransport;
 use super::stdio::StdioTransport;
 use super::tool::McpTool;
 use super::transport::Transport;
 
-/// Lifecycle manager for MCP servers.
 pub struct McpRegistry {
-    tools: Vec<Arc<dyn machine::Tool>>,
+    tools_by_server: HashMap<String, Vec<Arc<dyn machine::Tool>>>,
 }
 
 impl McpRegistry {
-    /// Start all configured MCP servers and discover their tools.
-    ///
-    /// Detects the transport type automatically:
-    /// - URLs starting with `http://` or `https://` → Streamable HTTP
-    /// - Anything else → stdio subprocess
     pub async fn start(configs: &[McpServerConfig]) -> Result<Self, String> {
-        let mut all_tools: Vec<Arc<dyn machine::Tool>> = Vec::new();
+        let mut tools_by_server = HashMap::new();
 
         for config in configs {
             info!(target: "mcp", server = %config.label, "starting MCP server");
@@ -28,148 +25,137 @@ impl McpRegistry {
             let transport = Arc::new(tokio::sync::Mutex::new(transport));
 
             {
-                let t = transport.lock().await;
-                t.initialize().await?;
+                let server = transport.lock().await;
+                server.initialize().await?;
             }
 
             let tool_defs = {
-                let t = transport.lock().await;
-                t.list_tools().await?
+                let server = transport.lock().await;
+                server.list_tools().await?
             };
 
+            let mut server_tools: Vec<Arc<dyn machine::Tool>> = Vec::new();
+            let mut public_names = HashSet::new();
             for def in &tool_defs {
-                let name = def["name"]
+                let server_name = def["name"]
                     .as_str()
                     .ok_or_else(|| format!("MCP tool missing 'name': {def}"))?
                     .to_string();
+                let public_name = public_tool_name(&config.label, &server_name);
+                if !public_names.insert(public_name.clone()) {
+                    return Err(format!(
+                        "duplicate MCP tool name after namespacing: {public_name}"
+                    ));
+                }
                 let description = def["description"].as_str().unwrap_or("").to_string();
                 let input_schema = def["inputSchema"].clone();
                 let parameters = if input_schema.is_null() {
-                    serde_json::json!({
-                        "type": "object",
-                        "properties": {}
-                    })
+                    serde_json::json!({ "type": "object", "properties": {} })
                 } else {
                     input_schema
                 };
 
-                debug!(
-                    target: "mcp",
-                    server = %config.label,
-                    tool = %name,
-                    "discovered tool"
-                );
+                debug!(target: "mcp", server = %config.label, tool = %public_name, "discovered tool");
 
-                all_tools.push(Arc::new(McpTool {
-                    name,
+                server_tools.push(Arc::new(McpTool {
+                    public_name,
+                    server_name,
                     description,
                     parameters,
                     transport: Arc::clone(&transport),
                 }));
             }
 
-            info!(
-                target: "mcp",
-                server = %config.label,
-                tool_count = tool_defs.len(),
-                "MCP server ready"
-            );
+            info!(target: "mcp", server = %config.label, tool_count = server_tools.len(), "MCP server ready");
+
+            if tools_by_server
+                .insert(config.label.clone(), server_tools)
+                .is_some()
+            {
+                return Err(format!("duplicate MCP server label: {}", config.label));
+            }
         }
 
-        Ok(Self { tools: all_tools })
+        Ok(Self { tools_by_server })
     }
 
-    /// All discovered MCP tools, flattened across all servers.
-    pub fn tools(&self) -> Vec<Arc<dyn machine::Tool>> {
-        self.tools.clone()
+    pub fn tools_for(&self, label: &str) -> Option<Vec<Arc<dyn machine::Tool>>> {
+        self.tools_by_server.get(label).cloned()
     }
 }
 
-/// Configuration for launching an MCP server.
-///
-/// Supports two transport types, auto-detected from the value:
-/// - `label=command arg1 arg2` → stdio subprocess
-/// - `label=https://example.com/path` → Streamable HTTP
-///
-/// For HTTP servers, use `--mcp-header` to add custom headers.
 #[derive(Debug, Clone)]
 pub struct McpServerConfig {
     pub label: String,
-    pub command: Option<String>,
-    pub args: Vec<String>,
-    pub url: Option<String>,
-    pub headers: Vec<(String, String)>,
+    pub transport: McpTransportConfig,
+}
+
+#[derive(Debug, Clone)]
+pub enum McpTransportConfig {
+    Stdio {
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, String>,
+        cwd: Option<PathBuf>,
+    },
+    Http {
+        url: String,
+        headers: Vec<(String, String)>,
+    },
+    Sse {
+        url: String,
+        headers: Vec<(String, String)>,
+    },
+}
+
+fn public_tool_name(label: &str, server_name: &str) -> String {
+    format!(
+        "{}__{}",
+        sanitize_tool_name(label),
+        sanitize_tool_name(server_name)
+    )
+}
+
+fn sanitize_tool_name(name: &str) -> String {
+    let mut sanitized = name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '_' || character == '-' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if sanitized.is_empty() {
+        sanitized.push_str("tool");
+    }
+    if sanitized.len() > 64 {
+        sanitized.truncate(64);
+    }
+    sanitized
 }
 
 impl McpServerConfig {
-    /// Parse a `label=value` string where value is either a command line
-    /// or an HTTP(S) URL.
-    pub fn parse(raw: &str) -> Result<Self, String> {
-        let (label, rest) = raw.split_once('=').ok_or_else(|| {
-            format!(
-                "invalid MCP server format '{raw}' — expected 'label=command' or 'label=https://...'"
-            )
-        })?;
-
-        if label.is_empty() {
-            return Err("MCP server label cannot be empty".to_string());
-        }
-        if rest.is_empty() {
-            return Err(format!("MCP server '{label}' has no value"));
-        }
-
-        let trimmed = rest.trim();
-        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-            // Format: url|HeaderName:Value|HeaderName:Value
-            // `|` is used instead of `,` because neither URLs nor
-            // typical header values contain pipe characters.
-            let mut headers = Vec::new();
-            let url = if let Some((url_part, header_part)) = trimmed.split_once('|') {
-                for h in header_part.split('|') {
-                    let h = h.trim();
-                    if let Some((key, value)) = h.split_once(':') {
-                        headers.push((key.trim().to_string(), value.trim().to_string()));
-                    }
-                }
-                url_part.to_string()
-            } else {
-                trimmed.to_string()
-            };
-
-            Ok(Self {
-                label: label.to_string(),
-                command: None,
-                args: Vec::new(),
-                url: Some(url),
-                headers,
-            })
-        } else {
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.is_empty() {
-                return Err(format!("MCP server '{label}' has no command or URL"));
-            }
-            Ok(Self {
-                label: label.to_string(),
-                command: Some(parts[0].to_string()),
-                args: parts[1..].iter().map(|s| s.to_string()).collect(),
-                url: None,
-                headers: Vec::new(),
-            })
-        }
-    }
-
-    /// Create the transport for this configuration.
     async fn create_transport(&self) -> Result<Transport, String> {
-        match (&self.command, &self.url) {
-            (Some(cmd), None) => {
-                let transport = StdioTransport::spawn(cmd, &self.args).await?;
+        match &self.transport {
+            McpTransportConfig::Stdio {
+                command,
+                args,
+                env,
+                cwd,
+            } => {
+                let transport = StdioTransport::spawn(command, args, env, cwd.as_deref()).await?;
                 Ok(Transport::Stdio(Box::new(transport)))
             }
-            (None, Some(url)) => {
-                let t = HttpTransport::new(url.clone(), self.headers.clone());
-                Ok(Transport::Http(t))
+            McpTransportConfig::Http { url, headers } => Ok(Transport::Http(HttpTransport::new(
+                url.clone(),
+                headers.clone(),
+            )?)),
+            McpTransportConfig::Sse { url, headers } => {
+                let transport = SseTransport::connect(url.clone(), headers.clone()).await?;
+                Ok(Transport::Sse(Box::new(transport)))
             }
-            _ => Err("McpServerConfig has neither command nor url".to_string()),
         }
     }
 }

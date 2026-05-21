@@ -33,6 +33,7 @@ pub struct PrimitiveDef {
     pub models: Vec<String>,
     pub prompts: Option<HashMap<String, PromptSourceDef>>,
     pub tools: Option<Vec<String>>,
+    pub mcps: Option<Vec<String>>,
     pub policy: Option<String>,
 }
 
@@ -122,9 +123,31 @@ pub enum EndpointDef {
 #[derive(Debug, Clone)]
 pub struct McpDef {
     pub label: String,
-    pub url: Option<String>,
-    pub command: Option<String>,
-    pub headers: Vec<(String, String)>,
+    pub transport: McpTransportDef,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpTransportDef {
+    Stdio {
+        command: String,
+        args: Vec<String>,
+        env: HashMap<String, McpValueDef>,
+        cwd: Option<String>,
+    },
+    Http {
+        url: String,
+        headers: HashMap<String, McpValueDef>,
+    },
+    Sse {
+        url: String,
+        headers: HashMap<String, McpValueDef>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpValueDef {
+    Literal(String),
+    Env(String),
 }
 
 #[derive(Debug, Clone)]

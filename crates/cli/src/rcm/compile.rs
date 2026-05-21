@@ -3,7 +3,7 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use accelerator::mcp::{McpRegistry, McpServerConfig};
+use accelerator::mcp::{McpRegistry, McpServerConfig, McpTransportConfig};
 use accelerator::{
     Accelerator, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate, Endpoint, EnvFlux,
     EnvironmentPredicate, FluxMode, Graph, PolicyFlux, Port, Predicate as AccelPredicate,
@@ -12,8 +12,8 @@ use accelerator::{
 use machine::{Limit, Modalities, Modality, Model, Protocol};
 
 use super::ast::{
-    self, AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, PortDef, PortOwnerDef, Predicate,
-    PrimitiveDef, PromptSourceDef, RcmFile,
+    self, AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, McpTransportDef, McpValueDef,
+    PortDef, PortOwnerDef, Predicate, PrimitiveDef, PromptSourceDef, RcmFile,
 };
 
 pub fn compile_file(
@@ -79,7 +79,7 @@ impl Compiler {
     async fn compile_file_ast(&mut self, file: &RcmFile) -> Result<Accelerator, String> {
         let catalog = Catalog::new();
         let models = build_models(&file.models)?;
-        let mcp_tools = start_mcp_tools(&file.mcps).await?;
+        let mut mcp_scope = McpScope::new(&file.mcps, &self.root)?;
         let mut imports = HashMap::new();
         for use_def in &file.uses {
             let accelerator = self.compile_path(Path::new(&use_def.path)).await?;
@@ -90,7 +90,8 @@ impl Compiler {
 
         match &file.body {
             AcceleratorBodyDef::Primitive(primitive) => {
-                let state = build_state(&catalog, &models, &mcp_tools, primitive, &self.root)?;
+                let state =
+                    build_state(&catalog, &models, &mut mcp_scope, primitive, &self.root).await?;
                 Ok(Accelerator::primitive_named(file.name.as_str(), state))
             }
             AcceleratorBodyDef::Graph(graph_def) => {
@@ -100,7 +101,7 @@ impl Compiler {
                         graph_def,
                         &catalog,
                         &models,
-                        &mcp_tools,
+                        &mut mcp_scope,
                         &imports,
                     )
                     .await?;
@@ -115,7 +116,7 @@ impl Compiler {
         graph_def: &ast::GraphDef,
         catalog: &Catalog,
         models: &HashMap<String, Model>,
-        mcp_tools: &[std::sync::Arc<dyn machine::Tool>],
+        mcp_scope: &mut McpScope,
         imports: &HashMap<String, Accelerator>,
     ) -> Result<Graph, String> {
         let mut graph = Graph::named(name);
@@ -125,7 +126,8 @@ impl Compiler {
         for accelerator_def in &graph_def.accelerators {
             let accelerator = match &accelerator_def.source {
                 AcceleratorSourceDef::Inline(primitive) => {
-                    let state = build_state(catalog, models, mcp_tools, primitive, &self.root)?;
+                    let state =
+                        build_state(catalog, models, mcp_scope, primitive, &self.root).await?;
                     Accelerator::primitive_named(accelerator_def.id.as_str(), state)
                 }
                 AcceleratorSourceDef::Import { alias, overrides } => {
@@ -212,17 +214,117 @@ fn insert_symbol(
     Ok(())
 }
 
-async fn start_mcp_tools(
-    mcps: &[ast::McpDef],
-) -> Result<Vec<std::sync::Arc<dyn machine::Tool>>, String> {
-    if mcps.is_empty() {
-        return Ok(Vec::new());
+struct McpScope {
+    configs: HashMap<String, McpServerConfig>,
+    tools: HashMap<String, Vec<std::sync::Arc<dyn machine::Tool>>>,
+}
+
+impl McpScope {
+    fn new(mcps: &[ast::McpDef], root: &Path) -> Result<Self, String> {
+        let mut configs = HashMap::new();
+        for mcp in mcps {
+            let config = build_mcp_config(mcp, root)?;
+            if configs.insert(mcp.label.clone(), config).is_some() {
+                return Err(format!("duplicate mcp server: {}", mcp.label));
+            }
+        }
+        Ok(Self {
+            configs,
+            tools: HashMap::new(),
+        })
     }
-    let configs = mcps.iter().map(McpServerConfig::from).collect::<Vec<_>>();
-    let registry = McpRegistry::start(&configs)
-        .await
-        .map_err(|error| error.to_string())?;
-    Ok(registry.tools())
+
+    async fn ensure_tools(
+        &mut self,
+        label: &str,
+    ) -> Result<Vec<std::sync::Arc<dyn machine::Tool>>, String> {
+        if let Some(tools) = self.tools.get(label) {
+            return Ok(tools.clone());
+        }
+        let config = self
+            .configs
+            .get(label)
+            .ok_or_else(|| format!("unknown mcp server: {}", label))?
+            .clone();
+        let registry = McpRegistry::start(&[config]).await?;
+        let tools = registry.tools_for(label).unwrap_or_default();
+        self.tools.insert(label.to_string(), tools.clone());
+        Ok(tools)
+    }
+}
+
+fn build_mcp_config(def: &ast::McpDef, root: &Path) -> Result<McpServerConfig, String> {
+    let transport = match &def.transport {
+        McpTransportDef::Stdio {
+            command,
+            args,
+            env,
+            cwd,
+        } => McpTransportConfig::Stdio {
+            command: command.clone(),
+            args: args.clone(),
+            env: resolve_mcp_values(env)?,
+            cwd: cwd.as_ref().map(|path| root.join(path)),
+        },
+        McpTransportDef::Http { url, headers } => McpTransportConfig::Http {
+            url: url.clone(),
+            headers: resolve_mcp_headers(headers)?,
+        },
+        McpTransportDef::Sse { url, headers } => McpTransportConfig::Sse {
+            url: url.clone(),
+            headers: resolve_mcp_headers(headers)?,
+        },
+    };
+    Ok(McpServerConfig {
+        label: def.label.clone(),
+        transport,
+    })
+}
+
+fn resolve_mcp_values(
+    values: &HashMap<String, McpValueDef>,
+) -> Result<HashMap<String, String>, String> {
+    values
+        .iter()
+        .map(|(name, value)| Ok((name.clone(), resolve_mcp_value(value)?)))
+        .collect()
+}
+
+fn resolve_mcp_headers(
+    values: &HashMap<String, McpValueDef>,
+) -> Result<Vec<(String, String)>, String> {
+    values
+        .iter()
+        .map(|(name, value)| Ok((name.clone(), resolve_mcp_value(value)?)))
+        .collect()
+}
+
+fn resolve_mcp_value(value: &McpValueDef) -> Result<String, String> {
+    match value {
+        McpValueDef::Literal(value) => expand_env_placeholders(value),
+        McpValueDef::Env(name) => {
+            std::env::var(name).map_err(|_| format!("environment variable '{}' is not set", name))
+        }
+    }
+}
+
+fn expand_env_placeholders(value: &str) -> Result<String, String> {
+    let mut result = String::new();
+    let mut rest = value;
+    while let Some(start) = rest.find("${") {
+        result.push_str(&rest[..start]);
+        let after_start = &rest[start + 2..];
+        let Some(end) = after_start.find('}') else {
+            return Err(format!("unclosed environment placeholder in '{value}'"));
+        };
+        let name = &after_start[..end];
+        let replacement = std::env::var(name)
+            .map_err(|_| format!("environment variable '{}' is not set", name))?;
+        result.push_str(&replacement);
+        rest = &after_start[end + 1..];
+    }
+    result.push_str(rest);
+    Ok(result)
 }
 
 fn apply_import_overrides(
@@ -236,6 +338,7 @@ fn apply_import_overrides(
         || overrides.policy.is_some()
         || overrides.prompts.is_some()
         || overrides.tools.is_some()
+        || overrides.mcps.is_some()
     {
         return Err("imported accelerator overrides currently support purpose only".to_string());
     }
@@ -314,10 +417,10 @@ fn parse_modalities(names: &[String]) -> Result<Vec<Modality>, String> {
         .collect()
 }
 
-fn build_state(
+async fn build_state(
     catalog: &Catalog,
     models: &HashMap<String, Model>,
-    mcp_tools: &[std::sync::Arc<dyn machine::Tool>],
+    mcp_scope: &mut McpScope,
     def: &PrimitiveDef,
     root: &Path,
 ) -> Result<State, String> {
@@ -331,13 +434,17 @@ fn build_state(
         .get(policy_name)
         .ok_or_else(|| format!("unknown policy: {}", policy_name))?;
     let mut resources = catalog.build_resources("kit")?;
-    for tool in mcp_tools {
-        resources = resources.with_tool(tool.clone());
-    }
 
     if let Some(tool_names) = &def.tools {
         let tools = select_tools(&resources, tool_names)?;
         resources = resources.replace_tools(tools);
+    }
+    if let Some(mcp_labels) = &def.mcps {
+        for label in mcp_labels {
+            for tool in mcp_scope.ensure_tools(label).await? {
+                resources = resources.with_tool(tool);
+            }
+        }
     }
     resources.deactivate_tools();
 
@@ -639,17 +746,5 @@ fn parse_role(role: &str) -> Result<machine::Role, String> {
         "assistant" => Ok(machine::Role::Assistant),
         "tool" => Ok(machine::Role::Tool),
         _ => Err(format!("unknown role: {}", role)),
-    }
-}
-
-impl From<&ast::McpDef> for McpServerConfig {
-    fn from(def: &ast::McpDef) -> Self {
-        McpServerConfig {
-            label: def.label.clone(),
-            command: def.command.clone(),
-            args: Vec::new(),
-            url: def.url.clone(),
-            headers: def.headers.clone(),
-        }
     }
 }

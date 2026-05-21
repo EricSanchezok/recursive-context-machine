@@ -221,6 +221,57 @@ fn compile_rejects_flux_slot_out_of_range() {
 }
 
 #[test]
+fn compile_does_not_start_unselected_mcp_servers() {
+    let source = r#"
+        name = "unused mcp"
+        mcp docs {
+            transport = stdio
+            command = "definitely-not-a-real-mcp-command"
+        }
+        model gpt {
+            protocol = "openai"
+            credentials = { key = "test" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            purpose = "inspect"
+            models = ["gpt"]
+            tools = ["fs"]
+        }
+    "#;
+
+    let accelerator = compile_result(source).unwrap();
+    let state = primitive_state(&accelerator);
+    assert!(state.res.tools.contains_key("fs"));
+    assert!(!state.res.tools.keys().any(|name| name.starts_with("docs.")));
+}
+
+#[test]
+fn compile_rejects_unknown_mcp_selection() {
+    let source = r#"
+        name = "unknown mcp"
+        model gpt {
+            protocol = "openai"
+            credentials = { key = "test" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            purpose = "inspect"
+            models = ["gpt"]
+            mcps = ["docs"]
+        }
+    "#;
+
+    let error = match compile_result(source) {
+        Ok(_) => panic!("expected compile error"),
+        Err(error) => error,
+    };
+    assert!(error.contains("unknown mcp server: docs"));
+}
+
+#[test]
 fn compile_rejects_graph_cycles() {
     let source = r#"
         name = "cycle"

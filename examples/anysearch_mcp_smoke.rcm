@@ -1,0 +1,24 @@
+name = "AnySearch MCP Smoke"
+
+mcp anysearch {
+    transport = http
+    url = "https://api.anysearch.com/mcp"
+    headers = {
+        Authorization = "Bearer ${ANYSEARCH_API_KEY}"
+    }
+}
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+accelerator {
+    purpose = "这是 AnySearch MCP 的启动冒烟测试。测试一下 anysearch 的工具查一下今天上海的天气吧"
+    models = ["deepseek-v4-flash"]
+    policy = "captain"
+    mcps = ["anysearch"]
+}
