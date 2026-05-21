@@ -17,8 +17,11 @@ function createWindow(): void {
     },
   })
 
-  if (process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  const rendererUrl = process.env['ELECTRON_RENDERER_URL']
+  if (rendererUrl) {
+    mainWindow.loadURL(rendererUrl)
+  } else if (!app.isPackaged) {
+    mainWindow.loadURL('http://localhost:5173/')
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
