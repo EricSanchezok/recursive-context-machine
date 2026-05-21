@@ -6,7 +6,7 @@ use std::pin::Pin;
 use accelerator::mcp::{McpRegistry, McpServerConfig, McpTransportConfig};
 use accelerator::{
     Accelerator, AcceleratorConfig, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate,
-    Endpoint, EnvFlux, EnvironmentPredicate, FluxMode, Graph, InputState, PolicyFlux, Port,
+    Endpoint, EnvFlux, EnvironmentPredicate, FluxMode, Graph, PolicyFlux, Port,
     Predicate as AccelPredicate, PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, State,
 };
 use machine::{Limit, Modalities, Modality, Model, Protocol};
@@ -90,9 +90,9 @@ impl Compiler {
 
         match &file.body {
             AcceleratorBodyDef::Primitive(primitive) => {
-                let (config, input) =
+                let config =
                     build_config(&catalog, &models, &mut mcp_scope, primitive, &self.root).await?;
-                Ok(Accelerator::primitive(config, file.name.as_str()).with_input(input))
+                Ok(Accelerator::primitive(config, file.name.as_str()))
             }
             AcceleratorBodyDef::Graph(graph_def) => {
                 let graph = self
@@ -126,16 +126,18 @@ impl Compiler {
         for accelerator_def in &graph_def.accelerators {
             let accelerator = match &accelerator_def.source {
                 AcceleratorSourceDef::Inline(primitive) => {
-                    let (config, input) =
+                    let config =
                         build_config(catalog, models, mcp_scope, primitive, &self.root).await?;
-                    Accelerator::primitive(config, accelerator_def.id.as_str()).with_input(input)
+                    Accelerator::primitive(config, accelerator_def.id.as_str())
                 }
                 AcceleratorSourceDef::Import { alias, overrides } => {
                     let mut accelerator = imports
                         .get(alias)
                         .ok_or_else(|| format!("unknown accelerator import: {}", alias))?
                         .clone();
-                    apply_import_overrides(&mut accelerator, overrides);
+                    if let Some(purpose) = &overrides.purpose {
+                        accelerator.set_purpose_override(purpose.clone());
+                    }
                     accelerator
                 }
             };
@@ -327,24 +329,6 @@ fn expand_env_placeholders(value: &str) -> Result<String, String> {
     Ok(result)
 }
 
-fn apply_import_overrides(accelerator: &mut Accelerator, overrides: &PrimitiveDef) {
-    if let Some(purpose) = &overrides.purpose {
-        let input = InputState {
-            purpose: Some(purpose.clone()),
-        };
-        *accelerator = accelerator.clone().with_input(input);
-    }
-    if !overrides.models.is_empty()
-        || overrides.policy.is_some()
-        || overrides.prompts.is_some()
-        || overrides.tools.is_some()
-        || overrides.mcps.is_some()
-    {
-        // non-purpose overrides silently ignored for now
-        _ = overrides;
-    }
-}
-
 fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String> {
     let mut models = HashMap::new();
     for def in defs {
@@ -423,7 +407,7 @@ async fn build_config(
     mcp_scope: &mut McpScope,
     def: &PrimitiveDef,
     root: &Path,
-) -> Result<(AcceleratorConfig, InputState), String> {
+) -> Result<AcceleratorConfig, String> {
     if def.models.is_empty() {
         return Err("accelerator requires at least one model".to_string());
     }
@@ -469,12 +453,7 @@ async fn build_config(
         ..State::default()
     };
 
-    Ok((
-        AcceleratorConfig { base: state },
-        InputState {
-            purpose: Some(purpose),
-        },
-    ))
+    Ok(AcceleratorConfig { base: state })
 }
 
 fn select_tools(

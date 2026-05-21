@@ -11,17 +11,7 @@ pub struct Accelerator {
     id: AcceleratorId,
     pub name: Name,
     body: AcceleratorBody,
-    input_hint: InputHint,
-}
-
-#[derive(Clone, Default)]
-struct InputHint {
-    purpose: Option<String>,
-}
-
-#[derive(Clone, Default)]
-pub struct InputState {
-    pub purpose: Option<String>,
+    purpose_override: Option<String>,
 }
 
 impl Accelerator {
@@ -30,7 +20,7 @@ impl Accelerator {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
             body: AcceleratorBody::Primitive(PrimitiveAccelerator { config }),
-            input_hint: InputHint::default(),
+            purpose_override: None,
         }
     }
 
@@ -44,7 +34,7 @@ impl Accelerator {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
             body: AcceleratorBody::Composite(graph),
-            input_hint: InputHint::default(),
+            purpose_override: None,
         }
     }
 
@@ -52,14 +42,14 @@ impl Accelerator {
         &self.id
     }
 
-    pub fn with_input(mut self, input: InputState) -> Self {
-        self.input_hint.purpose = input.purpose.or(self.input_hint.purpose);
-        self
+    pub fn set_purpose_override(&mut self, purpose: String) {
+        self.purpose_override = Some(purpose);
     }
 
-    pub fn run_with(self, input: State) -> Pin<Box<dyn Future<Output = State> + Send>> {
+    pub fn run_with(mut self, input: State) -> Pin<Box<dyn Future<Output = State> + Send>> {
+        let purpose_override = self.purpose_override.take();
         Box::pin(async move {
-            let input = self.merge_input(input);
+            let input = self.merge_input(input, purpose_override);
             match self.body {
                 AcceleratorBody::Primitive(primitive) => primitive.fire(input).await,
                 AcceleratorBody::Composite(graph) => graph.run(input).await,
@@ -74,7 +64,7 @@ impl Accelerator {
         }
     }
 
-    fn merge_input(&self, input: State) -> State {
+    fn merge_input(&self, input: State, purpose_override: Option<String>) -> State {
         let mut state = input;
         if let AcceleratorBody::Primitive(primitive) = &self.body {
             let base = &primitive.config.base;
@@ -95,8 +85,8 @@ impl Accelerator {
             state.res.active_model.clone_from(&base.res.active_model);
             state.res.active_tools.clone_from(&base.res.active_tools);
         }
-        if let Some(purpose) = &self.input_hint.purpose {
-            state.purpose.clone_from(purpose);
+        if let Some(purpose) = purpose_override {
+            state.purpose = purpose;
         }
         state
     }
