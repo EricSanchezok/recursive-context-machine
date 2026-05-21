@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { FileText, Play } from 'lucide-react'
+import { FileText } from 'lucide-react'
 import { Home } from '@workbench/Home'
 import { TabBar } from '@workbench/TabBar'
 import { getStore, subscribe, addTab } from '../stores/projectStore'
@@ -7,48 +7,73 @@ import { getStore, subscribe, addTab } from '../stores/projectStore'
 export function App() {
   const [store, setStore] = useState(getStore())
 
-  useEffect(() => subscribe((nextStore) => setStore(nextStore)), [])
+  useEffect(() => subscribe((nextStore) => {
+    setStore(nextStore)
+  }), [])
 
   if (!store.projectPath) {
-    return (
-      <div className="w-screen h-screen flex flex-col">
-        <Home />
-      </div>
-    )
+    return <Home />
   }
 
   const rcmFiles = store.rcmFiles ?? []
 
   return (
-    <div className="w-screen h-screen flex flex-col figjam-grid overflow-hidden">
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <TabBar />
-      <div className="flex-1 relative flex items-start justify-center pt-20 overflow-y-auto">
+      <div style={{
+        flex: 1,
+        backgroundColor: 'var(--workspace-bg)',
+        backgroundImage: 'radial-gradient(rgba(3,2,19,0.14) 1px, transparent 1px)',
+        backgroundSize: '12px 12px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        paddingTop: 80,
+        overflow: 'auto',
+      }}>
         {rcmFiles.length === 0 ? (
-          <div className="absolute left-1/2 top-[42%] -translate-x-1/2 -translate-y-1/2 text-center">
-            <div className="canvas-card rounded-3xl px-12 py-10">
-              <div className="text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>Empty project</div>
-              <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                No .rcm files found in rcm/.
-              </div>
+          <div style={{ textAlign: 'center', marginTop: '16vh' }}>
+            <div className="canvas-card" style={{ padding: '40px 48px', borderRadius: 24 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 8, color: 'var(--foreground)' }}>Empty project</div>
+              <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>No .rcm files found in rcm/.</div>
             </div>
           </div>
         ) : (
-          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', maxWidth: 700, width: '100%', padding: '0 24px' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: 16,
+            width: '100%',
+            maxWidth: 700,
+            padding: '0 24px',
+          }}>
             {rcmFiles.map((filePath) => {
               const name = filePath.split('/').pop() ?? filePath
               return (
                 <button
                   key={filePath}
                   onClick={() => addTab({ id: filePath, name })}
-                  className="floating-panel rounded-2xl px-5 py-4 text-left flex flex-col gap-2 hover:scale-[1.02] transition-transform"
+                  style={{
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    border: 'none',
+                    background: 'rgba(255,255,255,0.92)',
+                    borderRadius: 16,
+                    padding: '16px 20px',
+                    boxShadow: '0 18px 50px rgba(15,23,42,0.10)',
+                    backdropFilter: 'blur(18px)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                  }}
                 >
-                  <div className="flex items-center gap-2">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <FileText size={16} style={{ color: 'var(--muted-foreground)' }} />
-                    <span className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--foreground)' }}>
                       {name.replace(/\.rcm$/, '')}
                     </span>
                   </div>
-                  <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
                     {filePath}
                   </div>
                 </button>
