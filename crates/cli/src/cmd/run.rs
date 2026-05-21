@@ -2,7 +2,6 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
-use accelerator::Graph;
 use tracing_subscriber::prelude::*;
 
 use crate::args::{Format, RunArgs};
@@ -13,10 +12,7 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     let (hook_tx, hook_rx) = mpsc::channel();
     init_tracing(hook_tx);
 
-    let source = std::fs::read_to_string(&args.file)
-        .map_err(|e| anyhow::anyhow!("failed to read '{}': {}", args.file.display(), e))?;
-    let file = crate::rcm::parse(&source).map_err(anyhow::Error::msg)?;
-    let graph: Graph = crate::rcm::compile::compile(&file)
+    let accelerator = crate::rcm::compile::compile_file(&args.file)
         .await
         .map_err(anyhow::Error::msg)?;
 
@@ -29,8 +25,7 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
             .build()
             .expect("tokio runtime");
         runtime.block_on(async {
-            let outputs = graph.build().expect("assembly").run().await;
-            let output = outputs.into_iter().next().expect("accelerator output");
+            let output = accelerator.run().await;
             let _ = ctx_tx.send(output.ctx);
         });
     });

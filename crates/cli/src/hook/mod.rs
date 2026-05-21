@@ -6,12 +6,56 @@ use tracing_subscriber::layer::Context;
 use tracing_subscriber::registry::LookupSpan;
 
 #[derive(Debug, Clone)]
-pub(crate) enum HookEvent {
+pub(crate) struct HookEvent {
+    pub(crate) source: Option<ComponentMeta>,
+    pub(crate) kind: HookKind,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum HookKind {
+    Graph(GraphEvent),
+    Component(ComponentEvent),
     Machine(MachineEvent),
     Completion(CompletionEvent),
     Tool(ToolEvent),
     Fragment(FragmentEvent),
     Resource(ResourceEvent),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum GraphEvent {
+    Start {
+        graph: String,
+    },
+    Done {
+        graph: String,
+    },
+    FrontierStart {
+        graph: String,
+        frontier: u64,
+        count: usize,
+    },
+    FrontierDone {
+        graph: String,
+        frontier: u64,
+        count: usize,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ComponentEvent {
+    Start(ComponentMeta),
+    Done(ComponentMeta),
+    Skipped(ComponentMeta),
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ComponentMeta {
+    pub(crate) graph: String,
+    pub(crate) name: String,
+    pub(crate) index: usize,
+    pub(crate) kind: String,
+    pub(crate) frontier: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -81,12 +125,45 @@ struct HookLayer {
 }
 
 impl<S: Subscriber + for<'a> LookupSpan<'a>> tracing_subscriber::layer::Layer<S> for HookLayer {
-    fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+    fn on_new_span(
+        &self,
+        attrs: &tracing::span::Attributes<'_>,
+        id: &tracing::Id,
+        ctx: Context<'_, S>,
+    ) {
+        let Some(span) = ctx.span(id) else {
+            return;
+        };
+        let mut fields = HookFields::default();
+        attrs.record(&mut fields);
+        span.extensions_mut().insert(fields);
+    }
+
+    fn on_record(&self, id: &tracing::Id, values: &tracing::span::Record<'_>, ctx: Context<'_, S>) {
+        let Some(span) = ctx.span(id) else {
+            return;
+        };
+        let mut fields = span
+            .extensions_mut()
+            .remove::<HookFields>()
+            .unwrap_or_default();
+        values.record(&mut fields);
+        span.extensions_mut().insert(fields);
+    }
+
+    fn on_event(&self, event: &tracing::Event<'_>, ctx: Context<'_, S>) {
         if event.metadata().target() != "hook" {
             return;
         }
 
         let mut fields = HookFields::default();
+        if let Some(scope) = ctx.event_scope(event) {
+            for span in scope.from_root() {
+                if let Some(span_fields) = span.extensions().get::<HookFields>() {
+                    fields.merge_missing(span_fields);
+                }
+            }
+        }
         event.record(&mut fields);
         if let Some(event) = HookEvent::from_fields(&fields) {
             let _ = self.tx.send(event);
@@ -108,6 +185,14 @@ enum FieldValue {
 }
 
 impl HookFields {
+    fn merge_missing(&mut self, other: &HookFields) {
+        for (name, value) in &other.values {
+            self.values
+                .entry(name.clone())
+                .or_insert_with(|| value.clone());
+        }
+    }
+
     fn string(&self, name: &str) -> Option<String> {
         match self.values.get(name) {
             Some(FieldValue::String(value)) | Some(FieldValue::Debug(value)) => Some(value.clone()),
@@ -134,6 +219,27 @@ impl HookFields {
             Some(FieldValue::Bool(value)) => Some(*value),
             Some(FieldValue::String(value)) | Some(FieldValue::Debug(value)) => value.parse().ok(),
             _ => None,
+        }
+    }
+
+    fn source_meta(&self) -> Option<ComponentMeta> {
+        let name = self.string("component")?;
+        Some(ComponentMeta {
+            graph: self.string("graph").unwrap_or_default(),
+            name,
+            index: self.usize("component_index").unwrap_or(0),
+            kind: self.string("component_kind").unwrap_or_default(),
+            frontier: self.u64("frontier"),
+        })
+    }
+
+    fn component_meta(&self) -> ComponentMeta {
+        ComponentMeta {
+            graph: self.string("graph").unwrap_or_default(),
+            name: self.string("component").unwrap_or_default(),
+            index: self.usize("component_index").unwrap_or(0),
+            kind: self.string("component_kind").unwrap_or_default(),
+            frontier: self.u64("frontier"),
         }
     }
 
@@ -181,60 +287,81 @@ impl tracing::field::Visit for HookFields {
 
 impl HookEvent {
     fn from_fields(fields: &HookFields) -> Option<Self> {
-        match fields.string("event")?.as_str() {
-            "machine_start" => Some(Self::Machine(MachineEvent::Start)),
-            "halt" => Some(Self::Machine(MachineEvent::Halt {
+        let kind = match fields.string("event")?.as_str() {
+            "graph_start" => HookKind::Graph(GraphEvent::Start {
+                graph: fields.string("graph").unwrap_or_default(),
+            }),
+            "graph_done" => HookKind::Graph(GraphEvent::Done {
+                graph: fields.string("graph").unwrap_or_default(),
+            }),
+            "frontier_start" => HookKind::Graph(GraphEvent::FrontierStart {
+                graph: fields.string("graph").unwrap_or_default(),
+                frontier: fields.u64("frontier").unwrap_or(0),
+                count: fields.usize("count").unwrap_or(0),
+            }),
+            "frontier_done" => HookKind::Graph(GraphEvent::FrontierDone {
+                graph: fields.string("graph").unwrap_or_default(),
+                frontier: fields.u64("frontier").unwrap_or(0),
+                count: fields.usize("count").unwrap_or(0),
+            }),
+            "component_start" => {
+                HookKind::Component(ComponentEvent::Start(fields.component_meta()))
+            }
+            "component_done" => HookKind::Component(ComponentEvent::Done(fields.component_meta())),
+            "component_skipped" => {
+                HookKind::Component(ComponentEvent::Skipped(fields.component_meta()))
+            }
+            "machine_start" => HookKind::Machine(MachineEvent::Start),
+            "halt" => HookKind::Machine(MachineEvent::Halt {
                 step: fields.u64("step").unwrap_or(0),
-            })),
-            "done" => Some(Self::Machine(MachineEvent::Done)),
-            "completion_start" => Some(Self::Completion(CompletionEvent::Start)),
-            "completion_end" => Some(Self::Completion(CompletionEvent::End {
+            }),
+            "done" => HookKind::Machine(MachineEvent::Done),
+            "completion_start" => HookKind::Completion(CompletionEvent::Start),
+            "completion_end" => HookKind::Completion(CompletionEvent::End {
                 fragments: fields.usize("fragments").unwrap_or(0),
-            })),
-            "tool_call" => Some(Self::Tool(ToolEvent::Call {
+            }),
+            "tool_call" => HookKind::Tool(ToolEvent::Call {
                 tool: fields.string("tool").unwrap_or_default(),
                 arguments: fields.string("arguments").unwrap_or_default(),
-            })),
-            "tool_result" => Some(Self::Tool(ToolEvent::Result {
+            }),
+            "tool_result" => HookKind::Tool(ToolEvent::Result {
                 tool: fields.string("tool").unwrap_or_default(),
                 result_len: fields
                     .string("result")
                     .map(|result| result.len())
                     .unwrap_or(0),
                 duration: fields.string("duration").unwrap_or_default(),
-            })),
-            "tool_error" => Some(Self::Tool(ToolEvent::Error {
+            }),
+            "tool_error" => HookKind::Tool(ToolEvent::Error {
                 tool: fields.string("tool").unwrap_or_default(),
                 error: fields.string("error").unwrap_or_default(),
                 retryable: fields.bool("retryable").unwrap_or(true),
-            })),
-            "appended" => Some(Self::Fragment(FragmentEvent::Appended(
-                fields.fragment_meta(),
-            ))),
-            "taken" => Some(Self::Fragment(FragmentEvent::Taken(fields.fragment_meta()))),
-            "inserted" => Some(Self::Fragment(FragmentEvent::Inserted(
-                fields.fragment_meta(),
-            ))),
-            "replaced" => Some(Self::Fragment(FragmentEvent::Replaced(
-                fields.fragment_meta(),
-            ))),
-            "removed" => Some(Self::Fragment(FragmentEvent::Removed {
+            }),
+            "appended" => HookKind::Fragment(FragmentEvent::Appended(fields.fragment_meta())),
+            "taken" => HookKind::Fragment(FragmentEvent::Taken(fields.fragment_meta())),
+            "inserted" => HookKind::Fragment(FragmentEvent::Inserted(fields.fragment_meta())),
+            "replaced" => HookKind::Fragment(FragmentEvent::Replaced(fields.fragment_meta())),
+            "removed" => HookKind::Fragment(FragmentEvent::Removed {
                 id: fields.u64("id").unwrap_or(0),
-            })),
-            "swapped" => Some(Self::Fragment(FragmentEvent::Swapped {
+            }),
+            "swapped" => HookKind::Fragment(FragmentEvent::Swapped {
                 first: fields.u64("id1").unwrap_or(0),
                 second: fields.u64("id2").unwrap_or(0),
-            })),
-            "model" => Some(Self::Resource(ResourceEvent::Model {
+            }),
+            "model" => HookKind::Resource(ResourceEvent::Model {
                 name: fields.string("name").unwrap_or_default(),
-            })),
-            "activate" => Some(Self::Resource(ResourceEvent::Activate {
+            }),
+            "activate" => HookKind::Resource(ResourceEvent::Activate {
                 name: fields.string("name").unwrap_or_default(),
-            })),
-            "deactivate" => Some(Self::Resource(ResourceEvent::Deactivate {
+            }),
+            "deactivate" => HookKind::Resource(ResourceEvent::Deactivate {
                 name: fields.string("name").unwrap_or_default(),
-            })),
-            _ => None,
-        }
+            }),
+            _ => return None,
+        };
+        Some(Self {
+            source: fields.source_meta(),
+            kind,
+        })
     }
 }

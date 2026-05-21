@@ -2,43 +2,7 @@ use machine::{Content, Environment, Fragment, Resources, Role};
 use serde::{Deserialize, Serialize};
 use utils::{ConditionId, Name};
 
-use crate::accelerator::Port;
 use crate::state::State;
-
-#[derive(Clone, Debug)]
-pub struct ConditionRef {
-    pub(crate) index: usize,
-    pub(crate) id: ConditionId,
-}
-
-impl ConditionRef {
-    pub fn id(&self) -> &ConditionId {
-        &self.id
-    }
-
-    pub fn trigger(&self) -> Port {
-        Port::ConditionIn {
-            index: self.index,
-            condition_id: self.id.clone(),
-        }
-    }
-
-    pub fn pulse_true(&self) -> Port {
-        self.out(ConditionBranch::True)
-    }
-
-    pub fn pulse_false(&self) -> Port {
-        self.out(ConditionBranch::False)
-    }
-
-    fn out(&self, branch: ConditionBranch) -> Port {
-        Port::ConditionOut {
-            index: self.index,
-            condition_id: self.id.clone(),
-            branch,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ConditionBranch {
@@ -46,14 +10,15 @@ pub enum ConditionBranch {
     False,
 }
 
-pub(crate) struct Condition {
+#[derive(Clone)]
+pub struct Condition {
     id: ConditionId,
     pub name: Name,
     pub predicate: Predicate,
 }
 
 impl Condition {
-    pub(crate) fn new(name: impl Into<String>, predicate: Predicate) -> Self {
+    pub fn new(name: impl Into<String>, predicate: Predicate) -> Self {
         Self {
             id: ConditionId::new(),
             name: Name::new(name).expect("condition name must be valid"),
@@ -61,8 +26,16 @@ impl Condition {
         }
     }
 
-    pub(crate) fn id(&self) -> &ConditionId {
+    pub fn id(&self) -> &ConditionId {
         &self.id
+    }
+
+    pub fn route(&self, state: &State) -> ConditionBranch {
+        if self.predicate.evaluate(state) {
+            ConditionBranch::True
+        } else {
+            ConditionBranch::False
+        }
     }
 }
 

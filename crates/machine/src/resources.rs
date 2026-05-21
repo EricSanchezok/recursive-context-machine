@@ -16,6 +16,7 @@ pub struct Resources {
     pub name: Name,
     pub tools: HashMap<String, Arc<dyn Tool>>,
     pub models: HashMap<String, Model>,
+    pub model_order: Vec<String>,
     pub active_model: String,
     pub active_tools: HashSet<String>,
     pub prompts: HashMap<String, String>,
@@ -42,6 +43,7 @@ impl Resources {
             name: Name::new(name).expect("resources name must be valid"),
             tools: HashMap::new(),
             models: HashMap::new(),
+            model_order: Vec::new(),
             active_model: String::new(),
             active_tools: HashSet::new(),
             prompts: HashMap::new(),
@@ -55,14 +57,32 @@ impl Resources {
         self
     }
 
-    /// Register a model. The first model registered becomes the active model.
-    /// Overwrites any model with the same name.
+    /// Register a model. Overwrites any model with the same name.
     pub fn with_model(mut self, model: Model) -> Self {
-        if self.active_model.is_empty() {
-            self.active_model.clone_from(&model.name);
+        if !self.models.contains_key(&model.name) {
+            self.model_order.push(model.name.clone());
         }
         self.models.insert(model.name.clone(), model);
         self
+    }
+
+    pub fn replace_tools(mut self, tools: HashMap<String, Arc<dyn Tool>>) -> Self {
+        self.active_tools.retain(|name| tools.contains_key(name));
+        self.tools = tools;
+        self
+    }
+
+    pub fn replace_prompts(mut self, prompts: HashMap<String, String>) -> Self {
+        self.prompts = prompts;
+        self
+    }
+
+    pub fn deactivate_model(&mut self) {
+        self.active_model.clear();
+    }
+
+    pub fn deactivate_tools(&mut self) {
+        self.active_tools.clear();
     }
 
     /// Enable a tool. Idempotent.
@@ -102,7 +122,7 @@ impl Resources {
     ///
     /// # Panics
     ///
-    /// Panics when no model has been registered.
+    /// Panics when no model has been activated.
     pub fn active_model(&self) -> &Model {
         self.models
             .get(&self.active_model)

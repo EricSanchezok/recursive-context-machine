@@ -7,6 +7,7 @@ name = "accelerator"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "futures-util",
  "globset",
  "ignore",
  "lsp-types",

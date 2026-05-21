@@ -8,13 +8,9 @@ use tokio::sync::Mutex;
 
 use super::transport::Transport;
 
-/// A tool discovered from an MCP server.
-///
-/// Wraps the server's tool description and delegates `execute` to the
-/// `tools/call` JSON-RPC method. The transport is shared — all tools
-/// from the same server use the same connection.
 pub(crate) struct McpTool {
-    pub(crate) name: String,
+    pub(crate) public_name: String,
+    pub(crate) server_name: String,
     pub(crate) description: String,
     pub(crate) parameters: Value,
     pub(crate) transport: Arc<Mutex<Transport>>,
@@ -22,7 +18,7 @@ pub(crate) struct McpTool {
 
 impl Tool for McpTool {
     fn name(&self) -> &str {
-        &self.name
+        &self.public_name
     }
 
     fn description(&self) -> &str {
@@ -44,56 +40,74 @@ impl Tool for McpTool {
                 .call(
                     "tools/call",
                     serde_json::json!({
-                        "name": self.name,
+                        "name": self.server_name,
                         "arguments": args
                     }),
                 )
                 .await?;
 
-            let mut output = String::new();
-            if let Some(contents) = result.get("content").and_then(|c| c.as_array()) {
-                for entry in contents {
-                    if let Some(text) = entry.get("text").and_then(|t| t.as_str()) {
-                        if !output.is_empty() {
-                            output.push('\n');
-                        }
-                        output.push_str(text);
-                    }
-                    match entry.get("type").and_then(|t| t.as_str()) {
-                        Some("image") => output.push_str("[MCP image result]"),
-                        Some("resource") => {
-                            if let Some(uri) = entry.get("uri").and_then(|u| u.as_str()) {
-                                output.push_str(&format!("[MCP resource: {uri}]"));
-                            } else {
-                                output.push_str("[MCP resource result]");
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
-            if result
-                .get("isError")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false)
-            {
-                return Err(if output.is_empty() {
-                    "MCP tool returned an error with no text content".to_string()
-                } else {
-                    output
-                });
-            }
-
-            if output.is_empty() {
-                output = "[tool returned no content]".to_string();
-            }
-
+            let output = format_tool_result(&result)?;
             Ok(ToolResult {
                 call_id: String::new(),
                 content: output,
-                title: Some(self.name.clone()),
+                title: Some(self.public_name.clone()),
             })
         })
+    }
+}
+
+fn format_tool_result(result: &Value) -> Result<String, String> {
+    let mut output = String::new();
+    if let Some(contents) = result.get("content").and_then(|content| content.as_array()) {
+        for entry in contents {
+            append_content(&mut output, entry);
+        }
+    }
+    if let Some(structured) = result.get("structuredContent") {
+        if !output.is_empty() {
+            output.push('\n');
+        }
+        output.push_str(&structured.to_string());
+    }
+    if result
+        .get("isError")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+    {
+        return Err(if output.is_empty() {
+            "MCP tool returned an error with no content".to_string()
+        } else {
+            output
+        });
+    }
+    if output.is_empty() {
+        output = "[tool returned no content]".to_string();
+    }
+    Ok(output)
+}
+
+fn append_content(output: &mut String, entry: &Value) {
+    if !output.is_empty() {
+        output.push('\n');
+    }
+    match entry.get("type").and_then(|value| value.as_str()) {
+        Some("text") => output.push_str(
+            entry
+                .get("text")
+                .and_then(|value| value.as_str())
+                .unwrap_or(""),
+        ),
+        Some("image") => output.push_str("[MCP image result]"),
+        Some("audio") => output.push_str("[MCP audio result]"),
+        Some("resource_link") => {
+            let uri = entry
+                .get("uri")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown");
+            output.push_str(&format!("[MCP resource link: {uri}]"));
+        }
+        Some("resource") => output.push_str("[MCP embedded resource]"),
+        Some(other) => output.push_str(&format!("[MCP {other} result]")),
+        None => output.push_str("[MCP result]"),
     }
 }

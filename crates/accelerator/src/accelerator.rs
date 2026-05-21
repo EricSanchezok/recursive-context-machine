@@ -1,38 +1,100 @@
 use machine::{Machine, Purpose};
 use std::future::Future;
 use std::pin::Pin;
-use utils::{AcceleratorId, ConditionId, FluxId, Name};
+use utils::{AcceleratorId, Name};
 
-use crate::condition::ConditionBranch;
-
+use crate::graph::Graph;
 use crate::state::State;
 
-/// A single agent — runs the Context Machine.
+#[derive(Clone)]
 pub struct Accelerator {
     id: AcceleratorId,
     pub name: Name,
-    pub(crate) state: State,
+    body: AcceleratorBody,
 }
 
 impl Accelerator {
+    pub fn primitive(state: State) -> Self {
+        Self::primitive_named("accelerator", state)
+    }
+
+    pub fn primitive_named(name: impl Into<String>, state: State) -> Self {
+        Self {
+            id: AcceleratorId::new(),
+            name: Name::new(name).expect("accelerator name must be valid"),
+            body: AcceleratorBody::Primitive(PrimitiveAccelerator { state }),
+        }
+    }
+
+    pub fn composite(graph: Graph) -> Self {
+        let name = graph.name.clone();
+        Self::composite_named(name.as_str(), graph)
+    }
+
+    pub fn composite_named(name: impl Into<String>, graph: Graph) -> Self {
+        Self {
+            id: AcceleratorId::new(),
+            name: Name::new(name).expect("accelerator name must be valid"),
+            body: AcceleratorBody::Composite(graph),
+        }
+    }
+
     pub fn id(&self) -> &AcceleratorId {
         &self.id
     }
 
-    pub fn new(state: State) -> Self {
-        Self::named("accelerator", state)
+    pub fn body(&self) -> &AcceleratorBody {
+        &self.body
     }
 
-    pub fn named(name: impl Into<String>, state: State) -> Self {
-        Self {
-            id: AcceleratorId::new(),
-            name: Name::new(name).expect("accelerator name must be valid"),
-            state,
+    pub fn set_purpose(&mut self, purpose: impl Into<String>) -> Result<(), String> {
+        match &mut self.body {
+            AcceleratorBody::Primitive(primitive) => {
+                primitive.state.purpose = purpose.into();
+                Ok(())
+            }
+            AcceleratorBody::Composite(_) => {
+                Err("graph accelerator purpose override is not supported".to_string())
+            }
         }
     }
 
     pub fn run(self) -> Pin<Box<dyn Future<Output = State> + Send>> {
-        Box::pin(async move { fire(self.state).await })
+        let input = self.default_input();
+        self.run_with(input)
+    }
+
+    pub(crate) fn default_input(&self) -> State {
+        match &self.body {
+            AcceleratorBody::Primitive(primitive) => primitive.state.clone(),
+            AcceleratorBody::Composite(_) => State::default(),
+        }
+    }
+
+    pub(crate) fn run_with(self, input: State) -> Pin<Box<dyn Future<Output = State> + Send>> {
+        Box::pin(async move {
+            match self.body {
+                AcceleratorBody::Primitive(_) => fire(input).await,
+                AcceleratorBody::Composite(graph) => graph.run(input).await,
+            }
+        })
+    }
+}
+
+#[derive(Clone)]
+pub enum AcceleratorBody {
+    Primitive(PrimitiveAccelerator),
+    Composite(Graph),
+}
+
+#[derive(Clone)]
+pub struct PrimitiveAccelerator {
+    state: State,
+}
+
+impl PrimitiveAccelerator {
+    pub fn state(&self) -> &State {
+        &self.state
     }
 }
 
@@ -43,134 +105,4 @@ pub(crate) async fn fire(mut state: State) -> State {
         .run(&purpose, &mut state.ctx, &mut state.env, &mut state.res)
         .await;
     state
-}
-
-#[derive(Clone, Debug)]
-pub struct AcceleratorRef {
-    pub(crate) index: usize,
-    pub(crate) id: AcceleratorId,
-}
-
-impl AcceleratorRef {
-    pub fn id(&self) -> &AcceleratorId {
-        &self.id
-    }
-
-    pub fn purpose_out(&self) -> Port {
-        self.port(Channel::Purpose)
-    }
-    pub fn ctx_out(&self) -> Port {
-        self.port(Channel::Context)
-    }
-    pub fn env_out(&self) -> Port {
-        self.port(Channel::Environment)
-    }
-    pub fn policy_out(&self) -> Port {
-        self.port(Channel::Policy)
-    }
-    pub fn res_out(&self) -> Port {
-        self.port(Channel::Resources)
-    }
-    pub fn done(&self) -> Port {
-        self.port(Channel::Pulse)
-    }
-    pub fn purpose_in(&self) -> Port {
-        self.port(Channel::Purpose)
-    }
-    pub fn ctx_in(&self) -> Port {
-        self.port(Channel::Context)
-    }
-    pub fn env_in(&self) -> Port {
-        self.port(Channel::Environment)
-    }
-    pub fn policy_in(&self) -> Port {
-        self.port(Channel::Policy)
-    }
-    pub fn res_in(&self) -> Port {
-        self.port(Channel::Resources)
-    }
-    pub fn trigger(&self) -> Port {
-        self.port(Channel::Pulse)
-    }
-
-    fn port(&self, channel: Channel) -> Port {
-        Port::Accel {
-            index: self.index,
-            accelerator_id: self.id.clone(),
-            channel,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Channel {
-    Purpose,
-    Context,
-    Environment,
-    Policy,
-    Resources,
-    Pulse,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Port {
-    Accel {
-        index: usize,
-        accelerator_id: AcceleratorId,
-        channel: Channel,
-    },
-    FluxOut {
-        index: usize,
-        flux_id: FluxId,
-        channel: Channel,
-    },
-    FluxSlot {
-        index: usize,
-        flux_id: FluxId,
-        slot: usize,
-        channel: Channel,
-    },
-    ConditionIn {
-        index: usize,
-        condition_id: ConditionId,
-    },
-    ConditionOut {
-        index: usize,
-        condition_id: ConditionId,
-        branch: ConditionBranch,
-    },
-}
-
-impl Port {
-    pub fn is_output(&self) -> bool {
-        matches!(
-            self,
-            Port::Accel { .. } | Port::FluxOut { .. } | Port::ConditionOut { .. }
-        )
-    }
-    pub fn is_input(&self) -> bool {
-        matches!(
-            self,
-            Port::Accel { .. } | Port::FluxSlot { .. } | Port::ConditionIn { .. }
-        )
-    }
-    pub fn channel(&self) -> Channel {
-        match self {
-            Port::Accel { channel, .. }
-            | Port::FluxOut { channel, .. }
-            | Port::FluxSlot { channel, .. } => *channel,
-            Port::ConditionIn { .. } | Port::ConditionOut { .. } => Channel::Pulse,
-        }
-    }
-    pub(crate) fn node_index(&self, num_accelerators: usize, num_fluxes: usize) -> usize {
-        let flux_offset = |index: usize| num_accelerators + index;
-        let condition_offset = |index: usize| num_accelerators + num_fluxes + index;
-        match self {
-            Port::Accel { index, .. } => *index,
-            Port::FluxOut { index, .. } | Port::FluxSlot { index, .. } => flux_offset(*index),
-            Port::ConditionIn { index, .. } | Port::ConditionOut { index, .. } => {
-                condition_offset(*index)
-            }
-        }
-    }
 }
