@@ -1,0 +1,27 @@
+name = "ArXiv Research Pipeline"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+use "./arxiv_search.rcm" as ArxivSearcher
+
+graph {
+    accelerator search = ArxivSearcher
+    accelerator summarize {
+        purpose = "读取上游搜索到的论文结果，用中文写一段 300 字的摘要，介绍这些论文的研究方向。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = ["arxiv", "shell"]
+    }
+
+    search.done -> summarize.trigger
+    search.context -> summarize.context
+    summarize.done -> output.done
+    summarize.context -> output.context
+    summarize.purpose -> output.purpose
+}

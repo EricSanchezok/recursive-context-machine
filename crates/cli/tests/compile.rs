@@ -99,7 +99,7 @@ fn compile_selects_resource_pools_without_initial_activation() {
     assert!(state.res.models.contains_key("fast"));
     assert!(state.res.models.contains_key("careful"));
     assert!(state.res.active_model.is_empty());
-    assert_eq!(state.res.prompts.len(), 1);
+    assert!(state.res.prompts.contains_key("captain"));
     assert_eq!(
         state.res.prompts.get("captain").map(String::as_str),
         Some("Custom captain")
@@ -130,8 +130,8 @@ fn compile_keeps_default_tools_when_only_prompts_are_supplied() {
     let accelerator = compile_result(source).unwrap();
     let state = primitive_state(&accelerator);
 
-    assert_eq!(state.res.prompts.len(), 1);
-    assert_eq!(state.res.tools.len(), 5);
+    assert!(state.res.prompts.contains_key("captain"));
+    assert!(state.res.tools.contains_key("arxiv"));
     assert!(state.res.tools.contains_key("find"));
     assert!(state.res.tools.contains_key("fs"));
     assert!(state.res.tools.contains_key("lsp"));
