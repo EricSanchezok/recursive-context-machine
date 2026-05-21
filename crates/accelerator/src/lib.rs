@@ -15,7 +15,7 @@ pub mod state;
 pub mod tools;
 pub mod wire;
 
-pub use accelerator::{Accelerator, AcceleratorConfig, InputState};
+pub use accelerator::{Accelerator, AcceleratorConfig};
 pub use catalog::Catalog;
 pub use condition::{
     Condition, ConditionBranch, ContextPredicate, EnvironmentPredicate, Predicate,
