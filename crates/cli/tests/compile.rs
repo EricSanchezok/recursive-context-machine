@@ -8,7 +8,7 @@ static FILE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn unique_path(name: &str, extension: &str) -> PathBuf {
     let seq = FILE_SEQ.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("rica-{}-{}.{}", name, seq, extension))
+    std::env::temp_dir().join(format!("rcm-{}-{}.{}", name, seq, extension))
 }
 
 fn write_rcm(name: &str, source: &str) -> PathBuf {
@@ -31,7 +31,7 @@ fn remove_compile_path(path: &Path) {
         if parent
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with("rica-") && name.ends_with(".dir"))
+            .is_some_and(|name| name.starts_with("rcm-") && name.ends_with(".dir"))
         {
             let _ = fs::remove_dir_all(parent);
             return;
