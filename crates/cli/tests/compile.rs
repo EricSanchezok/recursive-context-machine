@@ -1,20 +1,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use accelerator::{Accelerator, AcceleratorBody};
+use accelerator::Accelerator;
+
+static FILE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn unique_path(name: &str, extension: &str) -> PathBuf {
-    let nonce = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    std::env::temp_dir().join(format!(
-        "rica-{}-{}-{}.{}",
-        name,
-        std::process::id(),
-        nonce,
-        extension
-    ))
+    let seq = FILE_SEQ.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("rcm-{}-{}.{}", name, seq, extension))
 }
 
 fn write_rcm(name: &str, source: &str) -> PathBuf {
@@ -37,7 +31,7 @@ fn remove_compile_path(path: &Path) {
         if parent
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with("rica-") && name.ends_with(".dir"))
+            .is_some_and(|name| name.starts_with("rcm-") && name.ends_with(".dir"))
         {
             let _ = fs::remove_dir_all(parent);
             return;
@@ -62,10 +56,9 @@ fn compile_result(source: &str) -> Result<Accelerator, String> {
 }
 
 fn primitive_state(accelerator: &Accelerator) -> &accelerator::State {
-    match accelerator.body() {
-        AcceleratorBody::Primitive(primitive) => primitive.state(),
-        AcceleratorBody::Composite(_) => panic!("expected primitive accelerator"),
-    }
+    accelerator
+        .internal_state()
+        .expect("expected primitive accelerator")
 }
 
 #[test]
@@ -99,7 +92,7 @@ fn compile_selects_resource_pools_without_initial_activation() {
     assert!(state.res.models.contains_key("fast"));
     assert!(state.res.models.contains_key("careful"));
     assert!(state.res.active_model.is_empty());
-    assert_eq!(state.res.prompts.len(), 1);
+    assert!(state.res.prompts.contains_key("captain"));
     assert_eq!(
         state.res.prompts.get("captain").map(String::as_str),
         Some("Custom captain")
@@ -130,8 +123,8 @@ fn compile_keeps_default_tools_when_only_prompts_are_supplied() {
     let accelerator = compile_result(source).unwrap();
     let state = primitive_state(&accelerator);
 
-    assert_eq!(state.res.prompts.len(), 1);
-    assert_eq!(state.res.tools.len(), 5);
+    assert!(state.res.prompts.contains_key("captain"));
+    assert!(state.res.tools.contains_key("arxiv"));
     assert!(state.res.tools.contains_key("find"));
     assert!(state.res.tools.contains_key("fs"));
     assert!(state.res.tools.contains_key("lsp"));

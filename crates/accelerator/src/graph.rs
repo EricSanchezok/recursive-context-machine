@@ -287,8 +287,8 @@ impl GraphRun {
 
         for component in &graph.components {
             match &component.kind {
-                ComponentKind::Accelerator(accelerator) => {
-                    inputs.push(accelerator.default_input());
+                ComponentKind::Accelerator(_) => {
+                    inputs.push(State::default());
                     flux_slots.push(Vec::new());
                 }
                 ComponentKind::Flux(flux) => {

@@ -1,6 +1,7 @@
+use serde::Serialize;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RcmFile {
     pub name: String,
     pub uses: Vec<UseDef>,
@@ -9,25 +10,25 @@ pub struct RcmFile {
     pub body: AcceleratorBodyDef,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct UseDef {
     pub path: String,
     pub alias: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum AcceleratorBodyDef {
     Primitive(PrimitiveDef),
     Graph(GraphDef),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum PromptSourceDef {
     Inline(String),
     File(String),
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct PrimitiveDef {
     pub purpose: Option<String>,
     pub models: Vec<String>,
@@ -37,7 +38,7 @@ pub struct PrimitiveDef {
     pub policy: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GraphDef {
     pub accelerators: Vec<GraphAcceleratorDef>,
     pub fluxes: Vec<FluxDef>,
@@ -45,13 +46,13 @@ pub struct GraphDef {
     pub wires: Vec<WireDef>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GraphAcceleratorDef {
     pub id: String,
     pub source: AcceleratorSourceDef,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum AcceleratorSourceDef {
     Inline(PrimitiveDef),
     Import {
@@ -60,7 +61,7 @@ pub enum AcceleratorSourceDef {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ModelDef {
     pub id: String,
     pub protocol: String,
@@ -74,7 +75,7 @@ pub struct ModelDef {
     pub modalities_output: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct FluxDef {
     pub id: String,
     pub name: Option<String>,
@@ -83,33 +84,33 @@ pub struct FluxDef {
     pub arity: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ConditionDef {
     pub id: String,
     pub name: Option<String>,
     pub predicate: Predicate,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct WireDef {
     pub from: PortDef,
     pub to: PortDef,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PortDef {
     pub owner: PortOwnerDef,
     pub endpoint: EndpointDef,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum PortOwnerDef {
     Input,
     Output,
     Component(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum EndpointDef {
     Trigger,
     Done,
@@ -120,13 +121,13 @@ pub enum EndpointDef {
     ConditionFalse,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct McpDef {
     pub label: String,
     pub transport: McpTransportDef,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum McpTransportDef {
     Stdio {
         command: String,
@@ -144,13 +145,13 @@ pub enum McpTransportDef {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum McpValueDef {
     Literal(String),
     Env(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum Predicate {
     PurposeContains(String),
     PurposeEquals(String),

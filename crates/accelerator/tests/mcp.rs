@@ -41,7 +41,7 @@ fn http_config_keeps_endpoint_and_headers() {
             url: "https://example.com/mcp".into(),
             headers: vec![
                 ("Authorization".into(), "Bearer token".into()),
-                ("X-Project".into(), "RICA".into()),
+                ("X-Project".into(), "RCM".into()),
             ],
         },
     };
