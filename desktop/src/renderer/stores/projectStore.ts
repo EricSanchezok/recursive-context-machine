@@ -7,8 +7,8 @@ async function listRcmFiles(dir: string): Promise<string[]> {
   try {
     const entries = await api.listDir(rcmDir)
     return entries
-      .filter((e) => e.extension === 'rcm')
-      .map((e) => e.path)
+      .filter((entry) => entry.extension === 'rcm')
+      .map((entry) => entry.path)
   } catch (err) {
     console.error('listRcmFiles failed:', rcmDir, err)
     return []
@@ -39,65 +39,80 @@ let store: ProjectStore = {
 const listeners: Array<(store: ProjectStore) => void> = []
 
 export function getStore(): ProjectStore {
-  return store
+  return snapshot()
 }
 
 export function subscribe(fn: (store: ProjectStore) => void): () => void {
   listeners.push(fn)
   return () => {
-    const idx = listeners.indexOf(fn)
-    if (idx >= 0) listeners.splice(idx, 1)
+    const index = listeners.indexOf(fn)
+    if (index >= 0) listeners.splice(index, 1)
   }
 }
 
 function emit(): void {
-  for (const fn of listeners) fn(store)
+  const next = snapshot()
+  for (const listener of listeners) listener(next)
+}
+
+function snapshot(): ProjectStore {
+  return {
+    ...store,
+    rcmFiles: [...store.rcmFiles],
+    tabs: [...store.tabs],
+  }
 }
 
 export async function openProject(): Promise<void> {
   const api = getAPI()
   const projectPath = await api.openProject()
-  console.log('openProject returned:', projectPath)
   if (!projectPath) return
-  store.projectPath = projectPath
 
-  store.rcmFiles = await listRcmFiles(projectPath)
-  console.log('listRcmFiles result:', store.rcmFiles)
-
-  store.tabs = []
-  store.activeTab = null
+  const rcmFiles = await listRcmFiles(projectPath)
+  let inventory: Inventory | null = null
   try {
-    const raw = await api.inventory(projectPath)
-    console.log('accelerate inventory raw output (first 200 chars):', raw.slice(0, 200))
-    store.inventory = JSON.parse(raw)
+    inventory = JSON.parse(await api.inventory(projectPath))
   } catch (err) {
     console.error('accelerate inventory failed:', err)
-    store.inventory = null
   }
+
+  store = {
+    projectPath,
+    rcmFiles,
+    inventory,
+    tabs: [],
+    activeTab: null,
+  }
+  emit()
+}
+
+export function showHome(): void {
+  store = { ...store, activeTab: null }
   emit()
 }
 
 export function addTab(tab: Tab): void {
-  store.tabs.push(tab)
-  store.activeTab = tab.id
+  const tabs = store.tabs.some((existing) => existing.id === tab.id)
+    ? store.tabs
+    : [...store.tabs, tab]
+  store = { ...store, tabs, activeTab: tab.id }
   emit()
 }
 
 export function closeTab(tabId: string): void {
-  store.tabs = store.tabs.filter((t) => t.id !== tabId)
-  if (store.activeTab === tabId) {
-    store.activeTab = store.tabs[0]?.id ?? null
-  }
+  const tabs = store.tabs.filter((tab) => tab.id !== tabId)
+  const activeTab = store.activeTab === tabId ? tabs[0]?.id ?? null : store.activeTab
+  store = { ...store, tabs, activeTab }
   emit()
 }
 
 export function setActiveTab(tabId: string): void {
-  store.activeTab = tabId
+  store = { ...store, activeTab: tabId }
   emit()
 }
 
 export function renameTab(tabId: string, name: string): void {
-  const tab = store.tabs.find((t) => t.id === tabId)
-  if (tab) tab.name = name
+  const tabs = store.tabs.map((tab) => (tab.id === tabId ? { ...tab, name } : tab))
+  store = { ...store, tabs }
   emit()
 }
