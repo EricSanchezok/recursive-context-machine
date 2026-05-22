@@ -4,6 +4,8 @@ import { ZoomControls } from '../../workbench/ZoomControls'
 import { AcceleratorNode } from './nodes/AcceleratorNode'
 import { FluxNode } from './nodes/FluxNode'
 import { ConditionNode } from './nodes/ConditionNode'
+import { TextNode } from './nodes/TextNode'
+import { ConnectionLine } from './ConnectionLine'
 
 interface WorkspaceProps {
   nodes: NodeData[]
@@ -61,6 +63,15 @@ export function Workspace({ nodes, wires, onNodesChange }: WorkspaceProps) {
         className="relative w-full h-full"
         style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
       >
+        <svg className="absolute inset-0 pointer-events-none" style={{ width: 5000, height: 3000 }}>
+          {wires.map((wire) => {
+            const from = portPoint(nodes, wire.from.nodeId, 'out')
+            const to = portPoint(nodes, wire.to.nodeId, 'in')
+            if (!from || !to) return null
+            return <ConnectionLine key={wire.id} from={from} to={to} />
+          })}
+        </svg>
+
         {nodes.map((node) => {
           switch (node.kind) {
             case 'accelerator':
@@ -69,6 +80,8 @@ export function Workspace({ nodes, wires, onNodesChange }: WorkspaceProps) {
               return <FluxNode key={node.id} node={node} onMove={(x, y) => moveNode(node.id, x, y)} />
             case 'condition':
               return <ConditionNode key={node.id} node={node} onMove={(x, y) => moveNode(node.id, x, y)} />
+            case 'text':
+              return <TextNode key={node.id} node={node} onMove={(x, y) => moveNode(node.id, x, y)} />
           }
         })}
       </div>
@@ -81,4 +94,16 @@ export function Workspace({ nodes, wires, onNodesChange }: WorkspaceProps) {
       />
     </div>
   )
+}
+
+function portPoint(nodes: NodeData[], nodeId: string, side: 'in' | 'out') {
+  if (nodeId === 'Input' || nodeId === 'Output' || nodeId === 'input' || nodeId === 'output') return null
+  const node = nodes.find((candidate) => candidate.id === nodeId)
+  if (!node) return null
+  const width = node.kind === 'accelerator' ? 260 : node.kind === 'condition' ? 220 : 200
+  const height = node.kind === 'accelerator' ? 118 : node.kind === 'condition' ? 110 : 96
+  return {
+    x: side === 'out' ? node.x + width : node.x,
+    y: node.y + height / 2,
+  }
 }

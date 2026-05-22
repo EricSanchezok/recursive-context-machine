@@ -4,7 +4,7 @@ import { Home } from '@workbench/Home'
 import { TabBar } from '@workbench/TabBar'
 import { ToolBar } from '@workbench/ToolBar'
 import { getStore, subscribe, addTab } from '../stores/projectStore'
-import { parseRcm } from '../platform/compile'
+import { parseRcm, onRunLine, runRcm } from '../platform/compile'
 import { Workspace } from '../features/workspace/Workspace'
 import { rcmToGraph } from '../features/workspace/rcmToGraph'
 import type { NodeData, Wire } from '../types/graph'
@@ -109,16 +109,45 @@ function GraphWorkspace({ filePath }: { filePath: string }) {
     )
   }
 
+  const addNode = (kind: NodeData['kind']) => {
+    const index = nodes.length + 1
+    const base = { id: crypto.randomUUID(), kind, x: 180 + index * 32, y: 160 + index * 28 }
+    const node: NodeData =
+      kind === 'text'
+        ? { ...base, name: `text_${index}`, purpose: '', text: 'New text', model: '', tools: [], mcps: [], policy: '' }
+        : kind === 'flux'
+          ? { ...base, name: `flux_${index}`, purpose: '', model: '', tools: [], mcps: [], policy: '', fluxMode: 'append', fluxChannel: 'context', fluxArity: 2 }
+          : kind === 'condition'
+            ? { ...base, name: `condition_${index}`, purpose: '', model: '', tools: [], mcps: [], policy: '', conditionPredicate: 'predicate' }
+            : { ...base, name: `accelerator_${index}`, purpose: '', model: '', tools: [], mcps: [], policy: 'captain' }
+    setNodes([...nodes, node])
+  }
+
+  const [isRunning, setRunning] = useState(false)
+  const runActiveFile = async () => {
+    setRunning(true)
+    const unsubscribe = onRunLine((line) => console.log('run:', line))
+    try {
+      await runRcm(filePath)
+    } finally {
+      unsubscribe()
+      setRunning(false)
+    }
+  }
+
   return (
-    <div className="flex-1 relative overflow-hidden figjam-grid">
-      <Workspace nodes={nodes} wires={wires} onNodesChange={setNodes} />
+    <div className="flex-1 relative overflow-hidden figjam-grid" style={{ display: 'flex', flexDirection: 'column' }}>
+      <div className="flex-1 relative overflow-hidden">
+        <Workspace nodes={nodes} wires={wires} onNodesChange={setNodes} />
+      </div>
       <ToolBar
-        onAddAccelerator={() => {}}
-        onAddFlux={() => {}}
-        onAddCondition={() => {}}
+        onAddAccelerator={() => addNode('accelerator')}
+        onAddText={() => addNode('text')}
+        onAddFlux={() => addNode('flux')}
+        onAddCondition={() => addNode('condition')}
         onAddWire={() => {}}
-        onRun={() => {}}
-        isRunning={false}
+        onRun={runActiveFile}
+        isRunning={isRunning}
       />
     </div>
   )

@@ -1,4 +1,4 @@
-export type NodeKind = 'accelerator' | 'flux' | 'condition'
+export type NodeKind = 'accelerator' | 'flux' | 'condition' | 'text'
 
 export interface Port {
   id: string
@@ -20,6 +20,7 @@ export interface NodeData {
   kind: NodeKind
   name: string
   purpose: string
+  text?: string
   model?: string
   tools: string[]
   mcps: string[]
