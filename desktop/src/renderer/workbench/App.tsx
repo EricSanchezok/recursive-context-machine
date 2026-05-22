@@ -7,7 +7,8 @@ import { getStore, subscribe, addTab } from '../stores/projectStore'
 import { parseRcm, onRunLine, runRcm } from '../platform/compile'
 import { Workspace } from '../features/workspace/Workspace'
 import { rcmToGraph } from '../features/workspace/rcmToGraph'
-import type { NodeData, Wire } from '../types/graph'
+import { acceleratorNode, conditionNode, fluxNode, textNode } from '../features/workspace/nodeFactory'
+import type { GraphNode, Wire } from '../types/graph'
 
 export function App() {
   const [store, setStore] = useState(getStore())
@@ -69,7 +70,7 @@ function ProjectDashboard({ rcmFiles }: { rcmFiles: string[] }) {
 }
 
 function GraphWorkspace({ filePath }: { filePath: string }) {
-  const [nodes, setNodes] = useState<NodeData[]>([])
+  const [nodes, setNodes] = useState<GraphNode[]>([])
   const [wires, setWires] = useState<Wire[]>([])
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -109,17 +110,17 @@ function GraphWorkspace({ filePath }: { filePath: string }) {
     )
   }
 
-  const addNode = (kind: NodeData['kind']) => {
+  const addNode = (kind: GraphNode['kind']) => {
     const index = nodes.length + 1
-    const base = { id: crypto.randomUUID(), kind, x: 180 + index * 32, y: 160 + index * 28 }
-    const node: NodeData =
+    const base = { id: crypto.randomUUID(), name: `${kind}_${index}`, x: 180 + index * 32, y: 160 + index * 28 }
+    const node =
       kind === 'text'
-        ? { ...base, name: `text_${index}`, purpose: '', text: 'New text', model: '', tools: [], mcps: [], policy: '' }
+        ? textNode({ ...base, text: 'New text' })
         : kind === 'flux'
-          ? { ...base, name: `flux_${index}`, purpose: '', model: '', tools: [], mcps: [], policy: '', fluxMode: 'append', fluxChannel: 'context', fluxArity: 2 }
+          ? fluxNode({ ...base, mode: 'append', channel: 'context', arity: 2 })
           : kind === 'condition'
-            ? { ...base, name: `condition_${index}`, purpose: '', model: '', tools: [], mcps: [], policy: '', conditionPredicate: 'predicate' }
-            : { ...base, name: `accelerator_${index}`, purpose: '', model: '', tools: [], mcps: [], policy: 'captain' }
+            ? conditionNode({ ...base, predicate: 'predicate' })
+            : acceleratorNode({ ...base, purpose: '', model: '', tools: [], mcps: [], policy: 'captain' })
     setNodes([...nodes, node])
   }
 

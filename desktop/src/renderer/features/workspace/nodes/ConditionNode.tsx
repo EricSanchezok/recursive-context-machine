@@ -1,16 +1,17 @@
 import { useCallback } from 'react'
-import type { NodeData } from '../../../types/graph'
+import type { ConditionGraphNode } from '../../../types/graph'
+import { PortHandle } from './PortHandle'
 
 interface ConditionNodeProps {
-  node: NodeData
+  node: ConditionGraphNode
   onMove: (x: number, y: number) => void
 }
 
 export function ConditionNode({ node, onMove }: ConditionNodeProps) {
   const startDrag = useCallback(
-    (e: React.MouseEvent) => {
-      const startX = e.clientX - node.x
-      const startY = e.clientY - node.y
+    (event: React.MouseEvent) => {
+      const startX = event.clientX - node.position.x
+      const startY = event.clientY - node.position.y
       const onMouseMove = (ev: MouseEvent) => onMove(ev.clientX - startX, ev.clientY - startY)
       const onMouseUp = () => {
         document.removeEventListener('mousemove', onMouseMove)
@@ -19,39 +20,22 @@ export function ConditionNode({ node, onMove }: ConditionNodeProps) {
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
     },
-    [node.x, node.y, onMove],
+    [node.position.x, node.position.y, onMove],
   )
+
   return (
-    <div
-      data-node
-      className="absolute select-none"
-      style={{ left: node.x, top: node.y, width: 220 }}
-    >
-      <div
-        className="rounded-2xl shadow-lg border"
-        style={{ backgroundColor: 'var(--card)', borderColor: 'var(--node-condition-border)' }}
-      >
-        <div
-          onMouseDown={startDrag}
-          className="px-4 py-3 cursor-move"
-          style={{ borderColor: 'var(--border)' }}
-        >
-          <span className="font-semibold text-sm" style={{ color: 'var(--foreground)' }}>
-            {node.name || 'Condition'}
-          </span>
+    <div data-node className="absolute select-none" style={{ left: node.position.x, top: node.position.y, width: 220 }}>
+      <div className="rounded-2xl shadow-lg border relative" style={{ backgroundColor: 'var(--card)', borderColor: 'var(--node-condition-border)' }}>
+        {node.ports.filter((port) => port.direction === 'in').map((port) => (
+          <PortHandle key={port.id} port={port} side="left" label={port.name} />
+        ))}
+        {node.ports.filter((port) => port.direction === 'out').map((port) => (
+          <PortHandle key={port.id} port={port} side="right" label={port.name} />
+        ))}
+        <div onMouseDown={startDrag} className="px-4 py-3 cursor-move">
+          <span className="font-semibold text-sm" style={{ color: 'var(--foreground)' }}>{node.name || 'Condition'}</span>
         </div>
-        <div className="px-4 py-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-          {node.conditionPredicate || 'predicate'}
-        </div>
-        <div className="flex border-t" style={{ borderColor: 'var(--border)' }}>
-          <div className="flex-1 text-center py-1.5 text-xs font-medium text-emerald-600">
-            true
-          </div>
-          <div className="w-px" style={{ backgroundColor: 'var(--border)' }} />
-          <div className="flex-1 text-center py-1.5 text-xs font-medium text-rose-500">
-            false
-          </div>
-        </div>
+        <div className="px-4 py-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>{node.predicate}</div>
       </div>
     </div>
   )

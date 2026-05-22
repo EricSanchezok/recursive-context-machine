@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { NodeData, Wire } from '../../types/graph'
+import type { GraphNode, Wire } from '../../types/graph'
 import { ZoomControls } from '../../workbench/ZoomControls'
 import { AcceleratorNode } from './nodes/AcceleratorNode'
 import { FluxNode } from './nodes/FluxNode'
@@ -8,9 +8,9 @@ import { TextNode } from './nodes/TextNode'
 import { ConnectionLine } from './ConnectionLine'
 
 interface WorkspaceProps {
-  nodes: NodeData[]
+  nodes: GraphNode[]
   wires: Wire[]
-  onNodesChange: (nodes: NodeData[]) => void
+  onNodesChange: (nodes: GraphNode[]) => void
 }
 
 export function Workspace({ nodes, wires, onNodesChange }: WorkspaceProps) {
@@ -96,14 +96,14 @@ export function Workspace({ nodes, wires, onNodesChange }: WorkspaceProps) {
   )
 }
 
-function portPoint(nodes: NodeData[], nodeId: string, side: 'in' | 'out') {
+function portPoint(nodes: GraphNode[], nodeId: string, side: 'in' | 'out') {
   if (nodeId === 'Input' || nodeId === 'Output' || nodeId === 'input' || nodeId === 'output') return null
   const node = nodes.find((candidate) => candidate.id === nodeId)
   if (!node) return null
   const width = node.kind === 'accelerator' ? 260 : node.kind === 'condition' ? 220 : 200
   const height = node.kind === 'accelerator' ? 118 : node.kind === 'condition' ? 110 : 96
   return {
-    x: side === 'out' ? node.x + width : node.x,
-    y: node.y + height / 2,
+    x: side === 'out' ? node.position.x + width : node.position.x,
+    y: node.position.y + height / 2,
   }
 }
