@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react'
 import { FileText } from 'lucide-react'
 import { Home } from '@workbench/Home'
 import { TabBar } from '@workbench/TabBar'
+import { ToolBar } from '@workbench/ToolBar'
 import { getStore, subscribe, addTab } from '../stores/projectStore'
+import { parseRcm } from '../platform/compile'
+import { Workspace } from '../features/workspace/Workspace'
+import { rcmToGraph } from '../features/workspace/rcmToGraph'
+import type { NodeData, Wire } from '../types/graph'
 
 export function App() {
   const [store, setStore] = useState(getStore())
@@ -64,17 +69,57 @@ function ProjectDashboard({ rcmFiles }: { rcmFiles: string[] }) {
 }
 
 function GraphWorkspace({ filePath }: { filePath: string }) {
+  const [nodes, setNodes] = useState<NodeData[]>([])
+  const [wires, setWires] = useState<Wire[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const name = filePath.split('/').pop() ?? filePath
-  return (
-    <div className="flex-1 relative overflow-hidden">
-      <div className="absolute left-1/2 top-[42%] -translate-x-1/2 -translate-y-1/2 text-center">
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const ast = await parseRcm(filePath)
+        const graph = rcmToGraph(ast)
+        setNodes(graph.nodes)
+        setWires(graph.wires)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setLoaded(true)
+      }
+    })()
+  }, [filePath])
+
+  if (!loaded) {
+    return (
+      <div className="flex-1 flex items-center justify-center figjam-grid" />
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center figjam-grid">
         <div className="canvas-card rounded-3xl px-12 py-10">
           <div className="text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>{name}</div>
-          <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
-            Graph workspace will render this file here.
+          <div className="text-xs" style={{ color: 'var(--destructive)' }}>
+            {error}
           </div>
         </div>
       </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 relative overflow-hidden figjam-grid">
+      <Workspace nodes={nodes} wires={wires} onNodesChange={setNodes} />
+      <ToolBar
+        onAddAccelerator={() => {}}
+        onAddFlux={() => {}}
+        onAddCondition={() => {}}
+        onAddWire={() => {}}
+        onRun={() => {}}
+        isRunning={false}
+      />
     </div>
   )
 }
