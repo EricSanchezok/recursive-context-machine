@@ -1,7 +1,8 @@
-import { Play, Network, GitMerge, GitFork, ArrowRight } from 'lucide-react'
+import { Play, Network, GitMerge, GitFork, ArrowRight, Type } from 'lucide-react'
 
 interface ToolBarProps {
   onAddAccelerator: () => void
+  onAddText: () => void
   onAddFlux: () => void
   onAddCondition: () => void
   onAddWire: () => void
@@ -11,6 +12,7 @@ interface ToolBarProps {
 
 export function ToolBar({
   onAddAccelerator,
+  onAddText,
   onAddFlux,
   onAddCondition,
   onAddWire,
@@ -24,6 +26,7 @@ export function ToolBar({
     >
       <div className="flex items-center gap-1">
         <ToolButton icon={<Network size={16} />} label="Accelerator" onClick={onAddAccelerator} />
+        <ToolButton icon={<Type size={16} />} label="Text" onClick={onAddText} />
         <ToolButton icon={<GitMerge size={16} />} label="Flux" onClick={onAddFlux} />
         <ToolButton icon={<GitFork size={16} />} label="Condition" onClick={onAddCondition} />
         <div className="w-px h-6 bg-gray-300 mx-2" />
@@ -35,8 +38,7 @@ export function ToolBar({
       <button
         onClick={onRun}
         disabled={isRunning}
-        className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-white text-sm font-medium
-                   transition-colors disabled:opacity-50"
+        className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-50"
         style={{ backgroundColor: 'var(--primary)' }}
       >
         <Play size={16} />
@@ -46,20 +48,11 @@ export function ToolBar({
   )
 }
 
-function ToolButton({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick: () => void
-}) {
+function ToolButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm
-                 hover:bg-gray-100 transition-colors"
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm hover:bg-gray-100 transition-colors"
       style={{ color: 'var(--foreground)' }}
     >
       {icon}

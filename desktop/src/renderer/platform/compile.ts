@@ -10,3 +10,11 @@ export async function fetchInventory(projectPath: string) {
   const raw = await getAPI().inventory(projectPath)
   return JSON.parse(raw)
 }
+
+export function onRunLine(callback: (line: string) => void): () => void {
+  return getAPI().onRunLine(callback)
+}
+
+export async function runRcm(filePath: string): Promise<string> {
+  return getAPI().runStream(filePath)
+}
