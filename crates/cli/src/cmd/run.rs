@@ -12,9 +12,13 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     let (hook_tx, hook_rx) = mpsc::channel();
     init_tracing(hook_tx);
 
-    let accelerator = crate::rcm::compile::compile_file(&args.file)
+    let mut accelerator = crate::rcm::compile::compile_file(&args.file)
         .await
         .map_err(anyhow::Error::msg)?;
+
+    if let Some(purpose) = args.purpose {
+        accelerator.set_purpose_override(purpose);
+    }
 
     if args.stream {
         return stream_run(accelerator).await;
