@@ -1,17 +1,17 @@
 import { useCallback } from 'react'
-import type { NodeData } from '../../../types/graph'
+import type { TextGraphNode } from '../../../types/graph'
 import { PortHandle } from './PortHandle'
 
 interface TextNodeProps {
-  node: NodeData
+  node: TextGraphNode
   onMove: (x: number, y: number) => void
 }
 
 export function TextNode({ node, onMove }: TextNodeProps) {
   const startDrag = useCallback(
     (event: React.MouseEvent) => {
-      const startX = event.clientX - node.x
-      const startY = event.clientY - node.y
+      const startX = event.clientX - node.position.x
+      const startY = event.clientY - node.position.y
       const onMouseMove = (ev: MouseEvent) => onMove(ev.clientX - startX, ev.clientY - startY)
       const onMouseUp = () => {
         document.removeEventListener('mousemove', onMouseMove)
@@ -20,11 +20,11 @@ export function TextNode({ node, onMove }: TextNodeProps) {
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
     },
-    [node.x, node.y, onMove],
+    [node.position.x, node.position.y, onMove],
   )
 
   return (
-    <div data-node className="absolute select-none" style={{ left: node.x, top: node.y, width: 220 }}>
+    <div data-node className="absolute select-none" style={{ left: node.position.x, top: node.position.y, width: 220 }}>
       <div className="rounded-2xl shadow-lg border" style={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)', position: 'relative' }}>
         <PortHandle
           port={{ id: `${node.id}:value`, nodeId: node.id, direction: 'out', name: 'value', channel: 'purpose', index: 0 }}
@@ -35,7 +35,7 @@ export function TextNode({ node, onMove }: TextNodeProps) {
           <span className="font-semibold text-sm" style={{ color: 'var(--foreground)' }}>{node.name || 'Text'}</span>
         </div>
         <div className="px-4 py-3 text-xs leading-relaxed" style={{ color: 'var(--muted-foreground)' }}>
-          {node.text || node.purpose || 'Text value'}
+          {node.text || 'Text value'}
         </div>
       </div>
     </div>

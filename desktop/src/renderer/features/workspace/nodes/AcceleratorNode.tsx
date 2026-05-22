@@ -1,19 +1,17 @@
-import { useState, useCallback } from 'react'
-import type { NodeData } from '../../../types/graph'
+import { useCallback } from 'react'
+import type { AcceleratorGraphNode } from '../../../types/graph'
+import { PortHandle } from './PortHandle'
 
 interface AcceleratorNodeProps {
-  node: NodeData
+  node: AcceleratorGraphNode
   onMove: (x: number, y: number) => void
 }
 
 export function AcceleratorNode({ node, onMove }: AcceleratorNodeProps) {
-  const [editing, setEditing] = useState(false)
-  const [purpose, setPurpose] = useState(node.purpose)
-
   const startDrag = useCallback(
-    (e: React.MouseEvent) => {
-      const startX = e.clientX - node.x
-      const startY = e.clientY - node.y
+    (event: React.MouseEvent) => {
+      const startX = event.clientX - node.position.x
+      const startY = event.clientY - node.position.y
       const onMouseMove = (ev: MouseEvent) => onMove(ev.clientX - startX, ev.clientY - startY)
       const onMouseUp = () => {
         document.removeEventListener('mousemove', onMouseMove)
@@ -22,53 +20,29 @@ export function AcceleratorNode({ node, onMove }: AcceleratorNodeProps) {
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
     },
-    [node.x, node.y, onMove],
+    [node.position.x, node.position.y, onMove],
   )
 
   return (
-    <div
-      data-node
-      className="absolute select-none"
-      style={{ left: node.x, top: node.y, width: 260 }}
-    >
-      <div
-        className="rounded-2xl shadow-lg border"
-        style={{
-          backgroundColor: 'var(--card)',
-          borderColor: 'var(--border)',
-        }}
-      >
-        <div
-          onMouseDown={startDrag}
-          className="px-4 py-3 border-b cursor-move flex items-center justify-between"
-          style={{ borderColor: 'var(--border)' }}
-        >
+    <div data-node className="absolute select-none" style={{ left: node.position.x, top: node.position.y, width: 260 }}>
+      <div className="rounded-2xl shadow-lg border relative" style={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)' }}>
+        {node.ports.filter((port) => port.direction === 'in').map((port) => (
+          <PortHandle key={port.id} port={port} side="left" label={port.name} />
+        ))}
+        {node.ports.filter((port) => port.direction === 'out').map((port) => (
+          <PortHandle key={port.id} port={port} side="right" label={port.name} />
+        ))}
+
+        <div onMouseDown={startDrag} className="px-4 py-3 border-b cursor-move flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
           <span className="font-semibold text-sm truncate" style={{ color: 'var(--foreground)' }}>
             {node.name || 'Accelerator'}
           </span>
         </div>
 
         <div className="px-4 py-3 space-y-2">
-          {editing ? (
-            <input
-              autoFocus
-              value={purpose}
-              onChange={(e) => setPurpose(e.target.value)}
-              onBlur={() => setEditing(false)}
-              onKeyDown={(e) => { if (e.key === 'Enter') setEditing(false) }}
-              className="w-full text-xs border rounded px-2 py-1 outline-none"
-              style={{ borderColor: 'var(--border)', backgroundColor: 'var(--input-background)' }}
-            />
-          ) : (
-            <p
-              onDoubleClick={() => setEditing(true)}
-              className="text-xs leading-relaxed cursor-text"
-              style={{ color: 'var(--muted-foreground)' }}
-            >
-              {purpose || 'Double-click to set purpose'}
-            </p>
-          )}
-
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--muted-foreground)' }}>
+            {node.purpose || 'Connect a text node to purpose'}
+          </p>
           {node.model && (
             <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
               <span className="w-2 h-2 rounded-full bg-purple-400" />
@@ -78,11 +52,7 @@ export function AcceleratorNode({ node, onMove }: AcceleratorNodeProps) {
           {node.tools.length > 0 && (
             <div className="flex gap-1 flex-wrap">
               {node.tools.map((tool) => (
-                <span
-                  key={tool}
-                  className="px-2 py-0.5 rounded text-xs"
-                  style={{ backgroundColor: 'var(--muted)', color: 'var(--muted-foreground)' }}
-                >
+                <span key={tool} className="px-2 py-0.5 rounded text-xs" style={{ backgroundColor: 'var(--muted)', color: 'var(--muted-foreground)' }}>
                   {tool}
                 </span>
               ))}
