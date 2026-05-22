@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Home, Plus, X } from 'lucide-react'
-import { getStore, addTab, closeTab, setActiveTab, renameTab, subscribe, type ProjectStore } from '../stores/projectStore'
+import { getStore, addTab, closeTab, setActiveTab, renameTab, showHome, subscribe, type ProjectStore } from '../stores/projectStore'
 
 export function TabBar() {
   const [store, setStore] = useState(getStore())
@@ -82,7 +82,7 @@ export function TabBar() {
 
 function HomeButton() {
   return (
-    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Home">
+    <button onClick={showHome} className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Home">
       <Home size={20} className="text-gray-600" />
     </button>
   )
