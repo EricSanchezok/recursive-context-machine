@@ -92,7 +92,7 @@ impl Compiler {
             AcceleratorBodyDef::Primitive(primitive) => {
                 let state =
                     build_state(&catalog, &models, &mut mcp_scope, primitive, &self.root).await?;
-                Ok(Accelerator::primitive_named(file.name.as_str(), state))
+                Ok(Accelerator::primitive(state, file.name.as_str()))
             }
             AcceleratorBodyDef::Graph(graph_def) => {
                 let graph = self
@@ -128,20 +128,22 @@ impl Compiler {
                 AcceleratorSourceDef::Inline(primitive) => {
                     let state =
                         build_state(catalog, models, mcp_scope, primitive, &self.root).await?;
-                    Accelerator::primitive_named(accelerator_def.id.as_str(), state)
+                    Accelerator::primitive(state, accelerator_def.id.as_str())
                 }
                 AcceleratorSourceDef::Import { alias, overrides } => {
                     let mut accelerator = imports
                         .get(alias)
                         .ok_or_else(|| format!("unknown accelerator import: {}", alias))?
                         .clone();
-                    apply_import_overrides(&mut accelerator, overrides)?;
+                    if let Some(purpose) = &overrides.purpose {
+                        accelerator.set_purpose_override(purpose.clone());
+                    }
                     accelerator
                 }
             };
             let component = graph.add_accelerator(accelerator_def.id.as_str(), accelerator);
             insert_symbol(&mut symbols, accelerator_def.id.as_str(), component)?;
-            component_kinds.insert(accelerator_def.id.clone(), ComponentKindDef::Accelerator);
+            component_kinds.insert(accelerator_def.id.clone(), ComponentTag::Accelerator);
         }
 
         for flux_def in &graph_def.fluxes {
@@ -161,7 +163,7 @@ impl Compiler {
             insert_symbol(&mut symbols, flux_def.id.as_str(), component)?;
             component_kinds.insert(
                 flux_def.id.clone(),
-                ComponentKindDef::Flux {
+                ComponentTag::Flux {
                     channel,
                     arity: flux_def.arity,
                 },
@@ -178,7 +180,7 @@ impl Compiler {
                 predicate,
             );
             insert_symbol(&mut symbols, condition_def.id.as_str(), component)?;
-            component_kinds.insert(condition_def.id.clone(), ComponentKindDef::Condition);
+            component_kinds.insert(condition_def.id.clone(), ComponentTag::Condition);
         }
 
         let mut flux_slots = flux_slot_map(graph_def);
@@ -197,7 +199,7 @@ impl Compiler {
 }
 
 #[derive(Clone, Copy)]
-enum ComponentKindDef {
+enum ComponentTag {
     Accelerator,
     Flux { channel: Channel, arity: usize },
     Condition,
@@ -325,24 +327,6 @@ fn expand_env_placeholders(value: &str) -> Result<String, String> {
     }
     result.push_str(rest);
     Ok(result)
-}
-
-fn apply_import_overrides(
-    accelerator: &mut Accelerator,
-    overrides: &PrimitiveDef,
-) -> Result<(), String> {
-    if let Some(purpose) = &overrides.purpose {
-        accelerator.set_purpose(purpose.clone())?;
-    }
-    if !overrides.models.is_empty()
-        || overrides.policy.is_some()
-        || overrides.prompts.is_some()
-        || overrides.tools.is_some()
-        || overrides.mcps.is_some()
-    {
-        return Err("imported accelerator overrides currently support purpose only".to_string());
-    }
-    Ok(())
 }
 
 fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String> {
@@ -520,7 +504,7 @@ fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {
 fn resolve_port(
     def: &PortDef,
     symbols: &HashMap<String, ComponentRef>,
-    kinds: &HashMap<String, ComponentKindDef>,
+    kinds: &HashMap<String, ComponentTag>,
 ) -> Result<Port, String> {
     match &def.owner {
         PortOwnerDef::Input => Ok(boundary_port(true, &def.endpoint)?),
@@ -557,29 +541,29 @@ fn boundary_port(is_input: bool, endpoint: &EndpointDef) -> Result<Port, String>
 
 fn component_port(
     component: &ComponentRef,
-    kind: ComponentKindDef,
+    kind: ComponentTag,
     endpoint: &EndpointDef,
 ) -> Result<Port, String> {
     match (kind, endpoint) {
-        (ComponentKindDef::Accelerator, EndpointDef::Trigger) => Ok(component.trigger()),
-        (ComponentKindDef::Accelerator, EndpointDef::Done) => Ok(component.done()),
-        (ComponentKindDef::Accelerator, EndpointDef::State(channel)) => {
+        (ComponentTag::Accelerator, EndpointDef::Trigger) => Ok(component.trigger()),
+        (ComponentTag::Accelerator, EndpointDef::Done) => Ok(component.done()),
+        (ComponentTag::Accelerator, EndpointDef::State(channel)) => {
             Ok(component.port_state(parse_channel(channel)?))
         }
-        (ComponentKindDef::Flux { channel, .. }, EndpointDef::FluxOut) => {
+        (ComponentTag::Flux { channel, .. }, EndpointDef::FluxOut) => {
             Ok(component.flux_out(channel))
         }
-        (ComponentKindDef::Flux { channel, arity }, EndpointDef::FluxSlot(slot)) => {
+        (ComponentTag::Flux { channel, arity }, EndpointDef::FluxSlot(slot)) => {
             if *slot >= arity {
                 return Err(format!("flux slot {} is out of range", slot));
             }
             Ok(component.slot(*slot, channel))
         }
-        (ComponentKindDef::Condition, EndpointDef::Trigger) => Ok(component.condition_in()),
-        (ComponentKindDef::Condition, EndpointDef::ConditionTrue) => {
+        (ComponentTag::Condition, EndpointDef::Trigger) => Ok(component.condition_in()),
+        (ComponentTag::Condition, EndpointDef::ConditionTrue) => {
             Ok(component.condition_out(accelerator::ConditionBranch::True))
         }
-        (ComponentKindDef::Condition, EndpointDef::ConditionFalse) => {
+        (ComponentTag::Condition, EndpointDef::ConditionFalse) => {
             Ok(component.condition_out(accelerator::ConditionBranch::False))
         }
         _ => Err("endpoint does not match component type".to_string()),

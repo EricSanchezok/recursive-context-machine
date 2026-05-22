@@ -1,0 +1,6 @@
+[project]
+name = "RCM Research Assistant"
+description = "A demo project showcasing RCM's accelerator and graph capabilities"
+
+[env]
+DEEPSEEK_API_KEY = "REDACTED"

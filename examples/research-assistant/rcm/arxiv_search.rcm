@@ -1,4 +1,4 @@
-name = "Repository Readonly Review"
+name = "ArXiv Search"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,8 +9,8 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "只读检查当前仓库的根目录结构和最近的 Git 状态，简要说明这个项目看起来在做什么。不要修改任何文件，不要运行会写入文件的命令。"
+    purpose = "使用 arxiv 工具搜索最近关于 'agent dataflow' 的论文，用中文总结前 3 篇论文的标题、作者、分类和关键贡献。不要修改任何文件。"
     models = ["deepseek-v4-flash"]
     policy = "captain"
-    tools = ["shell", "fs", "find"]
+    tools = ["arxiv", "shell"]
 }

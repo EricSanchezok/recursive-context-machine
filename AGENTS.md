@@ -1,5 +1,12 @@
 # RCM Development Guide
 
+## Project Identity
+
+**This project is named RCM (Recursive Context Machine).** Not RICA. All code,
+documentation, configuration, tests, and metadata must use "RCM" as the project
+name. The old name "RICA" must not appear in any file or identifier within this
+project.
+
 This document encodes the development rules for RCM. All agents editing this codebase
 must follow these conventions. Do not override unless explicitly instructed by the user.
 

@@ -1,11 +1,13 @@
 //! Built-in tools for the accelerator.
 
+mod arxiv;
 mod find;
 mod fs;
 mod lsp;
 mod shell;
 mod wait;
 
+pub use arxiv::ArxivTool;
 pub use find::FindTool;
 pub use fs::FsTool;
 pub use lsp::LspTool;
@@ -27,6 +29,7 @@ pub fn register(catalog: &mut Catalog) {
 /// All built-in tools.
 pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
     vec![
+        std::sync::Arc::new(ArxivTool),
         std::sync::Arc::new(FindTool),
         std::sync::Arc::new(FsTool),
         std::sync::Arc::new(LspTool),
