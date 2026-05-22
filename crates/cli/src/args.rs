@@ -41,6 +41,10 @@ pub struct RunArgs {
     /// Stream hook events as JSON lines to stdout instead of the tape animation.
     #[arg(long)]
     pub stream: bool,
+
+    /// Override the purpose declared in the .rcm file.
+    #[arg(long)]
+    pub purpose: Option<String>,
 }
 
 /// --- Parse ---------------------------------------------------------------
