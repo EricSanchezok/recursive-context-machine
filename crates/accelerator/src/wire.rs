@@ -7,7 +7,6 @@ pub enum Channel {
     Purpose,
     Context,
     Environment,
-    Policy,
     Resources,
     Pulse,
 }
@@ -125,10 +124,6 @@ impl ComponentRef {
 
     pub fn environment(&self) -> Port {
         self.port(Endpoint::State(Channel::Environment))
-    }
-
-    pub fn policy(&self) -> Port {
-        self.port(Endpoint::State(Channel::Policy))
     }
 
     pub fn resources(&self) -> Port {

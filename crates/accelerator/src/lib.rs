@@ -21,7 +21,7 @@ pub use condition::{
     Condition, ConditionBranch, ContextPredicate, EnvironmentPredicate, Predicate,
     PurposePredicate, ResourcesPredicate,
 };
-pub use flux::{ContextFlux, EnvFlux, Flux, FluxMode, PolicyFlux, PurposeFlux, ResFlux};
+pub use flux::{ContextFlux, EnvFlux, Flux, FluxMode, PurposeFlux, ResFlux};
 pub use graph::{Component, ComponentKind, Graph};
 pub use policy::Captain;
 pub use state::State;

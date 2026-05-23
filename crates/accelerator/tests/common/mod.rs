@@ -28,9 +28,9 @@ pub fn primitive(purpose: &str) -> Accelerator {
     Accelerator::primitive(
         State {
             purpose: purpose.to_string(),
-            policy: Box::new(DonePolicy),
             ..State::default()
         },
+        Box::new(DonePolicy),
         purpose,
     )
 }

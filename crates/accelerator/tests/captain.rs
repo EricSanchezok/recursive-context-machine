@@ -2,10 +2,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use accelerator::Captain;
+use accelerator::{Accelerator, Captain, State};
 use machine::{
-    Action, Context, Environment, Inbox, Machine, Model, Phase, Policy, Purpose, Resources, Tool,
-    ToolResult,
+    Action, Context, Environment, Inbox, Model, Phase, Policy, Purpose, Resources, Tool, ToolResult,
 };
 use serde_json::json;
 
@@ -65,13 +64,6 @@ impl Tool for NamedTool {
     }
 }
 
-fn model(name: &str) -> Model {
-    Model {
-        name: name.to_string(),
-        ..Default::default()
-    }
-}
-
 fn named_tool(name: &'static str) -> Arc<dyn Tool> {
     Arc::new(NamedTool { name })
 }
@@ -79,8 +71,14 @@ fn named_tool(name: &'static str) -> Arc<dyn Tool> {
 #[tokio::test]
 async fn captain_prepares_prompt_first_model_and_all_tools() {
     let mut resources = Resources::named("test")
-        .with_model(model("fast"))
-        .with_model(model("careful"))
+        .with_model(Model {
+            name: "fast".into(),
+            ..Default::default()
+        })
+        .with_model(Model {
+            name: "careful".into(),
+            ..Default::default()
+        })
         .with_tool(named_tool("read"))
         .with_tool(named_tool("search"));
     resources
@@ -89,17 +87,18 @@ async fn captain_prepares_prompt_first_model_and_all_tools() {
     resources
         .prompts
         .insert("other".into(), "Other prompt".into());
-    let machine = Machine::new(Box::new(CaptainSetupOnly));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
 
-    machine
-        .run(&Purpose::new("inspect"), &mut ctx, &mut env, &mut resources)
-        .await;
+    let state = State {
+        res: resources,
+        ..State::default()
+    };
+    let accelerator = Accelerator::primitive(state, Box::new(CaptainSetupOnly), "captain-test");
 
-    assert_eq!(resources.active_model, "fast");
-    assert_eq!(resources.active_tools.len(), 2);
-    assert!(resources.active_tools.contains("read"));
-    assert!(resources.active_tools.contains("search"));
-    assert_eq!(ctx.fragments()[0].as_text(), Some("Captain prompt"));
+    let output = accelerator.run_with(State::default()).await;
+
+    assert_eq!(output.res.active_model, "fast");
+    assert_eq!(output.res.active_tools.len(), 2);
+    assert!(output.res.active_tools.contains("read"));
+    assert!(output.res.active_tools.contains("search"));
+    assert_eq!(output.ctx.fragments()[0].as_text(), Some("Captain prompt"));
 }
