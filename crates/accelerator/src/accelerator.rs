@@ -1,6 +1,9 @@
+use machine::hook;
+use machine::{Action, Inbox, Phase, PhaseOutcome};
 use machine::{Machine, Purpose};
 use std::future::Future;
 use std::pin::Pin;
+use tracing::warn;
 use utils::{AcceleratorId, Name};
 
 use crate::graph::Graph;
@@ -15,11 +18,15 @@ pub struct Accelerator {
 }
 
 impl Accelerator {
-    pub fn primitive(state: State, name: impl Into<String>) -> Self {
+    pub fn primitive(
+        state: State,
+        policy: Box<dyn machine::Policy>,
+        name: impl Into<String>,
+    ) -> Self {
         Self {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
-            body: AcceleratorBody::Primitive(PrimitiveAccelerator { state }),
+            body: AcceleratorBody::Primitive(PrimitiveAccelerator { state, policy }),
             purpose_override: None,
         }
     }
@@ -71,7 +78,6 @@ impl Accelerator {
             if state.purpose.is_empty() {
                 state.purpose.clone_from(&base.purpose);
             }
-            state.policy = base.policy.clone_box();
             if state.ctx.is_empty() {
                 state.ctx = base.ctx.clone();
             }
@@ -101,15 +107,123 @@ enum AcceleratorBody {
 #[derive(Clone)]
 struct PrimitiveAccelerator {
     state: State,
+    policy: Box<dyn machine::Policy>,
 }
 
 impl PrimitiveAccelerator {
     async fn fire(self, mut state: State) -> State {
         let purpose = Purpose::new(&state.purpose);
-        let machine = Machine::new(state.policy.clone());
-        machine
-            .run(&purpose, &mut state.ctx, &mut state.env, &mut state.res)
+        let mut inbox = Inbox::new();
+        let mut step = 0u64;
+        let policy = self.policy;
+
+        hook!(event = "machine_start", purpose = %purpose.text);
+
+        for phase in policy.pre() {
+            if run_phase(
+                &*phase,
+                &purpose,
+                &mut state.ctx,
+                &mut state.env,
+                &mut state.res,
+                &mut inbox,
+                &mut step,
+            )
+            .await
+            {
+                return state;
+            }
+        }
+
+        loop {
+            let action = policy
+                .decide(&purpose, &state.ctx, &state.env, &state.res, &inbox)
+                .await;
+            let is_halt = matches!(action, Action::Halt);
+
+            if is_halt {
+                for phase in policy.pre_halt() {
+                    run_phase(
+                        &*phase,
+                        &purpose,
+                        &mut state.ctx,
+                        &mut state.env,
+                        &mut state.res,
+                        &mut inbox,
+                        &mut step,
+                    )
+                    .await;
+                }
+            }
+
+            step += 1;
+            if Machine::apply(
+                action,
+                step,
+                &mut state.ctx,
+                &mut state.env,
+                &mut state.res,
+                &mut inbox,
+            )
+            .await
+            {
+                break;
+            }
+
+            if is_halt {
+                for phase in policy.post_halt() {
+                    run_phase(
+                        &*phase,
+                        &purpose,
+                        &mut state.ctx,
+                        &mut state.env,
+                        &mut state.res,
+                        &mut inbox,
+                        &mut step,
+                    )
+                    .await;
+                }
+            }
+        }
+
+        for phase in policy.post() {
+            run_phase(
+                &*phase,
+                &purpose,
+                &mut state.ctx,
+                &mut state.env,
+                &mut state.res,
+                &mut inbox,
+                &mut step,
+            )
             .await;
+        }
+
         state
+    }
+}
+
+async fn run_phase(
+    phase: &dyn Phase,
+    purpose: &Purpose,
+    ctx: &mut machine::Context,
+    env: &mut machine::Environment,
+    resources: &mut machine::Resources,
+    inbox: &mut Inbox,
+    step: &mut u64,
+) -> bool {
+    loop {
+        match phase.decide(purpose, ctx, env, resources) {
+            PhaseOutcome::Action(Action::Halt) => {
+                warn!(phase = phase.name(), "phase produced Halt, ignoring");
+            }
+            PhaseOutcome::Action(action) => {
+                *step += 1;
+                if Machine::apply(action, *step, ctx, env, resources, inbox).await {
+                    return true;
+                }
+            }
+            PhaseOutcome::Done => return false,
+        }
     }
 }

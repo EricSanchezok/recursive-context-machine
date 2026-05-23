@@ -8,8 +8,8 @@
 //! | [`Environment`] | External world |
 //! | [`Resources`] | Available pool |
 //! | [`Inbox`] | Pending queue |
-//! | [`Policy`] | Context engineering |
-//! | [`Machine`] | Policy + Reactor composition |
+//! | [`Policy`] | Owned by caller |
+//! | [`Machine`] | Pure interpreter — applies actions to the tape |
 
 pub(crate) mod completion;
 pub mod context;
