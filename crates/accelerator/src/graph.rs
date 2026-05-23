@@ -614,7 +614,6 @@ fn state_with_channel(channel: Channel, source: &State) -> State {
         Channel::Purpose => state.purpose.clone_from(&source.purpose),
         Channel::Context => state.ctx = source.ctx.clone(),
         Channel::Environment => state.env = source.env.clone(),
-        Channel::Policy => state.policy = source.policy.clone(),
         Channel::Resources => state.res = source.res.clone(),
         Channel::Pulse => {}
     }
@@ -626,7 +625,6 @@ fn set_channel(target: &mut State, channel: Channel, source: State) {
         Channel::Purpose => target.purpose = source.purpose,
         Channel::Context => target.ctx = source.ctx,
         Channel::Environment => target.env = source.env,
-        Channel::Policy => target.policy = source.policy,
         Channel::Resources => target.res = source.res,
         Channel::Pulse => {}
     }

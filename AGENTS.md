@@ -71,6 +71,11 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - When asked to merge something into `main`, open a PR from the working
   branch and let the user handle the merge. Do not `git checkout main`
   or `git push origin main` under any circumstances.
+- **Never discard uncommitted changes.** If you discover you are on the
+  wrong branch or need to switch branches, `git stash` the work first.
+  Do NOT `git reset --hard`, `git checkout -f`, or `git stash drop`
+  for changes that still need to land. Discarding changes forces a full
+  rewrite from scratch, wasting both time and tokens.
 
 ## Execution
 
