@@ -495,7 +495,9 @@ fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {
     match (def.channel.as_str(), def.mode.as_str()) {
         ("purpose", "concat") => Ok(FluxMode::Purpose(PurposeFlux::Concat)),
         ("context", "append") => Ok(FluxMode::Context(ContextFlux::Append)),
-        ("context", "replace") => Ok(FluxMode::Context(ContextFlux::Replace)),
+        ("context", "last") => Ok(FluxMode::Context(ContextFlux::Last)),
+        ("context", "digest") => Ok(FluxMode::Context(ContextFlux::Digest)),
+        ("context", "thread") => Ok(FluxMode::Context(ContextFlux::Thread)),
         ("environment", "overlay") => Ok(FluxMode::Environment(EnvFlux::Overlay)),
         ("resources", "merge") => Ok(FluxMode::Resources(ResFlux::Merge)),
         _ => Err(format!("unknown flux mode: {} {}", def.channel, def.mode)),
