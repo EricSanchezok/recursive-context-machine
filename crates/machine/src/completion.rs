@@ -132,12 +132,18 @@ async fn send(
                 )) => Some(s.as_u16()),
                 _ => None,
             };
-            Err(Fragment::hitch(error.to_string(), code, Role::Assistant))
+            Err(Fragment::hitch(
+                error.to_string(),
+                code,
+                Role::Assistant,
+                None::<&str>,
+            ))
         }
         Err(_) => Err(Fragment::hitch(
             format!("request timed out after {}s", model.timeout),
             None,
             Role::Assistant,
+            None::<&str>,
         )),
     }
 }
@@ -185,6 +191,13 @@ fn encode(frag: &Fragment) -> Option<Message> {
         Role::Tool => {
             if let Content::ToolResult(tr) = &frag.content {
                 Some(Message::tool_result(&tr.call_id, &tr.content))
+            } else if let Content::Hitch {
+                message,
+                call_id: Some(call_id),
+                ..
+            } = &frag.content
+            {
+                Some(Message::tool_result(call_id, message))
             } else {
                 None
             }
