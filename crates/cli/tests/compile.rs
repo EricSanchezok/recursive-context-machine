@@ -124,7 +124,8 @@ fn compile_keeps_default_tools_when_only_prompts_are_supplied() {
     let state = primitive_state(&accelerator);
 
     assert!(state.res.prompts.contains_key("captain"));
-    assert!(state.res.tools.contains_key("arxiv"));
+    assert!(state.res.tools.contains_key("arxiv_search"));
+    assert!(state.res.tools.contains_key("arxiv_download"));
     assert!(state.res.tools.contains_key("find"));
     assert!(state.res.tools.contains_key("fs"));
     assert!(state.res.tools.contains_key("lsp"));
