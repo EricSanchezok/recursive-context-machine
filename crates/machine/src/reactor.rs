@@ -40,7 +40,12 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
             );
 
             result = Some(match resources.lookup(&tc.name) {
-                None => Fragment::hitch(format!("tool '{}' not found", tc.name), None, Role::Tool),
+                None => Fragment::hitch(
+                    format!("tool '{}' not found", tc.name),
+                    None,
+                    Role::Tool,
+                    Some(tc.id.clone()),
+                ),
                 Some(tool) => {
                     let deadline = Duration::from_secs(tool.timeout().as_secs());
                     let t1 = Instant::now();
@@ -77,6 +82,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                                 format!("tool '{}' error: {}", tc.name, msg),
                                 None,
                                 Role::Tool,
+                                Some(tc.id.clone()),
                             )
                         }
                         Err(_) => {
@@ -100,6 +106,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                                 ),
                                 None,
                                 Role::Tool,
+                                Some(tc.id.clone()),
                             )
                         }
                     }
