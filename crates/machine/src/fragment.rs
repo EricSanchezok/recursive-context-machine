@@ -90,6 +90,8 @@ pub enum Content {
     ToolResult(ToolResult),
     Hitch {
         message: String,
+        /// ID of the originating tool call, if this hitch is a tool error.
+        call_id: Option<String>,
         /// HTTP status code for retry strategy (Policy decides permanent vs transient).
         code: Option<u16>,
     },
@@ -159,16 +161,25 @@ impl Fragment {
     /// Creates a [`Content::Hitch`] fragment.
     ///
     /// `code` is an optional HTTP status code from the failed request.
+    /// `call_id` is the originating tool call ID when this hitch represents a
+    /// tool error; required for `completion::encode` to emit a valid
+    /// `role: "tool"` message.
     /// `code` and `role` convey the failure context for Policy. Role should
     /// match the origin: tool errors → [`Role::Tool`], LLM errors →
     /// [`Role::Assistant`], system errors → [`Role::System`].
-    pub fn hitch(message: impl Into<String>, code: Option<u16>, role: Role) -> Self {
+    pub fn hitch(
+        message: impl Into<String>,
+        code: Option<u16>,
+        role: Role,
+        call_id: Option<impl Into<String>>,
+    ) -> Self {
         Self {
             id: 0,
             role,
             tag: "hitch".into(),
             content: Content::Hitch {
                 message: message.into(),
+                call_id: call_id.map(Into::into),
                 code,
             },
         }
