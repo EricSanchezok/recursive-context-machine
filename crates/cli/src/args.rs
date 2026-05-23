@@ -16,6 +16,8 @@ pub enum Command {
     Parse(ParseArgs),
     /// Output available policies, tools, prompts, models, and MCP servers as JSON.
     Inventory(InventoryArgs),
+    /// Render a template for a GitHub event into a runnable .rcm file.
+    Dispatch(DispatchArgs),
 }
 
 /// --- Run ----------------------------------------------------------------
@@ -63,6 +65,31 @@ pub struct InventoryArgs {
     /// Project directory to scan for prompts/ and .rcm files.
     #[arg(default_value = ".")]
     pub project: PathBuf,
+}
+
+/// --- Dispatch ------------------------------------------------------------
+
+#[derive(Args)]
+pub struct DispatchArgs {
+    /// Path to dispatch.toml describing routes from (event, action) to templates.
+    #[arg(long)]
+    pub config: PathBuf,
+
+    /// GitHub event name (e.g., "issues", "pull_request"). Typically $GITHUB_EVENT_NAME.
+    #[arg(long)]
+    pub event_name: String,
+
+    /// Event action (e.g., "opened"). Typically extracted from the event payload's "action" field.
+    #[arg(long, default_value = "")]
+    pub action: String,
+
+    /// Path to the GitHub event JSON payload. Typically $GITHUB_EVENT_PATH.
+    #[arg(long)]
+    pub event_path: PathBuf,
+
+    /// Print human-readable progress to stderr.
+    #[arg(long)]
+    pub verbose: bool,
 }
 
 /// --- Shared --------------------------------------------------------------
