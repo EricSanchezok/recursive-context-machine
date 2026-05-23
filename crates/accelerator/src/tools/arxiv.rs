@@ -1,185 +1,161 @@
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::LazyLock;
 use std::time::Duration;
 
 use machine::{Environment, Tool, ToolResult};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::info;
 
-const MAX_TIMEOUT_SECS: u64 = 120;
+const SEARCH_TIMEOUT_SECS: u64 = 30;
+const DOWNLOAD_TIMEOUT_SECS: u64 = 60;
 const MAX_RESULTS: usize = 100;
 const DEFAULT_RESULTS: usize = 10;
+const ARXIV_API_BASE: &str = "https://arxivsearch.synergy.holosai.io";
+const ARXIV_PDF_BASE: &str = "https://arxiv.org/pdf";
 
-static DESCRIPTION: LazyLock<String> = LazyLock::new(|| include_str!("arxiv.txt").to_string());
+// ── arxiv_search ──
 
-pub struct ArxivTool;
+pub struct ArxivSearchTool;
 
-impl Tool for ArxivTool {
+impl Tool for ArxivSearchTool {
     fn name(&self) -> &str {
-        "arxiv"
+        "arxiv_search"
     }
 
     fn description(&self) -> &str {
-        &DESCRIPTION
+        "Search the arXiv database for academic papers using semantic search and filters.\n\n\
+         Use this tool to find research papers on arXiv. You can search using:\n\
+         - Natural language queries for semantic search\n\
+         - Author names (OR logic between multiple authors)\n\
+         - arXiv categories like 'cs.AI', 'hep-ph', 'math.AG' (OR logic)\n\
+         - Date ranges (YYYY-MM-DD format)\n\
+         - Title keywords (AND logic between keywords)\n\n\
+         Returns paper metadata including title, authors, abstract, categories, and arXiv ID."
     }
 
     fn parameters(&self) -> Value {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "mode": {
-                    "type": "string",
-                    "enum": ["search", "download"],
-                    "description": "Action: search arXiv papers or download a paper PDF."
-                },
                 "query": {
                     "type": "string",
-                    "description": "(search) Natural language search query."
+                    "description": "Natural language search query for semantic search"
                 },
                 "authors": {
-                    "type": "string",
-                    "description": "(search) Comma-separated author names (OR logic)."
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Filter by author names (OR logic)"
                 },
                 "categories": {
-                    "type": "string",
-                    "description": "(search) Comma-separated arXiv categories, e.g. 'cs.AI,cs.LG'."
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Filter by arXiv categories like 'cs.AI', 'hep-ph' (OR logic)"
                 },
                 "startDate": {
                     "type": "string",
-                    "description": "(search) Start date (YYYY-MM-DD, inclusive)."
+                    "description": "Start date (YYYY-MM-DD, inclusive)"
                 },
                 "endDate": {
                     "type": "string",
-                    "description": "(search) End date (YYYY-MM-DD, inclusive)."
+                    "description": "End date (YYYY-MM-DD, inclusive)"
                 },
                 "titleKeywords": {
-                    "type": "string",
-                    "description": "(search) Comma-separated title keywords (AND logic)."
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Keywords in title (AND logic)"
                 },
                 "topK": {
                     "type": "integer",
-                    "description": "(search) Number of results (1-100, default 10)."
-                },
-                "id": {
-                    "type": "string",
-                    "description": "(download) arXiv paper ID, e.g. '2401.12345'."
-                },
-                "downloadDir": {
-                    "type": "string",
-                    "description": "(download) Directory to save PDF. Defaults to project root."
-                },
-                "overwrite": {
-                    "type": "boolean",
-                    "description": "(download) Overwrite if file exists. Default false."
+                    "default": 10,
+                    "description": "Number of results (1-100, default: 10)"
                 }
-            },
-            "required": ["mode"]
+            }
         })
     }
 
     fn timeout(&self) -> Duration {
-        Duration::from_secs(MAX_TIMEOUT_SECS)
+        Duration::from_secs(SEARCH_TIMEOUT_SECS)
     }
 
     fn execute<'a>(
         &'a self,
         args: Value,
-        env: &'a Environment,
+        _env: &'a Environment,
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
-        Box::pin(async move {
-            let mode = args["mode"]
-                .as_str()
-                .ok_or("arxiv requires 'mode' parameter")?;
-
-            match mode {
-                "search" => execute_search(args).await,
-                "download" => execute_download(args, env).await,
-                _ => Err(format!("unknown arxiv mode: {}", mode)),
-            }
-        })
+        Box::pin(async move { execute_search(args).await })
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct Paper {
+    id: String,
+    title: String,
+    authors: Vec<String>,
+    categories: Vec<String>,
+    published_date: String,
+    summary: String,
+    pdf_url: String,
+    arxiv_url: String,
+    score: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchResponse {
+    papers: Vec<Paper>,
+    total: u32,
+    query: Option<String>,
+    mode: String,
+    reranked: bool,
+}
+
 async fn execute_search(args: Value) -> Result<ToolResult, String> {
-    let query = args["query"]
-        .as_str()
-        .ok_or("arxiv search requires 'query' parameter")?;
     let top_k = args["topK"]
         .as_u64()
         .unwrap_or(DEFAULT_RESULTS as u64)
         .min(MAX_RESULTS as u64) as usize;
 
-    info!(target: "arxiv", query, top_k, "searching arXiv");
+    let body = serde_json::json!({
+        "query": args["query"].as_str(),
+        "authors": args.get("authors").and_then(|v| v.as_array().cloned()),
+        "categories": args.get("categories").and_then(|v| v.as_array().cloned()),
+        "start_date": args["startDate"].as_str(),
+        "end_date": args["endDate"].as_str(),
+        "title_keywords": args.get("titleKeywords").and_then(|v| v.as_array().cloned()),
+        "top_k": top_k,
+        "mode": "hybrid",
+        "rerank": true,
+        "include_summary": true,
+    });
 
-    let mut search_parts: Vec<String> = Vec::new();
-
-    search_parts.push(format!("all:{}", urlencode(query)));
-
-    if let Some(cats) = args["categories"].as_str().filter(|s| !s.is_empty()) {
-        let cat_or: Vec<String> = cats
-            .split(',')
-            .map(|c| format!("cat:{}", c.trim()))
-            .collect();
-        let combined = cat_or.join("+OR+");
-        search_parts.push(format!("({})", combined));
-    }
-
-    if let Some(authors) = args["authors"].as_str().filter(|s| !s.is_empty()) {
-        for author in authors
-            .split(',')
-            .map(|a| a.trim())
-            .filter(|a| !a.is_empty())
-        {
-            search_parts.push(format!("au:{}", urlencode(author)));
-        }
-    }
-
-    if let Some(titles) = args["titleKeywords"].as_str().filter(|s| !s.is_empty()) {
-        for kw in titles
-            .split(',')
-            .map(|k| k.trim())
-            .filter(|k| !k.is_empty())
-        {
-            search_parts.push(format!("ti:{}", urlencode(kw)));
-        }
-    }
-
-    let search_query = search_parts.join("+AND+");
-
-    let mut url = format!(
-        "http://export.arxiv.org/api/query?search_query={}&start=0&max_results={}&sortBy=submittedDate&sortOrder=descending",
-        search_query, top_k
-    );
-
-    if let Some(date) = args["startDate"].as_str().filter(|s| !s.is_empty()) {
-        url.push_str(&format!("&start_date={}", urlencode(date)));
-    }
+    info!(target: "arxiv_search", %body, "searching arXiv via Holos API");
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(SEARCH_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("failed to create HTTP client: {e}"))?;
 
     let response = client
-        .get(&url)
-        .header("User-Agent", "RCM/0.1 (mailto:research@rcm.dev)")
+        .post(format!("{}/search", ARXIV_API_BASE))
+        .header("Content-Type", "application/json")
+        .json(&body)
         .send()
         .await
-        .map_err(|e| format!("arXiv API request failed: {e}"))?;
+        .map_err(|e| format!("arXiv search request failed: {e}"))?;
 
-    let text = response
-        .text()
-        .await
-        .map_err(|e| format!("arXiv response read failed: {e}"))?;
-
-    let mut papers = parse_atom_feed(&text)?;
-    let total = papers.len();
-
-    // Client-side date filtering (end date)
-    if let Some(date) = args["endDate"].as_str().filter(|s| !s.is_empty()) {
-        papers.retain(|p| p.published.as_str() <= date);
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("arXiv search failed: HTTP {status} — {text}"));
     }
+
+    let data: SearchResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("arXiv search response parse failed: {e}"))?;
+
+    let papers = data.papers;
 
     if papers.is_empty() {
         return Ok(ToolResult {
@@ -189,10 +165,15 @@ async fn execute_search(args: Value) -> Result<ToolResult, String> {
         });
     }
 
-    info!(target: "arxiv", total, shown = papers.len(), "arXiv search complete");
+    info!(
+        target: "arxiv_search",
+        total = data.total,
+        shown = papers.len(),
+        "arXiv search complete"
+    );
 
     let mut lines = vec![
-        format!("Found {total} papers (showing {}):", papers.len()),
+        format!("Found {} papers (showing {}):", data.total, papers.len()),
         String::new(),
         "| # | arXiv ID | Title | Authors | Categories | Published |".into(),
         "|---|----------|-------|---------|------------|-----------|".into(),
@@ -212,7 +193,7 @@ async fn execute_search(args: Value) -> Result<ToolResult, String> {
             .take(2)
             .map(|s| s.as_str())
             .collect();
-        let published = paper.published.chars().take(10).collect::<String>();
+        let published = paper.published_date.chars().take(10).collect::<String>();
         lines.push(format!(
             "| {} | {} | {} | {} | {} | {} |",
             i + 1,
@@ -232,8 +213,8 @@ async fn execute_search(args: Value) -> Result<ToolResult, String> {
         lines.push(format!("### {}: {}", paper.id, paper.title));
         lines.push(format!("**Authors:** {}", paper.authors.join(", ")));
         lines.push(format!("**Categories:** {}", paper.categories.join(", ")));
-        lines.push(format!("**Published:** {}", paper.published));
-        lines.push(format!("**PDF:** https://arxiv.org/pdf/{}.pdf", paper.id));
+        lines.push(format!("**Published:** {}", paper.published_date));
+        lines.push(format!("**PDF:** {}", paper.pdf_url));
         lines.push(String::new());
         lines.push(format!("**Abstract:** {}", paper.summary));
         lines.push(String::new());
@@ -248,55 +229,104 @@ async fn execute_search(args: Value) -> Result<ToolResult, String> {
     })
 }
 
+// ── arxiv_download ──
+
+pub struct ArxivDownloadTool;
+
+impl Tool for ArxivDownloadTool {
+    fn name(&self) -> &str {
+        "arxiv_download"
+    }
+
+    fn description(&self) -> &str {
+        "Download an arXiv paper as a PDF file.\n\n\
+         Use this tool to download a paper from arXiv given its ID. The paper will be saved as a PDF file to the specified path.\n\n\
+         Examples of valid arXiv IDs:\n\
+         - 2401.12345\n\
+         - 2401.12345v1\n\
+         - hep-th/9901001"
+    }
+
+    fn parameters(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "arxivId": {
+                    "type": "string",
+                    "description": "The arXiv paper ID (e.g., '2401.12345' or '2401.12345v1')"
+                },
+                "outputPath": {
+                    "type": "string",
+                    "description": "The output file path (must end with .pdf)"
+                },
+                "overwrite": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Whether to overwrite if file exists"
+                }
+            },
+            "required": ["arxivId", "outputPath"]
+        })
+    }
+
+    fn timeout(&self) -> Duration {
+        Duration::from_secs(DOWNLOAD_TIMEOUT_SECS)
+    }
+
+    fn execute<'a>(
+        &'a self,
+        args: Value,
+        env: &'a Environment,
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
+        Box::pin(async move { execute_download(args, env).await })
+    }
+}
+
 async fn execute_download(args: Value, env: &Environment) -> Result<ToolResult, String> {
-    let id = args["id"]
+    let id = args["arxivId"]
         .as_str()
-        .ok_or("arxiv download requires 'id' parameter")?;
+        .ok_or("arxiv_download requires 'arxivId' parameter")?;
 
-    // Strip common URL prefixes to get bare ID
-    let arxiv_id = id
-        .strip_prefix("https://arxiv.org/pdf/")
-        .or_else(|| id.strip_prefix("https://arxiv.org/abs/"))
-        .or_else(|| id.strip_prefix("http://arxiv.org/pdf/"))
-        .or_else(|| id.strip_prefix("http://arxiv.org/abs/"))
-        .unwrap_or(id);
-
-    let download_dir = args["downloadDir"]
+    let output_path_raw = args["outputPath"]
         .as_str()
-        .map(|d| crate::tools::resolve_path(d, &env.cwd))
-        .unwrap_or_else(|| env.cwd.clone());
+        .ok_or("arxiv_download requires 'outputPath' parameter")?;
 
-    let base_id = arxiv_id.split('v').next().unwrap_or(arxiv_id);
-    let filename = format!("{}.pdf", base_id.replace('/', "_"));
-    let output_path = download_dir.join(&filename);
+    if !output_path_raw.to_lowercase().ends_with(".pdf") {
+        return Err("Output path must end with .pdf".to_string());
+    }
+
+    let output_path = resolve_path(output_path_raw, &env.cwd);
 
     if output_path.exists() && !args["overwrite"].as_bool().unwrap_or(false) {
         return Ok(ToolResult {
             call_id: String::new(),
-            content: format!("File already exists at {}", output_path.display()),
-            title: Some("arxiv download".to_string()),
+            content: format!(
+                "File already exists at {}. Set overwrite=true to replace it.",
+                output_path.display()
+            ),
+            title: Some("File exists".to_string()),
         });
     }
 
-    let pdf_url = format!("https://arxiv.org/pdf/{}.pdf", arxiv_id);
+    let url = format!("{}/{}.pdf", ARXIV_PDF_BASE, id);
 
-    info!(target: "arxiv", id = arxiv_id, url = %pdf_url, path = ?output_path, "downloading arXiv paper");
+    info!(target: "arxiv_download", id, url = %url, path = ?output_path, "downloading arXiv paper");
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("failed to create HTTP client: {e}"))?;
 
     let response = client
-        .get(&pdf_url)
-        .header("User-Agent", "RCM/0.1")
+        .get(&url)
+        .header("User-Agent", "RCM/0.1 (compatible; Synergy/1.0)")
         .send()
         .await
         .map_err(|e| format!("arXiv download failed: {e}"))?;
 
     if !response.status().is_success() {
         return Err(format!(
-            "arXiv download returned HTTP {}",
+            "Failed to download paper: HTTP {}",
             response.status()
         ));
     }
@@ -306,9 +336,11 @@ async fn execute_download(args: Value, env: &Environment) -> Result<ToolResult, 
         .await
         .map_err(|e| format!("arXiv download read failed: {e}"))?;
 
-    tokio::fs::create_dir_all(output_path.parent().unwrap())
-        .await
-        .map_err(|e| format!("failed to create download directory: {e}"))?;
+    if let Some(parent) = output_path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("failed to create download directory: {e}"))?;
+    }
 
     tokio::fs::write(&output_path, &bytes)
         .await
@@ -320,135 +352,39 @@ async fn execute_download(args: Value, env: &Environment) -> Result<ToolResult, 
         format!("{:.1} KB", bytes.len() as f64 / 1024.0)
     };
 
-    let relative = crate::tools::relative_path(&output_path, &env.cwd);
-    info!(target: "arxiv", bytes = bytes.len(), path = ?output_path, "arXiv paper downloaded");
+    let relative = relative_path(&output_path, &env.cwd);
+
+    info!(
+        target: "arxiv_download",
+        bytes = bytes.len(),
+        path = ?output_path,
+        "arXiv paper downloaded"
+    );
 
     Ok(ToolResult {
         call_id: String::new(),
-        content: format!(
-            "Successfully downloaded arXiv paper {arxiv_id} to {relative} ({size_str})"
-        ),
-        title: Some("arxiv download".to_string()),
+        content: format!("Successfully downloaded arXiv paper {id} to {relative} ({size_str})"),
+        title: Some(format!("Downloaded {id}")),
     })
 }
 
-struct PaperEntry {
-    id: String,
-    title: String,
-    authors: Vec<String>,
-    categories: Vec<String>,
-    published: String,
-    summary: String,
-}
-
-fn parse_atom_feed(xml: &str) -> Result<Vec<PaperEntry>, String> {
-    let mut entries = Vec::new();
-    let mut pos = 0;
-    let bytes = xml.as_bytes();
-
-    while let Some(entry_start) = find(bytes, b"<entry>", pos) {
-        let entry_end =
-            find(bytes, b"</entry>", entry_start + 7).ok_or_else(|| "unclosed <entry> tag")?;
-        let chunk = &xml[entry_start..entry_end + 8];
-
-        let id = extract(chunk, "id").unwrap_or_default();
-        let title = extract(chunk, "title").unwrap_or_default();
-        let published = extract(chunk, "published")
-            .or_else(|| extract(chunk, "updated"))
-            .unwrap_or_default();
-        let summary = extract(chunk, "summary").unwrap_or_default();
-
-        let arxiv_id = id
-            .strip_prefix("http://arxiv.org/abs/")
-            .or_else(|| id.strip_prefix("http://arxiv.org/pdf/"))
-            .unwrap_or(&id);
-
-        let mut authors = Vec::new();
-        let mut auth_pos = 0;
-        let chunk_bytes = chunk.as_bytes();
-        while let Some(a_start) = find(chunk_bytes, b"<author>", auth_pos) {
-            let a_end =
-                find(chunk_bytes, b"</author>", a_start + 8).unwrap_or(chunk.len() - a_start);
-            let a_chunk = &chunk[a_start..a_end + 9];
-            if let Some(name) = extract(a_chunk, "name") {
-                authors.push(name);
-            }
-            auth_pos = a_end + 9;
-        }
-
-        let mut categories = Vec::new();
-        let mut cat_pos = 0;
-        let cat_bytes = chunk.as_bytes();
-        while let Some(c_start) = find(cat_bytes, b"<category", cat_pos) {
-            let c_end = find(cat_bytes, b"/>", c_start + 9)
-                .or_else(|| find(cat_bytes, b">", c_start + 9))
-                .unwrap_or(chunk.len() - c_start);
-            let c_str = &chunk[c_start..c_end + 1];
-            if let Some(term) = extract_attr(c_str, "term") {
-                categories.push(term);
-            }
-            cat_pos = c_end + 1;
-        }
-
-        entries.push(PaperEntry {
-            id: arxiv_id.to_string(),
-            title: html_unescape(&title),
-            authors,
-            categories,
-            published,
-            summary: html_unescape(&summary),
-        });
-
-        pos = entry_end + 8;
+fn resolve_path(raw: &str, cwd: &Path) -> PathBuf {
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
     }
-
-    Ok(entries)
 }
 
-fn find(content: &[u8], tag: &[u8], start: usize) -> Option<usize> {
-    content[start..]
-        .windows(tag.len())
-        .position(|w| w == tag)
-        .map(|i| start + i)
-}
-
-fn extract(content: &str, tag: &str) -> Option<String> {
-    let open = format!("<{}>", tag);
-    let close = format!("</{}>", tag);
-    let start = content.find(&open)?;
-    let vstart = start + open.len();
-    let end = content[vstart..].find(&close)?;
-    Some(content[vstart..vstart + end].to_string())
-}
-
-fn extract_attr(content: &str, attr: &str) -> Option<String> {
-    let search = format!("{}=\"", attr);
-    let start = content.find(&search)?;
-    let vstart = start + search.len();
-    let end = content[vstart..].find('"')?;
-    Some(content[vstart..vstart + end].to_string())
-}
-
-fn html_unescape(s: &str) -> String {
-    s.replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&apos;", "'")
-}
-
-fn urlencode(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    for byte in s.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                result.push(byte as char);
+fn relative_path(path: &Path, cwd: &Path) -> String {
+    path.strip_prefix(cwd)
+        .map(|relative| {
+            if relative.as_os_str().is_empty() {
+                ".".to_string()
+            } else {
+                relative.display().to_string()
             }
-            _ => {
-                result.push_str(&format!("%{:02X}", byte));
-            }
-        }
-    }
-    result
+        })
+        .unwrap_or_else(|_| path.display().to_string())
 }
