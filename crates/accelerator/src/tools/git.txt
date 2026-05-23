@@ -1,0 +1,34 @@
+# git
+
+Run a git command. Output is returned to you. Default timeout {DEFAULT_TIMEOUT_SECS}s, max {MAX_TIMEOUT_SECS}s.
+
+## Common operations you can use
+
+- `status` / `log -n 10` / `diff` / `diff --staged` / `show <ref>` — inspection
+- `branch <name>` / `switch -c feature/<name>` — create branches
+- `add <path>` / `add -A` — stage changes
+- `commit -m "<msg>"` — commit (HEREDOC for multi-line: pass the full -m argument inline)
+- `push origin <feature-branch>` — push your feature branch
+- `fetch origin` / `pull --rebase` — sync with remote
+
+## Denied operations (these will return `[denied]` and not execute)
+
+- `push --force` / `push -f` / `push --force-with-lease` — never force-push
+- `push <remote> main` / `push <remote> master` — never push directly to default branches
+- `reset --hard` — destroys working tree changes
+- `checkout main` / `switch main` / `checkout master` / `switch master` — never switch to default branch
+- `checkout -f` / `checkout --force` — discards local changes
+- `checkout -- <path>` / `checkout .` / `restore <path>` — discards working-tree changes
+- `branch -D` / `branch --delete` — branch deletion
+- `stash drop` / `stash clear` — discards stashed work
+- `clean -f` / `clean -fd` — deletes untracked files
+- `commit --no-verify` / `commit --no-gpg-sign` / same on rebase/merge — never skip hooks
+- `config <anything>` — never modify repo or global git config
+
+## When you need a denied operation
+
+You don't. If a denied operation seems necessary, the situation is exceptional and a human maintainer must handle it. Stop, leave a comment on the issue/PR explaining what you needed, and exit.
+
+## Quoting
+
+Tokens are split on whitespace with basic quote handling. Wrap commit messages and paths with spaces in double quotes: `commit -m "fix: handle empty input"`.
