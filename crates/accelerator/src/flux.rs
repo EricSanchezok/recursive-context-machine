@@ -1,4 +1,4 @@
-use machine::{Context, Environment, Policy, Resources};
+use machine::{Context, Environment, Resources};
 use utils::{FluxId, Name};
 
 use crate::state::State;
@@ -26,17 +26,11 @@ pub enum ResFlux {
 }
 
 #[derive(Clone)]
-pub enum PolicyFlux {
-    Replace,
-}
-
-#[derive(Clone)]
 pub enum FluxMode {
     Purpose(PurposeFlux),
     Context(ContextFlux),
     Environment(EnvFlux),
     Resources(ResFlux),
-    Policy(PolicyFlux),
 }
 
 impl FluxMode {
@@ -46,7 +40,6 @@ impl FluxMode {
             FluxMode::Context(_) => Channel::Context,
             FluxMode::Environment(_) => Channel::Environment,
             FluxMode::Resources(_) => Channel::Resources,
-            FluxMode::Policy(_) => Channel::Policy,
         }
     }
 
@@ -57,7 +50,6 @@ impl FluxMode {
             FluxMode::Context(ContextFlux::Replace) => "context_replace",
             FluxMode::Environment(EnvFlux::Overlay) => "environment_overlay",
             FluxMode::Resources(ResFlux::Merge) => "resources_merge",
-            FluxMode::Policy(PolicyFlux::Replace) => "policy_replace",
         }
     }
 }
@@ -92,7 +84,6 @@ impl Flux {
             }
             Channel::Context => state.ctx = apply_ctx(self, |slot| slots[slot].ctx.clone()),
             Channel::Environment => state.env = apply_env(self, |slot| slots[slot].env.clone()),
-            Channel::Policy => state.policy = apply_policy(self, |slot| slots[slot].policy.clone()),
             Channel::Resources => state.res = apply_res(self, |slot| slots[slot].res.clone()),
             Channel::Pulse => {}
         }
@@ -192,19 +183,6 @@ fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -> Resources
                 }
             }
             result
-        }
-        _ => unreachable!("flux mode channel already matched"),
-    }
-}
-
-fn apply_policy(flux: &Flux, mut read: impl FnMut(usize) -> Box<dyn Policy>) -> Box<dyn Policy> {
-    match &flux.mode {
-        FluxMode::Policy(PolicyFlux::Replace) => {
-            let mut result = None;
-            for slot in 0..flux.arity {
-                result = Some(read(slot));
-            }
-            result.expect("policy flux requires at least one input")
         }
         _ => unreachable!("flux mode channel already matched"),
     }

@@ -6,10 +6,10 @@ use std::pin::Pin;
 use accelerator::mcp::{McpRegistry, McpServerConfig, McpTransportConfig};
 use accelerator::{
     Accelerator, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate, Endpoint, EnvFlux,
-    EnvironmentPredicate, FluxMode, Graph, PolicyFlux, Port, Predicate as AccelPredicate,
-    PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, State,
+    EnvironmentPredicate, FluxMode, Graph, Port, Predicate as AccelPredicate, PurposeFlux,
+    PurposePredicate, ResFlux, ResourcesPredicate, State,
 };
-use machine::{Limit, Modalities, Modality, Model, Protocol};
+use machine::{Limit, Modalities, Modality, Model, Policy, Protocol};
 
 use super::ast::{
     self, AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, McpTransportDef, McpValueDef,
@@ -90,9 +90,9 @@ impl Compiler {
 
         match &file.body {
             AcceleratorBodyDef::Primitive(primitive) => {
-                let state =
+                let (state, policy) =
                     build_state(&catalog, &models, &mut mcp_scope, primitive, &self.root).await?;
-                Ok(Accelerator::primitive(state, file.name.as_str()))
+                Ok(Accelerator::primitive(state, policy, file.name.as_str()))
             }
             AcceleratorBodyDef::Graph(graph_def) => {
                 let graph = self
@@ -126,9 +126,9 @@ impl Compiler {
         for accelerator_def in &graph_def.accelerators {
             let accelerator = match &accelerator_def.source {
                 AcceleratorSourceDef::Inline(primitive) => {
-                    let state =
+                    let (state, policy) =
                         build_state(catalog, models, mcp_scope, primitive, &self.root).await?;
-                    Accelerator::primitive(state, accelerator_def.id.as_str())
+                    Accelerator::primitive(state, policy, accelerator_def.id.as_str())
                 }
                 AcceleratorSourceDef::Import { alias, overrides } => {
                     let mut accelerator = imports
@@ -407,7 +407,7 @@ async fn build_state(
     mcp_scope: &mut McpScope,
     def: &PrimitiveDef,
     root: &Path,
-) -> Result<State, String> {
+) -> Result<(State, Box<dyn Policy>), String> {
     if def.models.is_empty() {
         return Err("accelerator requires at least one model".to_string());
     }
@@ -445,12 +445,14 @@ async fn build_state(
     }
     resources.deactivate_model();
 
-    Ok(State {
-        purpose: def.purpose.clone().unwrap_or_default(),
-        policy: policy(),
-        res: resources,
-        ..State::default()
-    })
+    Ok((
+        State {
+            purpose: def.purpose.clone().unwrap_or_default(),
+            res: resources,
+            ..State::default()
+        },
+        policy(),
+    ))
 }
 
 fn select_tools(
@@ -496,7 +498,6 @@ fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {
         ("context", "replace") => Ok(FluxMode::Context(ContextFlux::Replace)),
         ("environment", "overlay") => Ok(FluxMode::Environment(EnvFlux::Overlay)),
         ("resources", "merge") => Ok(FluxMode::Resources(ResFlux::Merge)),
-        ("policy", "replace") => Ok(FluxMode::Policy(PolicyFlux::Replace)),
         _ => Err(format!("unknown flux mode: {} {}", def.channel, def.mode)),
     }
 }
@@ -649,7 +650,6 @@ fn parse_channel(channel: &str) -> Result<Channel, String> {
         "purpose" => Ok(Channel::Purpose),
         "context" => Ok(Channel::Context),
         "environment" => Ok(Channel::Environment),
-        "policy" => Ok(Channel::Policy),
         "resources" => Ok(Channel::Resources),
         _ => Err(format!("unknown state channel: {}", channel)),
     }

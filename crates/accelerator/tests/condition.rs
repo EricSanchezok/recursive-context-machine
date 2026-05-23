@@ -4,13 +4,11 @@ use accelerator::{
     Accelerator, Channel, ConditionBranch, ContextFlux, ContextPredicate, Endpoint,
     EnvironmentPredicate, FluxMode, Graph, Predicate, PurposePredicate, ResourcesPredicate, State,
 };
-use common::DonePolicy;
 use machine::Fragment;
 
 fn state_with_purpose(purpose: &str) -> State {
     State {
         purpose: purpose.to_string(),
-        policy: Box::new(DonePolicy),
         ..State::default()
     }
 }
@@ -18,7 +16,6 @@ fn state_with_purpose(purpose: &str) -> State {
 fn state_with_context(text: &str) -> State {
     let mut state = State {
         purpose: text.to_string(),
-        policy: Box::new(DonePolicy),
         ..State::default()
     };
     state.ctx.append(Fragment::assistant(text));
@@ -26,7 +23,7 @@ fn state_with_context(text: &str) -> State {
 }
 
 fn primitive_with_context(text: &str) -> Accelerator {
-    Accelerator::primitive(state_with_context(text), text)
+    Accelerator::primitive(state_with_context(text), Box::new(common::DonePolicy), text)
 }
 
 fn run(graph: Graph) -> State {
