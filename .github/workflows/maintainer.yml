@@ -72,8 +72,8 @@ jobs:
         # rejects `git config` per AGENTS.md, so identity must be in place
         # before the agent runs.
         run: |
-          git config user.email "maintainer-bot@users.noreply.github.com"
-          git config user.name "RCM Maintainer Bot"
+          git config user.email "287349951+Goblin-d@users.noreply.github.com"
+          git config user.name "Goblin-d"
 
       - name: Render template for current event
         id: dispatch
