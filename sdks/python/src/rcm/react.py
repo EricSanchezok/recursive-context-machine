@@ -14,13 +14,11 @@ Usage:
         state, actions = rcm.step(mid, cmd)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
 class ReactPolicy:
-    _halt_count: int = field(default=0, init=False)
-
     def __call__(self, state, action_space):
         actions = action_space.actions
         verbs = {a.command.verb for a in actions}
@@ -29,7 +27,6 @@ class ReactPolicy:
             return self._pick(actions, "Take")
 
         if "Halt" in verbs:
-            self._halt_count += 1
             return self._pick(actions, "Halt")
 
         if "Done" in verbs:
