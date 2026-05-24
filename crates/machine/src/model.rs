@@ -32,6 +32,11 @@ pub struct Model {
     /// Extra HTTP headers sent with every request.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
+    /// Provider requires a `reasoning_content` field alongside tool calls
+    /// (e.g. Kimi Coding with thinking enabled). Off by default; most
+    /// OpenAI-compatible providers reject or ignore the field.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub thinking: bool,
     #[serde(flatten, default, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, Value>,
 }
@@ -49,6 +54,7 @@ impl Default for Model {
             modalities: None,
             timeout: DEFAULT_TIMEOUT_SECS,
             headers: None,
+            thinking: false,
             extra: HashMap::new(),
         }
     }

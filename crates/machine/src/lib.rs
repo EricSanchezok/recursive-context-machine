@@ -11,7 +11,7 @@
 //! | [`Policy`] | Owned by caller |
 //! | [`Machine`] | Pure interpreter — applies actions to the tape |
 
-pub(crate) mod completion;
+pub mod completion;
 pub mod context;
 pub mod env;
 pub mod event;
