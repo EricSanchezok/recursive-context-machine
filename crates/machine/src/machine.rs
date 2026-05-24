@@ -6,12 +6,20 @@ use crate::inbox::Inbox;
 use crate::policy::Action;
 use crate::reactor;
 use crate::resources::Resources;
+use crate::usage::Usage;
 use tracing::trace;
 
-pub struct Machine;
+pub struct Machine {
+    pub usages: Vec<Usage>,
+}
 
 impl Machine {
+    pub fn new() -> Self {
+        Self { usages: Vec::new() }
+    }
+
     pub async fn apply(
+        &mut self,
         action: Action,
         step: u64,
         machine_id: &str,
@@ -30,10 +38,22 @@ impl Machine {
                     messages = ctx.fragments().len(),
                     tools = resources.active_tools.len(),
                 );
-                reactor::react(machine_id, ctx, env, resources, inbox).await;
+                let usage = reactor::react(machine_id, ctx, env, resources, inbox).await;
+                self.usages.push(usage);
                 false
             }
-            other => Self::dispatch(other, step, machine_id, ctx, resources, inbox).await,
+            other => {
+                Self::dispatch(
+                    other,
+                    step,
+                    machine_id,
+                    ctx,
+                    resources,
+                    inbox,
+                    &mut self.usages,
+                )
+                .await
+            }
         }
     }
 
@@ -44,6 +64,7 @@ impl Machine {
         ctx: &mut Context,
         resources: &mut Resources,
         inbox: &mut Inbox,
+        usages: &mut Vec<Usage>,
     ) -> bool {
         match action {
             Action::Append(frag) => {
@@ -108,6 +129,9 @@ impl Machine {
             Action::Take => {
                 if let Some(frag) = inbox.pop() {
                     let id = ctx.append(frag);
+                    if let Some(last) = usages.last_mut() {
+                        last.fragment_ids.push(id);
+                    }
                     let frag = ctx.get(id).expect("just taken");
                     hook!(
                         event = "taken",

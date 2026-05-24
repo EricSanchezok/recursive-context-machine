@@ -9,20 +9,22 @@ async fn run_actions(
     env: &mut Environment,
     resources: &mut machine::Resources,
 ) {
+    let mut machine = Machine::new();
     let mut inbox = Inbox::new();
     let mut step = 0u64;
     for action in actions {
         step += 1;
-        let done = Machine::apply(
-            action.clone(),
-            step,
-            "test",
-            ctx,
-            env,
-            resources,
-            &mut inbox,
-        )
-        .await;
+        let done = machine
+            .apply(
+                action.clone(),
+                step,
+                "test",
+                ctx,
+                env,
+                resources,
+                &mut inbox,
+            )
+            .await;
         if done {
             break;
         }
@@ -188,30 +190,33 @@ async fn take_drains_inbox_into_context() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
     let mut inbox = Inbox::new();
+    let mut machine = Machine::new();
 
     inbox.push(Fragment::assistant("reply"));
     inbox.push(Fragment::tool_result("1", "5", None));
 
-    Machine::apply(
-        Action::Take,
-        1,
-        "test",
-        &mut ctx,
-        &mut env,
-        &mut resources,
-        &mut inbox,
-    )
-    .await;
-    Machine::apply(
-        Action::Take,
-        2,
-        "test",
-        &mut ctx,
-        &mut env,
-        &mut resources,
-        &mut inbox,
-    )
-    .await;
+    machine
+        .apply(
+            Action::Take,
+            1,
+            "test",
+            &mut ctx,
+            &mut env,
+            &mut resources,
+            &mut inbox,
+        )
+        .await;
+    machine
+        .apply(
+            Action::Take,
+            2,
+            "test",
+            &mut ctx,
+            &mut env,
+            &mut resources,
+            &mut inbox,
+        )
+        .await;
 
     assert_eq!(ctx.len(), 2);
     assert_eq!(ctx.fragments()[0].as_text(), Some("reply"));

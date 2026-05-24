@@ -26,6 +26,8 @@ pub(crate) mod reactor;
 pub mod resources;
 pub mod tool;
 
+pub mod usage;
+
 pub use context::Context;
 pub use env::Environment;
 pub use fragment::{
@@ -38,3 +40,4 @@ pub use policy::{Action, Phase, PhaseOutcome, Policy};
 pub use purpose::Purpose;
 pub use resources::Resources;
 pub use tool::Tool;
+pub use usage::Usage;
