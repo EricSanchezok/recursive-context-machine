@@ -121,9 +121,10 @@ fn collect_substitutions_pulls_paths_and_literals() {
         "REPO".into(),
         FieldSource::Path("repository.full_name".into()),
     );
-    route
-        .fields
-        .insert("TRIGGER_NUMBER".into(), FieldSource::Path("issue.number".into()));
+    route.fields.insert(
+        "TRIGGER_NUMBER".into(),
+        FieldSource::Path("issue.number".into()),
+    );
     route.fields.insert(
         "TRIGGER_KIND".into(),
         FieldSource::Literal {
@@ -145,9 +146,10 @@ fn collect_substitutions_pulls_paths_and_literals() {
 #[test]
 fn collect_substitutions_errors_when_required_field_missing() {
     let mut route = route_simple("issues", Some("opened"), "triage.tpl");
-    route
-        .fields
-        .insert("ISSUE_NUMBER".into(), FieldSource::Path("issue.number".into()));
+    route.fields.insert(
+        "ISSUE_NUMBER".into(),
+        FieldSource::Path("issue.number".into()),
+    );
 
     let payload = json!({"issue": {}});
     let result = collect_substitutions(&route, &payload);

@@ -102,9 +102,7 @@ impl Tool for GitTool {
             )
             .await
             {
-                Ok((stdout, stderr, exit_code)) => {
-                    build_result(&raw, stdout, stderr, exit_code)
-                }
+                Ok((stdout, stderr, exit_code)) => build_result(&raw, stdout, stderr, exit_code),
                 Err(_) => {
                     let _ = child.kill().await;
                     let _ = child.wait().await;
@@ -176,7 +174,9 @@ pub fn check_safety(tokens: &[String]) -> Result<(), String> {
         "stash" => check_stash(&rest),
         "clean" => check_clean(&rest),
         "commit" | "rebase" | "merge" | "cherry-pick" | "revert" => check_hook_skip(&rest),
-        "config" => Err("git config changes are denied; do not modify repo or global config".into()),
+        "config" => {
+            Err("git config changes are denied; do not modify repo or global config".into())
+        }
         _ => Ok(()),
     }
 }

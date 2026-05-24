@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use cli::cmd::dispatch::{
-    DispatchConfig, collect_substitutions, render_template,
-};
+use cli::cmd::dispatch::{DispatchConfig, collect_substitutions, render_template};
 
 fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -15,8 +13,7 @@ fn project_root() -> PathBuf {
 }
 
 fn load_dispatch_config() -> DispatchConfig {
-    let config_path = project_root()
-        .join("examples/project-maintainer/dispatch.toml");
+    let config_path = project_root().join("examples/project-maintainer/dispatch.toml");
     let text = fs::read_to_string(&config_path).expect("read dispatch.toml");
     toml::from_str(&text).expect("parse dispatch.toml")
 }
@@ -35,8 +32,7 @@ fn render_route(event_name: &str, action: Option<&str>, payload: serde_json::Val
         })
         .unwrap_or_else(|| panic!("no route for {event_name}/{action:?}"));
 
-    let substitutions =
-        collect_substitutions(route, &payload).expect("collect substitutions");
+    let substitutions = collect_substitutions(route, &payload).expect("collect substitutions");
 
     let template_path = project_root()
         .join("examples/project-maintainer")
@@ -120,7 +116,9 @@ fn mention_handler_template_renders_for_issue_comment() {
     assert!(rendered.contains("acme/widget"));
     assert!(rendered.contains("alice"));
     assert!(rendered.contains("can you look at this"));
-    assert!(rendered.contains("issue#42") || rendered.contains("issue 42") || rendered.contains("#42"));
+    assert!(
+        rendered.contains("issue#42") || rendered.contains("issue 42") || rendered.contains("#42")
+    );
     assert_no_unrendered_placeholders(&rendered, "mention_handler (issue)");
     assert_rendered_parses(&rendered, "mention_handler (issue)");
 }
@@ -174,9 +172,8 @@ fn every_template_substitution_has_a_template_placeholder() {
             .join("examples/project-maintainer")
             .join(&config.templates_dir)
             .join(&route.template);
-        let template_text = fs::read_to_string(&template_path).unwrap_or_else(|err| {
-            panic!("could not read {}: {err}", template_path.display())
-        });
+        let template_text = fs::read_to_string(&template_path)
+            .unwrap_or_else(|err| panic!("could not read {}: {err}", template_path.display()));
         for placeholder in route.fields.keys() {
             let token = format!("{{{{{placeholder}}}}}");
             let token_padded = format!("{{{{ {placeholder} }}}}");
@@ -230,9 +227,9 @@ fn extract_placeholders(template: &str) -> Vec<String> {
         };
         let raw = after[..end].trim().to_string();
         if !raw.is_empty()
-            && raw
-                .chars()
-                .all(|character| character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_')
+            && raw.chars().all(|character| {
+                character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
+            })
         {
             names.push(raw);
         }
