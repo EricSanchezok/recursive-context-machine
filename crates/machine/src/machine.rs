@@ -8,22 +8,24 @@ use crate::reactor;
 use crate::resources::Resources;
 use crate::usage::Usage;
 use tracing::trace;
-use utils::MachineId;
+use utils::{MachineId, Name};
 
 pub struct Machine {
-    id: MachineId,
+    pub id: MachineId,
+    pub name: Name,
     pub usages: Vec<Usage>,
 }
 
 impl Machine {
-    pub fn new(id: impl Into<String>) -> Self {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: MachineId::from_raw(id.into()).unwrap_or_else(|_| MachineId::new()),
+            name: Name::new(name).unwrap_or_else(|_| Name::from_static("rcm")),
             usages: Vec::new(),
         }
     }
 
-    pub fn id(&self) -> &str {
+    pub fn id_str(&self) -> &str {
         self.id.as_str()
     }
 
@@ -51,18 +53,21 @@ impl Machine {
                 self.usages.push(usage);
                 false
             }
-            other => Self::dispatch(other, step, &mid, ctx, resources, inbox, self).await,
+            other => {
+                self.dispatch(other, step, &mid, ctx, resources, inbox)
+                    .await
+            }
         }
     }
 
     async fn dispatch(
+        &mut self,
         action: Action,
         step: u64,
         mid: &str,
         ctx: &mut Context,
         resources: &mut Resources,
         inbox: &mut Inbox,
-        machine: &mut Machine,
     ) -> bool {
         match action {
             Action::Append(frag) => {
@@ -127,7 +132,7 @@ impl Machine {
             Action::Take => {
                 if let Some(frag) = inbox.pop() {
                     let id = ctx.append(frag);
-                    machine.usages.last_mut().map(|u| u.fragment_ids.push(id));
+                    self.usages.last_mut().map(|u| u.fragment_ids.push(id));
                     let frag = ctx.get(id).expect("just taken");
                     hook!(
                         event = "taken",
