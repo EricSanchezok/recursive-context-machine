@@ -5,7 +5,7 @@ use crate::action_space::build_action_space;
 use crate::decode::{build_model, decode_command};
 use crate::manager::{MachineManager, Run};
 use crate::rcm::{
-    DestroyRequest, OpenRequest, OpenResponse, State, StepRequest, StepResponse, rcm_server::Rcm,
+    DestroyRequest, OpenRequest, OpenResponse, StepRequest, StepResponse, rcm_server::Rcm,
 };
 use crate::state::build_state;
 
@@ -26,7 +26,12 @@ impl Rcm for RcmService {
     async fn open(&self, request: Request<OpenRequest>) -> Result<Response<OpenResponse>, Status> {
         let req = request.into_inner();
 
-        let mut resources = accelerator::state::kit();
+        let mut resources = machine::Resources::named("kit");
+        for tool in accelerator::tools::builtin_tools() {
+            if req.tools.iter().any(|name| name == tool.name()) {
+                resources = resources.with_tool(tool);
+            }
+        }
         for spec in &req.models {
             let model = build_model(spec)?;
             resources = resources.with_model(model);

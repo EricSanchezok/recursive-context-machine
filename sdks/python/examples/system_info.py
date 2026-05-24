@@ -34,7 +34,7 @@ def main():
         prompts={"captain": CAPTAIN_PROMPT},
     )
 
-    rcm.step(
+    state, actions = rcm.step(
         mid,
         ActionCommand(
             verb="Append",
@@ -45,7 +45,7 @@ def main():
             ),
         ),
     )
-    rcm.step(
+    state, actions = rcm.step(
         mid,
         ActionCommand(
             verb="Append",
@@ -56,6 +56,11 @@ def main():
             ),
         ),
     )
+
+    state, actions = rcm.step(
+        mid, ActionCommand(verb="Model", name="deepseek-v4-flash")
+    )
+    state, actions = rcm.step(mid, ActionCommand(verb="Activate", name="shell"))
 
     policy = ReactPolicy()
 
