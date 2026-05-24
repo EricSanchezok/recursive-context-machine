@@ -6,7 +6,7 @@ use utils::MachineId;
 use crate::manager::{MachineManager, Run};
 use crate::rcm::{
     self, ActionCommand, ActionItem, ActionSpace, DestroyRequest, FragmentContent, OpenRequest,
-    OpenResponse, State, StepRequest, StepResponse, rcm_server::Rcm,
+    OpenResponse, State, StepRequest, StepResponse, Usage, rcm_server::Rcm,
 };
 
 pub struct RcmService {
@@ -24,6 +24,12 @@ impl RcmService {
 // ── State marshalling ──────────────────────────────────────
 
 fn build_state(run: &Run) -> State {
+    let counts = run
+        .machine
+        .counts
+        .iter()
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect();
     State {
         purpose: String::new(),
         fragments: run.ctx.fragments().iter().map(fragment_to_proto).collect(),
@@ -34,9 +40,26 @@ fn build_state(run: &Run) -> State {
         available_models: run.resources.model_order.clone(),
         available_tools: run.resources.tools.keys().cloned().collect(),
         done: run.done,
-        step: run.step,
         inbox_pending: run.inbox.peek().is_some(),
         inbox_peek: run.inbox.peek().map(fragment_to_proto),
+        counts: counts,
+        usages: run
+            .machine
+            .usages
+            .iter()
+            .map(|u| usage_to_proto(u))
+            .collect(),
+    }
+}
+
+fn usage_to_proto(u: &machine::Usage) -> Usage {
+    Usage {
+        input_tokens: u.input_tokens,
+        output_tokens: u.output_tokens,
+        total_tokens: u.total_tokens,
+        cached_input_tokens: u.cached_input_tokens,
+        cache_creation_input_tokens: u.cache_creation_input_tokens,
+        fragment_ids: u.fragment_ids.clone(),
     }
 }
 
@@ -141,6 +164,42 @@ fn build_action_space(run: &Run) -> ActionSpace {
                     sink: Some(sink_clip(fc)),
                 });
             }
+        }
+
+        // Insert — fragment × prompt
+        for frag in run.ctx.fragments().iter() {
+            for (name, text) in &run.resources.prompts {
+                let fc = FragmentContent {
+                    role: "system".into(),
+                    text: text.clone(),
+                };
+                actions.push(ActionItem {
+                    command: Some(ActionCommand {
+                        verb: "Insert".into(),
+                        fragment_id: Some(frag.id()),
+                        fragment: Some(fc.clone()),
+                        ..Default::default()
+                    }),
+                    label: format!("Insert after #{} with {}", frag.id(), name),
+                    sink: Some(sink_clip(fc)),
+                });
+            }
+        }
+
+        // Swap — all pairs of adjacent fragments
+        for i in 0..run.ctx.fragments().len().saturating_sub(1) {
+            let id1 = run.ctx.fragments()[i].id();
+            let id2 = run.ctx.fragments()[i + 1].id();
+            actions.push(ActionItem {
+                command: Some(ActionCommand {
+                    verb: "Swap".into(),
+                    fragment_id: Some(id1),
+                    fragment_id2: Some(id2),
+                    ..Default::default()
+                }),
+                label: format!("Swap #{} ↔ #{}", id1, id2),
+                sink: None,
+            });
         }
 
         // Model / Activate / Deactivate

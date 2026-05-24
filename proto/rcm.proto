@@ -82,9 +82,19 @@ message State {
   repeated string available_models = 7;
   repeated string available_tools = 8;
   bool done = 9;
-  uint64 step = 10;
   bool inbox_pending = 11;
   optional Fragment inbox_peek = 12;
+  map<string, uint64> counts = 13;
+  repeated Usage usages = 14;
+}
+
+message Usage {
+  uint64 input_tokens = 1;
+  uint64 output_tokens = 2;
+  uint64 total_tokens = 3;
+  uint64 cached_input_tokens = 4;
+  uint64 cache_creation_input_tokens = 5;
+  repeated uint64 fragment_ids = 6;
 }
 
 message Fragment {
