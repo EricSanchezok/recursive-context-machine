@@ -160,6 +160,7 @@ impl PrimitiveAccelerator {
             if Machine::apply(
                 action,
                 step,
+                "ephemeral",
                 &mut state.ctx,
                 &mut state.env,
                 &mut state.res,
@@ -219,7 +220,7 @@ async fn run_phase(
             }
             PhaseOutcome::Action(action) => {
                 *step += 1;
-                if Machine::apply(action, *step, ctx, env, resources, inbox).await {
+                if Machine::apply(action, *step, "ephemeral", ctx, env, resources, inbox).await {
                     return true;
                 }
             }

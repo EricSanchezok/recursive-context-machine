@@ -14,6 +14,7 @@ impl Machine {
     pub async fn apply(
         action: Action,
         step: u64,
+        machine_id: &str,
         ctx: &mut Context,
         env: &mut Environment,
         resources: &mut Resources,
@@ -23,21 +24,23 @@ impl Machine {
             Action::Halt => {
                 hook!(
                     event = "halt",
+                    machine_id,
                     step,
                     model = %resources.active_model().name,
                     messages = ctx.fragments().len(),
                     tools = resources.active_tools.len(),
                 );
-                reactor::react(ctx, env, resources, inbox).await;
+                reactor::react(machine_id, ctx, env, resources, inbox).await;
                 false
             }
-            other => Self::dispatch(other, step, ctx, resources, inbox).await,
+            other => Self::dispatch(other, step, machine_id, ctx, resources, inbox).await,
         }
     }
 
     async fn dispatch(
         action: Action,
         step: u64,
+        machine_id: &str,
         ctx: &mut Context,
         resources: &mut Resources,
         inbox: &mut Inbox,
@@ -48,6 +51,7 @@ impl Machine {
                 let frag = ctx.get(id).expect("just appended");
                 hook!(
                     event = "appended",
+                    machine_id,
                     id,
                     step,
                     role = role_name(frag.role),
@@ -60,6 +64,7 @@ impl Machine {
                 let frag = ctx.get(id).expect("just inserted");
                 hook!(
                     event = "inserted",
+                    machine_id,
                     id,
                     step,
                     role = role_name(frag.role),
@@ -72,6 +77,7 @@ impl Machine {
                 let frag = ctx.get(id).expect("just replaced");
                 hook!(
                     event = "replaced",
+                    machine_id,
                     id,
                     step,
                     role = role_name(frag.role),
@@ -81,11 +87,11 @@ impl Machine {
             }
             Action::Remove(id) => {
                 ctx.remove(id);
-                hook!(event = "removed", id, step);
+                hook!(event = "removed", machine_id, id, step);
             }
             Action::Swap(id1, id2) => {
                 ctx.swap(id1, id2);
-                hook!(event = "swapped", id1, id2, step);
+                hook!(event = "swapped", machine_id, id1, id2, step);
             }
             Action::Model(name) => {
                 trace!(model = %name, "switch model");
@@ -105,6 +111,7 @@ impl Machine {
                     let frag = ctx.get(id).expect("just taken");
                     hook!(
                         event = "taken",
+                        machine_id,
                         id,
                         step,
                         role = role_name(frag.role),
@@ -114,7 +121,7 @@ impl Machine {
                 }
             }
             Action::Done => {
-                hook!(event = "done", step);
+                hook!(event = "done", machine_id, step);
                 return true;
             }
             Action::Halt => unreachable!("dispatch never receives Halt; apply() intercepts it"),
