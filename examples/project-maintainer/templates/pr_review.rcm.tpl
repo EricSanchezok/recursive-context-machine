@@ -7,6 +7,7 @@ model kimi-k2-6 {
     headers = { User-Agent = "KimiCLI/1.5" }
     limit = { context = "1000000", output = "393216" }
     modalities = { input = ["text"], output = ["text"] }
+    thinking = "true"
 }
 
 graph {
