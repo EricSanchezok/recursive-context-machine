@@ -1,6 +1,7 @@
 use http::{HeaderMap, HeaderName, HeaderValue};
 use rig::OneOrMany;
 use rig::client::CompletionClient;
+use rig::completion::message::Reasoning;
 use rig::completion::{
     AssistantContent, CompletionError, CompletionModel, Message, ToolDefinition,
 };
@@ -23,7 +24,11 @@ use tracing::{debug, warn};
 pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
     let model = resources.active_model();
 
-    let messages: Vec<Message> = ctx.fragments().iter().filter_map(encode).collect();
+    let messages: Vec<Message> = ctx
+        .fragments()
+        .iter()
+        .filter_map(|frag| encode(frag, model.thinking))
+        .collect();
 
     let tools: Vec<ToolDefinition> = resources
         .active_tools()
@@ -111,19 +116,14 @@ async fn send(
     messages: &[Message],
     tools: &[ToolDefinition],
 ) -> Result<OneOrMany<AssistantContent>, Fragment> {
-    let initial_prompt = messages
-        .first()
-        .cloned()
-        .unwrap_or_else(|| Message::user("."));
-    let remaining_messages = if messages.len() > 1 {
-        messages[1..].to_vec()
-    } else {
-        Vec::new()
-    };
-
+    // rig's CompletionRequestBuilder requires an initial prompt that becomes
+    // the trailing user turn in the request body. An empty string trips
+    // strict providers (e.g. Kimi Coding: "the message at position N with
+    // role 'user' must not be empty"). A "." placeholder is the minimal
+    // change that keeps every existing model's message order intact.
     let mut request = endpoint
-        .completion_request(initial_prompt)
-        .messages(remaining_messages)
+        .completion_request(Message::user("."))
+        .messages(messages.to_vec())
         .tools(tools.to_vec());
 
     if let Some(temp) = model.temperature {
@@ -209,20 +209,26 @@ where
 }
 
 /// Encode a context fragment into a rig message.
-fn encode(frag: &Fragment) -> Option<Message> {
+///
+/// `thinking` adds an empty `reasoning_content` placeholder to assistant
+/// tool-call messages. Required by providers like Kimi Coding when their
+/// thinking mode is enabled; harmful or wasteful for everyone else, so it
+/// stays off unless the active model explicitly opts in.
+pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
     match frag.role {
         Role::System => frag.as_text().map(Message::system),
         Role::User => frag.as_text().map(Message::user),
         Role::Assistant => {
             if let Content::ToolCall(tc) = &frag.content {
-                Some(Message::Assistant {
-                    id: None,
-                    content: OneOrMany::one(AssistantContent::tool_call(
-                        &tc.id,
-                        &tc.name,
-                        tc.arguments.clone(),
-                    )),
-                })
+                let mut content = OneOrMany::one(AssistantContent::tool_call(
+                    &tc.id,
+                    &tc.name,
+                    tc.arguments.clone(),
+                ));
+                if thinking {
+                    content.push(AssistantContent::Reasoning(Reasoning::new(".")));
+                }
+                Some(Message::Assistant { id: None, content })
             } else {
                 frag.as_text().map(Message::assistant)
             }
