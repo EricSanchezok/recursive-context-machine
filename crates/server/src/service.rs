@@ -65,7 +65,9 @@ impl Rcm for RcmService {
             purpose: req.purpose,
             machine: Machine::new(machine_id.as_str(), "rcm"),
             ctx: machine::Context::new(),
-            env: accelerator::state::local(),
+            env: machine::Environment::new(
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            ),
             resources,
             inbox: Inbox::new(),
             step: 0,

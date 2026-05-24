@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use machine::{Context, Environment, Resources};
 
 #[derive(Clone)]
@@ -19,12 +17,4 @@ impl Default for State {
             res: Resources::new(),
         }
     }
-}
-
-/// An honest snapshot of the host the agent is currently running on:
-/// inherits host env vars, cwd, and platform tag.
-///
-/// For sandboxed scenarios, use [`Environment::empty`].
-pub fn local() -> Environment {
-    Environment::new(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
