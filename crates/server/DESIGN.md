@@ -226,16 +226,25 @@ message Fragment {
 ### Crate layout
 
 ```
+proto/                        # shared proto source of truth
+└── rcm.proto
+
 crates/server/
 ├── Cargo.toml
-├── build.rs                  # tonic-build
-├── proto/
-│   └── rcm.proto
+├── build.rs                  # tonic-build from ../../proto/rcm.proto
 └── src/
     ├── lib.rs
-    ├── service.rs            # RCMService — gRPC handler + State/ActionSpace serialization
+    ├── service.rs            # handlers + State/ActionSpace serialization
     └── manager.rs            # MachineManager — HashMap<MachineId, Run>
-```
+
+sdks/python/                  # Python SDK (pip install -e .)
+├── pyproject.toml
+├── generate.sh               # regenerate stubs from proto/rcm.proto
+└── src/rcm/
+    ├── __init__.py           # from rcm import RCMClient
+    ├── client.py             # thin wrapper over gRPC stub
+    ├── _pb2.py               # generated message classes
+    └── _pb2_grpc.py          # generated client stub
 
 ### Dependencies
 
