@@ -6839,7 +6839,7 @@ dependencies = [
  "tonic-build",
  "tracing",
  "tracing-subscriber",
- "uuid",
+ "utils",
 ]
 
 [[package]]
