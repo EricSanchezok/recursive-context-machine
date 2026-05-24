@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use machine::{Context, Environment, Resources};
 
 #[derive(Clone)]
@@ -15,32 +13,8 @@ impl Default for State {
         Self {
             purpose: String::new(),
             ctx: Context::new(),
-            env: local(),
-            res: kit(),
+            env: Environment::new("."),
+            res: Resources::new(),
         }
     }
-}
-
-pub fn local() -> Environment {
-    let mut env = Environment::named(
-        "local",
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-    );
-    env.root = Some(env.cwd.clone());
-    env
-}
-
-pub fn kit() -> Resources {
-    let mut resources = Resources::named("kit");
-
-    for tool in crate::tools::builtin_tools() {
-        resources = resources.with_tool(tool);
-    }
-
-    resources.prompts.insert(
-        "captain".to_string(),
-        include_str!("prompts/captain.txt").to_string(),
-    );
-
-    resources
 }

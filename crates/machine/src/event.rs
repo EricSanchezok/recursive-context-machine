@@ -14,7 +14,7 @@ pub(crate) fn preview(frag: &Fragment) -> String {
     }
 }
 
-pub(crate) fn role_name(role: Role) -> &'static str {
+pub fn role_name(role: Role) -> &'static str {
     match role {
         Role::System => "system",
         Role::User => "user",

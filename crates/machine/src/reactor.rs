@@ -7,23 +7,33 @@ use crate::fragment::{Content, Fragment, Role};
 use crate::hook;
 use crate::inbox::Inbox;
 use crate::resources::Resources;
+use crate::usage::Usage;
 use tokio::time::{Duration, timeout};
 use tracing::{debug, info, warn};
 
-/// Call the LLM and execute ToolCalls. All fragments (original LLM text,
-/// ToolCalls, and their ToolResults/Hitches) are pushed into the inbox.
-/// The Policy drains them via [`Take`](crate::Action::Take).
-pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbox: &mut Inbox) {
+pub async fn react(
+    machine_id: &str,
+    ctx: &Context,
+    env: &Environment,
+    resources: &Resources,
+    inbox: &mut Inbox,
+) -> Usage {
     let t0 = Instant::now();
 
-    hook!(event = "completion_start");
+    hook!(event = "completion_start", machine_id);
 
-    let fragments = completion::complete(ctx, resources).await;
+    let (fragments, usage) = completion::complete(ctx, resources).await;
 
     hook!(
         event = "completion_end",
+        machine_id,
         duration = %humantime(t0.elapsed()),
         fragments = fragments.len(),
+        input_tokens = usage.input_tokens,
+        output_tokens = usage.output_tokens,
+        total_tokens = usage.total_tokens,
+        cached_input_tokens = usage.cached_input_tokens,
+        cache_creation_input_tokens = usage.cache_creation_input_tokens,
     );
 
     for frag in fragments {
@@ -34,6 +44,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
 
             hook!(
                 event = "tool_call",
+                machine_id,
                 call_id = tc.id,
                 tool = tc.name,
                 arguments = %tc.arguments,
@@ -58,6 +69,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                             );
                             hook!(
                                 event = "tool_result",
+                                machine_id,
                                 call_id = tc.id,
                                 tool = tc.name,
                                 result = %tool_result.content,
@@ -73,6 +85,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                             warn!(tool = tc.name, msg, "tool failed");
                             hook!(
                                 event = "tool_error",
+                                machine_id,
                                 call_id = tc.id,
                                 tool = tc.name,
                                 error = %msg,
@@ -93,6 +106,7 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
                             );
                             hook!(
                                 event = "tool_error",
+                                machine_id,
                                 call_id = tc.id,
                                 tool = tc.name,
                                 error = "timeout",
@@ -119,6 +133,8 @@ pub async fn react(ctx: &Context, env: &Environment, resources: &Resources, inbo
             inbox.push(f);
         }
     }
+
+    usage
 }
 
 fn humantime(d: Duration) -> String {

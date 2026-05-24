@@ -424,7 +424,7 @@ async fn build_state(
         .policies
         .get(policy_name)
         .ok_or_else(|| format!("unknown policy: {}", policy_name))?;
-    let mut resources = catalog.build_resources("kit")?;
+    let mut resources = catalog.default_resources();
 
     if let Some(tool_names) = &def.tools {
         let tools = select_tools(&resources, tool_names)?;
@@ -455,6 +455,7 @@ async fn build_state(
     Ok((
         State {
             purpose: def.purpose.clone().unwrap_or_default(),
+            env: catalog.default_environment(),
             res: resources,
             ..State::default()
         },

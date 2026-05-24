@@ -7,6 +7,7 @@ use machine::{Environment, Policy, Resources, Tool};
 ///
 /// Built at startup by calling each module's `register()` function.
 /// The compiler resolves `.rcm` names against this table at compile time.
+/// The gRPC server uses default_*() methods for fallback values.
 #[derive(Default)]
 pub struct Catalog {
     pub policies: HashMap<String, fn() -> Box<dyn Policy>>,
@@ -29,7 +30,26 @@ impl Catalog {
         catalog
     }
 
-    /// Build a `Resources` from a named preset, injecting catalog tools, models, and prompts.
+    pub fn default_environment(&self) -> Environment {
+        self.environments
+            .get("local")
+            .cloned()
+            .unwrap_or_else(|| Environment::new("."))
+    }
+
+    pub fn default_resources(&self) -> Resources {
+        self.build_resources("kit")
+            .unwrap_or_else(|_| Resources::new())
+    }
+
+    pub fn default_policy(&self) -> Box<dyn Policy> {
+        self.policies
+            .get("captain")
+            .map(|factory| factory())
+            .expect("captain policy must be registered")
+    }
+
+    /// Build a `Resources` from a named preset, injecting catalog tools and prompts.
     pub fn build_resources(&self, preset: &str) -> Result<Resources, String> {
         let mut res = self
             .resources
