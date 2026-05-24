@@ -1,18 +1,17 @@
 """Default reactive policy for Python RCM controllers.
 
-A simple Captain-style loop without phases:
-
-    Append prompt → Halt → Take (drain inbox) → repeat → Done.
+Handles the main decision loop: drain inbox, Halt, Done.
+Setup (system prompt, purpose, tool activation) is the
+controller's responsibility — not the policy's.
 
 Usage:
     from rcm.react import ReactPolicy
 
+    # ... controller runs setup with explicit ActionCommands ...
     policy = ReactPolicy()
     for _ in range(max_steps):
         cmd, label = policy(state, actions)
         state, actions = rcm.step(mid, cmd)
-        if state.done:
-            break
 """
 
 from dataclasses import dataclass, field
@@ -20,10 +19,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class ReactPolicy:
-    """Reactive policy that observes state at each step."""
-
     _halt_count: int = field(default=0, init=False)
-    _prompt_appended: bool = field(default=False, init=False)
 
     def __call__(self, state, action_space):
         actions = action_space.actions
@@ -31,10 +27,6 @@ class ReactPolicy:
 
         if state.inbox_pending and "Take" in verbs:
             return self._pick(actions, "Take")
-
-        if not self._prompt_appended and "Append" in verbs:
-            self._prompt_appended = True
-            return self._pick(actions, "Append")
 
         if "Halt" in verbs:
             self._halt_count += 1

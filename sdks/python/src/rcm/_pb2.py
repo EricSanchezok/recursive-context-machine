@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\trcm.proto\x12\x03rcm\x1a\x1bgoogle/protobuf/empty.proto\"\x9d\x01\n\x0bOpenRequest\x12\x0f\n\x07purpose\x18\x01 \x01(\t\x12\x0e\n\x06models\x18\x02 \x03(\t\x12\r\n\x05tools\x18\x03 \x03(\t\x12.\n\x07prompts\x18\x04 \x03(\x0b\x32\x1d.rcm.OpenRequest.PromptsEntry\x1a.\n\x0cPromptsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"e\n\x0cOpenResponse\x12\x12\n\nmachine_id\x18\x01 \x01(\t\x12\x19\n\x05state\x18\x02 \x01(\x0b\x32\n.rcm.State\x12&\n\x0c\x61\x63tion_space\x18\x03 \x01(\x0b\x32\x10.rcm.ActionSpace\"F\n\x0bStepRequest\x12\x12\n\nmachine_id\x18\x01 \x01(\t\x12#\n\x07\x63ommand\x18\x02 \x01(\x0b\x32\x12.rcm.ActionCommand\"Q\n\x0cStepResponse\x12\x19\n\x05state\x18\x01 \x01(\x0b\x32\n.rcm.State\x12&\n\x0c\x61\x63tion_space\x18\x02 \x01(\x0b\x32\x10.rcm.ActionSpace\"$\n\x0e\x44\x65stroyRequest\x12\x12\n\nmachine_id\x18\x01 \x01(\t\"\xc9\x01\n\rActionCommand\x12\x0c\n\x04verb\x18\x01 \x01(\t\x12\x18\n\x0b\x66ragment_id\x18\x02 \x01(\x04H\x00\x88\x01\x01\x12\x19\n\x0c\x66ragment_id2\x18\x03 \x01(\x04H\x01\x88\x01\x01\x12+\n\x08\x66ragment\x18\x04 \x01(\x0b\x32\x14.rcm.FragmentContentH\x02\x88\x01\x01\x12\x11\n\x04name\x18\x05 \x01(\tH\x03\x88\x01\x01\x42\x0e\n\x0c_fragment_idB\x0f\n\r_fragment_id2B\x0b\n\t_fragmentB\x07\n\x05_name\"-\n\x0f\x46ragmentContent\x12\x0c\n\x04role\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x02 \x01(\t\"/\n\x0b\x41\x63tionSpace\x12 \n\x07\x61\x63tions\x18\x01 \x03(\x0b\x32\x0f.rcm.ActionItem\"d\n\nActionItem\x12#\n\x07\x63ommand\x18\x01 \x01(\x0b\x32\x12.rcm.ActionCommand\x12\r\n\x05label\x18\x02 \x01(\t\x12\"\n\x04sink\x18\x03 \x01(\x0b\x32\x14.rcm.FragmentContent\"\xef\x02\n\x05State\x12\x0f\n\x07purpose\x18\x01 \x01(\t\x12 \n\tfragments\x18\x02 \x03(\x0b\x32\r.rcm.Fragment\x12\x0f\n\x07workdir\x18\x03 \x01(\t\x12)\n\x08\x65nv_vars\x18\x04 \x03(\x0b\x32\x17.rcm.State.EnvVarsEntry\x12\x14\n\x0c\x61\x63tive_model\x18\x05 \x01(\t\x12\x14\n\x0c\x61\x63tive_tools\x18\x06 \x03(\t\x12\x18\n\x10\x61vailable_models\x18\x07 \x03(\t\x12\x17\n\x0f\x61vailable_tools\x18\x08 \x03(\t\x12\x0c\n\x04\x64one\x18\t \x01(\x08\x12\x0c\n\x04step\x18\n \x01(\x04\x12\x15\n\rinbox_pending\x18\x0b \x01(\x08\x12&\n\ninbox_peek\x18\x0c \x01(\x0b\x32\r.rcm.FragmentH\x00\x88\x01\x01\x1a.\n\x0c\x45nvVarsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\r\n\x0b_inbox_peek\"b\n\x08\x46ragment\x12\n\n\x02id\x18\x01 \x01(\x04\x12\x0c\n\x04role\x18\x02 \x01(\t\x12\x0c\n\x04kind\x18\x03 \x01(\t\x12\x14\n\x0ctext_preview\x18\x04 \x01(\t\x12\x10\n\x03tag\x18\x05 \x01(\tH\x00\x88\x01\x01\x42\x06\n\x04_tag2\x97\x01\n\x03RCM\x12+\n\x04Open\x12\x10.rcm.OpenRequest\x1a\x11.rcm.OpenResponse\x12+\n\x04Step\x12\x10.rcm.StepRequest\x1a\x11.rcm.StepResponse\x12\x36\n\x07\x44\x65stroy\x12\x13.rcm.DestroyRequest\x1a\x16.google.protobuf.Emptyb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\trcm.proto\x12\x03rcm\x1a\x1bgoogle/protobuf/empty.proto\"\x9d\x01\n\x0bOpenRequest\x12\x0f\n\x07purpose\x18\x01 \x01(\t\x12\x0e\n\x06models\x18\x02 \x03(\t\x12\r\n\x05tools\x18\x03 \x03(\t\x12.\n\x07prompts\x18\x04 \x03(\x0b\x32\x1d.rcm.OpenRequest.PromptsEntry\x1a.\n\x0cPromptsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"e\n\x0cOpenResponse\x12\x12\n\nmachine_id\x18\x01 \x01(\t\x12\x19\n\x05state\x18\x02 \x01(\x0b\x32\n.rcm.State\x12&\n\x0c\x61\x63tion_space\x18\x03 \x01(\x0b\x32\x10.rcm.ActionSpace\"F\n\x0bStepRequest\x12\x12\n\nmachine_id\x18\x01 \x01(\t\x12#\n\x07\x63ommand\x18\x02 \x01(\x0b\x32\x12.rcm.ActionCommand\"Q\n\x0cStepResponse\x12\x19\n\x05state\x18\x01 \x01(\x0b\x32\n.rcm.State\x12&\n\x0c\x61\x63tion_space\x18\x02 \x01(\x0b\x32\x10.rcm.ActionSpace\"$\n\x0e\x44\x65stroyRequest\x12\x12\n\nmachine_id\x18\x01 \x01(\t\"\xc9\x01\n\rActionCommand\x12\x0c\n\x04verb\x18\x01 \x01(\t\x12\x18\n\x0b\x66ragment_id\x18\x02 \x01(\x04H\x00\x88\x01\x01\x12\x19\n\x0c\x66ragment_id2\x18\x03 \x01(\x04H\x01\x88\x01\x01\x12+\n\x08\x66ragment\x18\x04 \x01(\x0b\x32\x14.rcm.FragmentContentH\x02\x88\x01\x01\x12\x11\n\x04name\x18\x05 \x01(\tH\x03\x88\x01\x01\x42\x0e\n\x0c_fragment_idB\x0f\n\r_fragment_id2B\x0b\n\t_fragmentB\x07\n\x05_name\"G\n\x0f\x46ragmentContent\x12\x0c\n\x04role\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x02 \x01(\t\x12\x10\n\x03tag\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x06\n\x04_tag\"/\n\x0b\x41\x63tionSpace\x12 \n\x07\x61\x63tions\x18\x01 \x03(\x0b\x32\x0f.rcm.ActionItem\"d\n\nActionItem\x12#\n\x07\x63ommand\x18\x01 \x01(\x0b\x32\x12.rcm.ActionCommand\x12\r\n\x05label\x18\x02 \x01(\t\x12\"\n\x04sink\x18\x03 \x01(\x0b\x32\x14.rcm.FragmentContent\"\xe8\x03\n\x05State\x12\x0f\n\x07purpose\x18\x01 \x01(\t\x12\x12\n\nmachine_id\x18\n \x01(\t\x12 \n\tfragments\x18\x02 \x03(\x0b\x32\r.rcm.Fragment\x12\x0f\n\x07workdir\x18\x03 \x01(\t\x12)\n\x08\x65nv_vars\x18\x04 \x03(\x0b\x32\x17.rcm.State.EnvVarsEntry\x12\x14\n\x0c\x61\x63tive_model\x18\x05 \x01(\t\x12\x14\n\x0c\x61\x63tive_tools\x18\x06 \x03(\t\x12\x18\n\x10\x61vailable_models\x18\x07 \x03(\t\x12\x17\n\x0f\x61vailable_tools\x18\x08 \x03(\t\x12\x0c\n\x04\x64one\x18\t \x01(\x08\x12\x15\n\rinbox_pending\x18\x0b \x01(\x08\x12&\n\ninbox_peek\x18\x0c \x01(\x0b\x32\r.rcm.FragmentH\x00\x88\x01\x01\x12&\n\x06\x63ounts\x18\r \x03(\x0b\x32\x16.rcm.State.CountsEntry\x12\x1a\n\x06usages\x18\x0e \x03(\x0b\x32\n.rcm.Usage\x1a.\n\x0c\x45nvVarsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a-\n\x0b\x43ountsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x04:\x02\x38\x01\x42\r\n\x0b_inbox_peek\"\xa2\x01\n\x05Usage\x12\x14\n\x0cinput_tokens\x18\x01 \x01(\x04\x12\x15\n\routput_tokens\x18\x02 \x01(\x04\x12\x14\n\x0ctotal_tokens\x18\x03 \x01(\x04\x12\x1b\n\x13\x63\x61\x63hed_input_tokens\x18\x04 \x01(\x04\x12#\n\x1b\x63\x61\x63he_creation_input_tokens\x18\x05 \x01(\x04\x12\x14\n\x0c\x66ragment_ids\x18\x06 \x03(\x04\"b\n\x08\x46ragment\x12\n\n\x02id\x18\x01 \x01(\x04\x12\x0c\n\x04role\x18\x02 \x01(\t\x12\x0c\n\x04kind\x18\x03 \x01(\t\x12\x14\n\x0ctext_preview\x18\x04 \x01(\t\x12\x10\n\x03tag\x18\x05 \x01(\tH\x00\x88\x01\x01\x42\x06\n\x04_tag2\x97\x01\n\x03RCM\x12+\n\x04Open\x12\x10.rcm.OpenRequest\x1a\x11.rcm.OpenResponse\x12+\n\x04Step\x12\x10.rcm.StepRequest\x1a\x11.rcm.StepResponse\x12\x36\n\x07\x44\x65stroy\x12\x13.rcm.DestroyRequest\x1a\x16.google.protobuf.Emptyb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,6 +36,8 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_OPENREQUEST_PROMPTSENTRY']._serialized_options = b'8\001'
   _globals['_STATE_ENVVARSENTRY']._loaded_options = None
   _globals['_STATE_ENVVARSENTRY']._serialized_options = b'8\001'
+  _globals['_STATE_COUNTSENTRY']._loaded_options = None
+  _globals['_STATE_COUNTSENTRY']._serialized_options = b'8\001'
   _globals['_OPENREQUEST']._serialized_start=48
   _globals['_OPENREQUEST']._serialized_end=205
   _globals['_OPENREQUEST_PROMPTSENTRY']._serialized_start=159
@@ -51,17 +53,21 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_ACTIONCOMMAND']._serialized_start=504
   _globals['_ACTIONCOMMAND']._serialized_end=705
   _globals['_FRAGMENTCONTENT']._serialized_start=707
-  _globals['_FRAGMENTCONTENT']._serialized_end=752
-  _globals['_ACTIONSPACE']._serialized_start=754
-  _globals['_ACTIONSPACE']._serialized_end=801
-  _globals['_ACTIONITEM']._serialized_start=803
-  _globals['_ACTIONITEM']._serialized_end=903
-  _globals['_STATE']._serialized_start=906
-  _globals['_STATE']._serialized_end=1273
-  _globals['_STATE_ENVVARSENTRY']._serialized_start=1212
-  _globals['_STATE_ENVVARSENTRY']._serialized_end=1258
-  _globals['_FRAGMENT']._serialized_start=1275
-  _globals['_FRAGMENT']._serialized_end=1373
-  _globals['_RCM']._serialized_start=1376
-  _globals['_RCM']._serialized_end=1527
+  _globals['_FRAGMENTCONTENT']._serialized_end=778
+  _globals['_ACTIONSPACE']._serialized_start=780
+  _globals['_ACTIONSPACE']._serialized_end=827
+  _globals['_ACTIONITEM']._serialized_start=829
+  _globals['_ACTIONITEM']._serialized_end=929
+  _globals['_STATE']._serialized_start=932
+  _globals['_STATE']._serialized_end=1420
+  _globals['_STATE_ENVVARSENTRY']._serialized_start=1312
+  _globals['_STATE_ENVVARSENTRY']._serialized_end=1358
+  _globals['_STATE_COUNTSENTRY']._serialized_start=1360
+  _globals['_STATE_COUNTSENTRY']._serialized_end=1405
+  _globals['_USAGE']._serialized_start=1423
+  _globals['_USAGE']._serialized_end=1585
+  _globals['_FRAGMENT']._serialized_start=1587
+  _globals['_FRAGMENT']._serialized_end=1685
+  _globals['_RCM']._serialized_start=1688
+  _globals['_RCM']._serialized_end=1839
 # @@protoc_insertion_point(module_scope)

@@ -56,6 +56,7 @@ message ActionCommand {
 message FragmentContent {
   string role = 1;
   string text = 2;
+  optional string tag = 3;
 }
 
 // ── ActionSpace ─────────────────────────────────────────
