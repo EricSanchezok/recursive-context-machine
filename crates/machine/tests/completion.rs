@@ -8,13 +8,6 @@ fn tool_call_fragment() -> Fragment {
 }
 
 #[test]
-fn encode_system_text_maps_to_system_message() {
-    let frag = Fragment::system("you are a helper");
-    let msg = encode(&frag, false).expect("system encodes");
-    assert!(matches!(msg, Message::System { .. }));
-}
-
-#[test]
 fn encode_user_text_maps_to_user_message() {
     let frag = Fragment::user("hello");
     let msg = encode(&frag, false).expect("user encodes");
@@ -102,5 +95,72 @@ fn encode_assistant_non_tool_call_ignores_thinking_flag() {
             !has_reasoning,
             "{label}: plain assistant text must not gain reasoning"
         );
+    }
+}
+
+// ── Hitch encoding (issue #43 subproblem 3) ──
+
+#[test]
+fn encode_system_hitch_maps_to_system_message() {
+    let frag = Fragment::hitch(
+        "model 'xyz' not registered",
+        None,
+        machine::Role::System,
+        None::<&str>,
+    );
+    let msg = encode(&frag, false).expect("system hitch encodes");
+    assert!(matches!(msg, Message::System { .. }));
+    if let Message::System { content } = &msg {
+        assert!(content.contains("not registered"));
+    }
+}
+
+#[test]
+fn encode_assistant_hitch_maps_to_assistant_message() {
+    let frag = Fragment::hitch(
+        "HttpError: 502 Bad Gateway",
+        None,
+        machine::Role::Assistant,
+        None::<&str>,
+    );
+    let msg = encode(&frag, false).expect("assistant hitch encodes");
+    assert!(matches!(msg, Message::Assistant { .. }));
+    if let Message::Assistant { content, .. } = &msg {
+        let texts: Vec<_> = content
+            .iter()
+            .filter_map(|c| {
+                if let AssistantContent::Text(t) = c {
+                    Some(t.text.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(texts.iter().any(|t| t.contains("502")));
+    }
+}
+
+#[test]
+fn encode_tool_hitch_without_call_id_returns_none() {
+    let frag = Fragment::hitch(
+        "tool 'unknown' not found",
+        None,
+        machine::Role::Tool,
+        None::<&str>,
+    );
+    let msg = encode(&frag, false);
+    assert!(
+        msg.is_none(),
+        "Tool hitch without call_id cannot be encoded"
+    );
+}
+
+#[test]
+fn encode_system_text_unchanged_alongside_hitch() {
+    let frag = Fragment::system("you are a helper");
+    let msg = encode(&frag, false).expect("system encodes");
+    assert!(matches!(msg, Message::System { .. }));
+    if let Message::System { content } = &msg {
+        assert_eq!(content, "you are a helper");
     }
 }
