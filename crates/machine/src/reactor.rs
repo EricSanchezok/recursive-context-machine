@@ -7,6 +7,7 @@ use crate::fragment::{Content, Fragment, Role};
 use crate::hook;
 use crate::inbox::Inbox;
 use crate::resources::Resources;
+use crate::usage::Usage;
 use tokio::time::{Duration, timeout};
 use tracing::{debug, info, warn};
 
@@ -16,18 +17,23 @@ pub async fn react(
     env: &Environment,
     resources: &Resources,
     inbox: &mut Inbox,
-) {
+) -> Usage {
     let t0 = Instant::now();
 
     hook!(event = "completion_start", machine_id);
 
-    let fragments = completion::complete(ctx, resources).await;
+    let (fragments, usage) = completion::complete(ctx, resources).await;
 
     hook!(
         event = "completion_end",
         machine_id,
         duration = %humantime(t0.elapsed()),
         fragments = fragments.len(),
+        input_tokens = usage.input_tokens,
+        output_tokens = usage.output_tokens,
+        total_tokens = usage.total_tokens,
+        cached_input_tokens = usage.cached_input_tokens,
+        cache_creation_input_tokens = usage.cache_creation_input_tokens,
     );
 
     for frag in fragments {
@@ -127,6 +133,8 @@ pub async fn react(
             inbox.push(f);
         }
     }
+
+    usage
 }
 
 fn humantime(d: Duration) -> String {

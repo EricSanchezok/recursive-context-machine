@@ -11,16 +11,10 @@ use crate::context::Context;
 use crate::fragment::{Content, Fragment, Role};
 use crate::model::{Model, Protocol};
 use crate::resources::Resources;
+use crate::usage::Usage;
 use tracing::{debug, warn};
 
-/// Call the active LLM and return the response fragments or an error.
-///
-/// Dispatches by `Protocol` (3 arms) to the corresponding rig module.
-/// `endpoint` optionally overrides the provider's default base URL.
-///
-/// On failure, returns `Content::Hitch` so the caller (Policy) can
-/// decide to retry, switch model, or abort.
-pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
+pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, Usage) {
     let model = resources.active_model();
 
     let messages: Vec<Message> = ctx.fragments().iter().filter_map(encode).collect();
@@ -85,7 +79,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
     };
 
     match result {
-        Ok(choice) => {
+        Ok((choice, usage)) => {
             let text_fragments = choice
                 .iter()
                 .filter(|c| matches!(c, AssistantContent::Text(_)))
@@ -95,22 +89,31 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
                 .filter(|c| matches!(c, AssistantContent::ToolCall(_)))
                 .count();
             debug!(text_fragments, tool_calls, "completion response");
-            decode(choice.iter())
+            (decode(choice.iter()), usage)
         }
         Err(hitch) => {
             warn!(?hitch, "completion failed");
-            vec![hitch]
+            (
+                vec![hitch],
+                Usage {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                    total_tokens: 0,
+                    cached_input_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                    fragment_ids: Vec::new(),
+                },
+            )
         }
     }
 }
 
-/// Send a request with a deadline. Returns an error if exceeding `model.timeout` seconds.
 async fn send(
     endpoint: &impl CompletionModel,
     model: &Model,
     messages: &[Message],
     tools: &[ToolDefinition],
-) -> Result<OneOrMany<AssistantContent>, Fragment> {
+) -> Result<(OneOrMany<AssistantContent>, Usage), Fragment> {
     let mut request = endpoint
         .completion_request(Message::user(""))
         .messages(messages.to_vec())
@@ -124,7 +127,17 @@ async fn send(
     }
 
     match timeout(Duration::from_secs(model.timeout), request.send()).await {
-        Ok(Ok(response)) => Ok(response.choice),
+        Ok(Ok(response)) => Ok((
+            response.choice,
+            Usage {
+                input_tokens: response.usage.input_tokens,
+                output_tokens: response.usage.output_tokens,
+                total_tokens: response.usage.total_tokens,
+                cached_input_tokens: response.usage.cached_input_tokens,
+                cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
+                fragment_ids: Vec::new(),
+            },
+        )),
         Ok(Err(error)) => {
             let code = match &error {
                 CompletionError::HttpError(http_client::Error::InvalidStatusCode(s)) => {
@@ -152,7 +165,6 @@ async fn send(
     }
 }
 
-/// Decode rig assistant content into fragments.
 fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
     let mut fragments = Vec::new();
     for content in choice {
@@ -173,7 +185,6 @@ fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragmen
     fragments
 }
 
-/// Apply custom headers from model config to a rig client builder.
 fn apply_headers<Ext, ApiKey, H>(
     mut builder: rig::client::ClientBuilder<Ext, ApiKey, H>,
     headers: &Option<std::collections::HashMap<String, String>>,
@@ -198,7 +209,6 @@ where
     builder
 }
 
-/// Encode a context fragment into a rig message.
 fn encode(frag: &Fragment) -> Option<Message> {
     match frag.role {
         Role::System => frag.as_text().map(Message::system),

@@ -2,6 +2,8 @@ use machine::{Context, Environment, Inbox, Resources};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use machine::Machine;
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MachineId(String);
 
@@ -28,6 +30,7 @@ impl From<MachineId> for String {
 }
 
 pub struct Run {
+    pub machine: Machine,
     pub ctx: Context,
     pub env: Environment,
     pub resources: Resources,

@@ -343,6 +343,7 @@ impl Rcm for RcmService {
         }
 
         let run = Run {
+            machine: Machine::new(),
             ctx: machine::Context::new(),
             env: accelerator::state::local(),
             resources,
@@ -380,16 +381,18 @@ impl Rcm for RcmService {
             .ok_or(Status::not_found("machine_id not found"))?;
 
         run.step += 1;
-        run.done = Machine::apply(
-            action,
-            run.step,
-            mid.as_str(),
-            &mut run.ctx,
-            &mut run.env,
-            &mut run.resources,
-            &mut run.inbox,
-        )
-        .await;
+        run.done = run
+            .machine
+            .apply(
+                action,
+                run.step,
+                mid.as_str(),
+                &mut run.ctx,
+                &mut run.env,
+                &mut run.resources,
+                &mut run.inbox,
+            )
+            .await;
 
         let action_space = build_action_space(run);
         let state = build_state(run);
