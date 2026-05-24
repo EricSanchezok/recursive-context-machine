@@ -5,8 +5,10 @@ use crate::hook;
 use crate::inbox::Inbox;
 use crate::policy::Action;
 use crate::reactor;
+use crate::fragment::Fragment;
 use crate::resources::Resources;
-use tracing::trace;
+use crate::Role;
+use tracing::{trace, warn};
 
 pub struct Machine;
 
@@ -21,12 +23,16 @@ impl Machine {
     ) -> bool {
         match action {
             Action::Halt => {
-                hook!(
+                let model_name = resources
+                    .active_model()
+                    .map(|m| m.name.as_str())
+                    .unwrap_or("none");
+                    hook!(
                     event = "halt",
-                    step,
-                    model = %resources.active_model().name,
-                    messages = ctx.fragments().len(),
-                    tools = resources.active_tools.len(),
+                step,
+                model = %model_name,
+                messages = ctx.fragments().len(),
+                tools = resources.active_tools.len(),
                 );
                 reactor::react(ctx, env, resources, inbox).await;
                 false
@@ -87,14 +93,34 @@ impl Machine {
                 ctx.swap(id1, id2);
                 hook!(event = "swapped", id1, id2, step);
             }
-            Action::Model(name) => {
+            Action::Model(name) => match resources.use_model(name.clone()) {
+                Ok(()) => {
                 trace!(model = %name, "switch model");
-                resources.use_model(name);
             }
-            Action::Activate(name) => {
-                trace!(tool = %name, "activate");
-                resources.enable(name);
+            Err(error) => {
+                warn!(?error, "model switch failed");
+                inbox.push(Fragment::hitch(
+            error.to_string(),
+            None,
+            Role::System,
+            None::<&str>,
+            ));
             }
+            },
+            Action::Activate(name) => match resources.enable(name.clone()) {
+            Ok(()) => {
+            trace!(tool = %name, "activate");
+            }
+            Err(error) => {
+            warn!(?error, "tool activation failed");
+            inbox.push(Fragment::hitch(
+            error.to_string(),
+            None,
+            Role::System,
+            None::<&str>,
+            ));
+            }
+            },
             Action::Deactivate(name) => {
                 trace!(tool = %name, "deactivate");
                 resources.disable(name);

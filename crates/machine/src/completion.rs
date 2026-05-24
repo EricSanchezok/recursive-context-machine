@@ -20,7 +20,15 @@ use tracing::{debug, warn};
 /// On failure, returns `Content::Hitch` so the caller (Policy) can
 /// decide to retry, switch model, or abort.
 pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
-    let model = resources.active_model();
+    let Some(model) = resources.active_model() else {
+    warn!("completion requested but no active model is set");
+    return vec![Fragment::hitch(
+    "no active model set; register and activate a model before completing",
+    None,
+    Role::System,
+    None::<&str>,
+    )];
+    };
 
     let messages: Vec<Message> = ctx.fragments().iter().filter_map(encode).collect();
 
@@ -172,35 +180,40 @@ fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragmen
 /// Encode a context fragment into a rig message.
 fn encode(frag: &Fragment) -> Option<Message> {
     match frag.role {
-        Role::System => frag.as_text().map(Message::system),
-        Role::User => frag.as_text().map(Message::user),
-        Role::Assistant => {
-            if let Content::ToolCall(tc) = &frag.content {
-                Some(Message::Assistant {
+        Role::System => match &frag.content {
+        Content::Hitch { message, .. } => Some(Message::system(message)),
+        _ => frag.as_text().map(Message::system),
+            },
+                Role::User => frag.as_text().map(Message::user),
+                    Role::Assistant => {
+                    if let Content::Hitch { message, .. } = &frag.content {
+                        Some(Message::assistant(message))
+                        } else if let Content::ToolCall(tc) = &frag.content {
+                        Some(Message::Assistant {
                     id: None,
-                    content: OneOrMany::one(AssistantContent::tool_call(
-                        &tc.id,
-                        &tc.name,
-                        tc.arguments.clone(),
-                    )),
-                })
+                content: OneOrMany::one(AssistantContent::tool_call(
+            &tc.id,
+                &tc.name,
+            tc.arguments.clone(),
+        )),
+        })
             } else {
                 frag.as_text().map(Message::assistant)
             }
-        }
-        Role::Tool => {
-            if let Content::ToolResult(tr) = &frag.content {
-                Some(Message::tool_result(&tr.call_id, &tr.content))
+                }
+                Role::Tool => {
+                if let Content::ToolResult(tr) = &frag.content {
+            Some(Message::tool_result(&tr.call_id, &tr.content))
             } else if let Content::Hitch {
                 message,
-                call_id: Some(call_id),
+            call_id: Some(call_id),
                 ..
             } = &frag.content
-            {
-                Some(Message::tool_result(call_id, message))
-            } else {
-                None
-            }
-        }
-    }
+        {
+    Some(Message::tool_result(call_id, message))
+} else {
+None
+}
+}
+}
 }
