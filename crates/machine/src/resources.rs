@@ -72,6 +72,13 @@ impl Resources {
         self
     }
 
+    pub fn retain_tools(mut self, keep: impl Fn(&str) -> bool) -> Self {
+        self.tools.retain(|name, _| keep(name));
+        self.active_tools
+            .retain(|name| self.tools.contains_key(name));
+        self
+    }
+
     pub fn replace_prompts(mut self, prompts: HashMap<String, String>) -> Self {
         self.prompts = prompts;
         self

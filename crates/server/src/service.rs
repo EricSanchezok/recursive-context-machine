@@ -1,3 +1,4 @@
+use accelerator::Catalog;
 use machine::{Inbox, Machine};
 use tonic::{Request, Response, Status};
 
@@ -11,12 +12,14 @@ use crate::state::build_state;
 
 pub struct RcmService {
     pub manager: std::sync::Arc<tokio::sync::Mutex<MachineManager>>,
+    catalog: Catalog,
 }
 
 impl RcmService {
     pub fn new(manager: MachineManager) -> Self {
         Self {
             manager: std::sync::Arc::new(tokio::sync::Mutex::new(manager)),
+            catalog: Catalog::new(),
         }
     }
 }
@@ -26,12 +29,17 @@ impl Rcm for RcmService {
     async fn open(&self, request: Request<OpenRequest>) -> Result<Response<OpenResponse>, Status> {
         let req = request.into_inner();
 
-        let mut resources = machine::Resources::named("kit");
-        for tool in accelerator::tools::builtin_tools() {
-            if req.tools.iter().any(|name| name == tool.name()) {
-                resources = resources.with_tool(tool);
-            }
+        let mut resources = self.catalog.default_resources();
+
+        if !req.tools.is_empty() {
+            let selected = req
+                .tools
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>();
+            resources = resources.retain_tools(|name| selected.contains(name));
         }
+
         for spec in &req.models {
             let model = build_model(spec)?;
             resources = resources.with_model(model);
@@ -65,9 +73,7 @@ impl Rcm for RcmService {
             purpose: req.purpose,
             machine: Machine::new(machine_id.as_str(), "rcm"),
             ctx: machine::Context::new(),
-            env: machine::Environment::new(
-                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
-            ),
+            env: self.catalog.default_environment(),
             resources,
             inbox: Inbox::new(),
             step: 0,
