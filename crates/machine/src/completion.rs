@@ -1,6 +1,7 @@
 use http::{HeaderMap, HeaderName, HeaderValue};
 use rig::OneOrMany;
 use rig::client::CompletionClient;
+use rig::completion::message::Reasoning;
 use rig::completion::{
     AssistantContent, CompletionError, CompletionModel, Message, ToolDefinition,
 };
@@ -215,14 +216,13 @@ fn encode(frag: &Fragment) -> Option<Message> {
         Role::User => frag.as_text().map(Message::user),
         Role::Assistant => {
             if let Content::ToolCall(tc) = &frag.content {
-                Some(Message::Assistant {
-                    id: None,
-                    content: OneOrMany::one(AssistantContent::tool_call(
-                        &tc.id,
-                        &tc.name,
-                        tc.arguments.clone(),
-                    )),
-                })
+                let mut content = OneOrMany::one(AssistantContent::tool_call(
+                    &tc.id,
+                    &tc.name,
+                    tc.arguments.clone(),
+                ));
+                content.push(AssistantContent::Reasoning(Reasoning::new(".")));
+                Some(Message::Assistant { id: None, content })
             } else {
                 frag.as_text().map(Message::assistant)
             }
