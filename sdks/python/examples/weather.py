@@ -1,18 +1,25 @@
-"""Weather check — ask the agent for the weather at a given city."""
+"""Weather check — ask the agent for the weather using MCP anysearch."""
 
-from rcm import RCMClient, Model
+import os
+
+from rcm import RCMClient, Model, McpServer
 from rcm._pb2 import ActionCommand, FragmentContent
 from rcm.react import ReactPolicy
 
 CAPTAIN_PROMPT = (
     "You are a weather assistant. The user wants to know the current weather "
     "in Beijing, China.\n\n"
-    'Use the shell tool: curl -s "wttr.in/Beijing?format=3"\n\n'
+    "Use the anysearch tool to find weather info. Search for 'weather in Beijing China'.\n"
     "Report the result. Stop after reporting."
 )
 
 
 def main():
+    api_key = os.environ.get("ANYSEARCH_API_KEY")
+    if not api_key:
+        print("ANYSEARCH_API_KEY not set")
+        return
+
     rcm = RCMClient("localhost:50051")
 
     mid, state, actions = rcm.open(
@@ -26,7 +33,17 @@ def main():
                 limit=Model.Limit(context=1000000, output=393216),
             ),
         ],
-        tools=["shell"],
+        mcps=[
+            McpServer(
+                label="anysearch",
+                transport=McpServer.Http(
+                    url="https://api.anysearch.com/mcp",
+                    headers={
+                        "Authorization": McpServer.Value(literal=f"Bearer {api_key}")
+                    },
+                ),
+            ),
+        ],
         prompts={"captain": CAPTAIN_PROMPT},
     )
 
@@ -34,11 +51,7 @@ def main():
         mid,
         ActionCommand(
             verb="Append",
-            fragment=FragmentContent(
-                role="system",
-                text=CAPTAIN_PROMPT,
-                tag="agent",
-            ),
+            fragment=FragmentContent(role="system", text=CAPTAIN_PROMPT, tag="agent"),
         ),
     )
     state, actions = rcm.step(
@@ -52,11 +65,13 @@ def main():
             ),
         ),
     )
-
     state, actions = rcm.step(
         mid, ActionCommand(verb="Model", name="deepseek-v4-flash")
     )
-    state, actions = rcm.step(mid, ActionCommand(verb="Activate", name="shell"))
+
+    print(f"Available tools: {list(state.available_tools)}")
+    for tool_name in state.available_tools:
+        state, actions = rcm.step(mid, ActionCommand(verb="Activate", name=tool_name))
 
     policy = ReactPolicy()
 
