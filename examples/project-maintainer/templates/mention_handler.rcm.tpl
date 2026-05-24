@@ -2,8 +2,9 @@ name = "Mention Handler ({{REPO}} {{TRIGGER_KIND}}#{{TRIGGER_NUMBER}})"
 
 model kimi-k2-6 {
     protocol = "openai"
-    endpoint = "https://api.moonshot.cn"
-    credentials = { env = "KIMI_API_KEY" }
+    endpoint = "https://api.kimi.com/coding"
+    credentials = { env = "KIMI_CODING_API_KEY" }
+    headers = { User-Agent = "KimiCLI/1.5" }
     limit = { context = "1000000", output = "393216" }
     modalities = { input = ["text"], output = ["text"] }
 }

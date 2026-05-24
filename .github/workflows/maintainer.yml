@@ -46,7 +46,7 @@ jobs:
     timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+      KIMI_CODING_API_KEY: ${{ secrets.KIMI_CODING_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
