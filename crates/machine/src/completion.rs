@@ -224,10 +224,14 @@ where
 /// stays off unless the active model explicitly opts in.
 pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
     match frag.role {
-        Role::System => frag.as_text().map(Message::system),
+        Role::System => match &frag.content {
+            Content::Hitch { message, .. } => Some(Message::system(message)),
+            _ => frag.as_text().map(Message::system),
+        },
         Role::User => frag.as_text().map(Message::user),
-        Role::Assistant => {
-            if let Content::ToolCall(tc) = &frag.content {
+        Role::Assistant => match &frag.content {
+            Content::Hitch { message, .. } => Some(Message::assistant(message)),
+            Content::ToolCall(tc) => {
                 let mut content = OneOrMany::one(AssistantContent::tool_call(
                     &tc.id,
                     &tc.name,
@@ -237,10 +241,9 @@ pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
                     content.push(AssistantContent::Reasoning(Reasoning::new(".")));
                 }
                 Some(Message::Assistant { id: None, content })
-            } else {
-                frag.as_text().map(Message::assistant)
             }
-        }
+            _ => frag.as_text().map(Message::assistant),
+        },
         Role::Tool => {
             if let Content::ToolResult(tr) = &frag.content {
                 Some(Message::tool_result(&tr.call_id, &tr.content))
