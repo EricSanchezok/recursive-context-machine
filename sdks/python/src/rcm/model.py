@@ -6,7 +6,7 @@ Mirrors the .rcm language `model` block:
         protocol = "openai"
         endpoint = "https://api.deepseek.com"
         credentials = { env = "DEEPSEEK_API_KEY" }
-        limit = { context = "128000", output = "8192" }
+        limit = { context = "1000000", output = "393216" }
     }
 
 Python equivalent:
@@ -17,7 +17,7 @@ Python equivalent:
         protocol="openai",
         endpoint="https://api.deepseek.com",
         credentials=Model.Credentials(env="DEEPSEEK_API_KEY"),
-        limit=Model.Limit(context=128000, output=8192),
+        limit=Model.Limit(context=1000000, output=393216),
     )
 """
 
