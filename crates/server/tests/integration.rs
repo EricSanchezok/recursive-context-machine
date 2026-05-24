@@ -10,7 +10,6 @@ fn svc() -> RcmService {
 async fn open(svc: &RcmService, purpose: &str, prompts: &[(&str, &str)]) -> (String, OpenResponse) {
     let mut req = OpenRequest {
         purpose: purpose.to_string(),
-        models: vec!["test".into()],
         ..Default::default()
     };
     for (k, v) in prompts {

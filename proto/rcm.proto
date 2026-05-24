@@ -13,9 +13,34 @@ service RCM {
 
 message OpenRequest {
   string purpose = 1;
-  repeated string models = 2;
+  repeated ModelSpec models = 2;
   repeated string tools = 3;
   map<string, string> prompts = 4;
+}
+
+message ModelSpec {
+  string name = 1;
+  string protocol = 2;
+  optional string endpoint = 3;
+  optional CredentialSpec credentials = 4;
+  optional LimitSpec limit = 5;
+  repeated string modalities_input = 6;
+  repeated string modalities_output = 7;
+  map<string, string> headers = 8;
+  optional uint64 timeout = 9;
+}
+
+message CredentialSpec {
+  oneof source {
+    string env = 1;
+    string literal = 2;
+  }
+}
+
+message LimitSpec {
+  uint64 context = 1;
+  optional uint64 input = 2;
+  uint64 output = 3;
 }
 
 message OpenResponse {

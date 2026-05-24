@@ -1,12 +1,11 @@
 use machine::event;
-use machine::{Action, Content, Fragment, Inbox, Machine, Role};
+use machine::{Action, Content, Fragment, Inbox, Machine};
 use tonic::{Request, Response, Status};
-use utils::MachineId;
 
 use crate::manager::{MachineManager, Run};
 use crate::rcm::{
-    self, ActionCommand, ActionItem, ActionSpace, DestroyRequest, FragmentContent, OpenRequest,
-    OpenResponse, State, StepRequest, StepResponse, Usage, rcm_server::Rcm,
+    self, ActionCommand, ActionItem, ActionSpace, DestroyRequest, FragmentContent, ModelSpec,
+    OpenRequest, OpenResponse, State, StepRequest, StepResponse, Usage, rcm_server::Rcm,
 };
 
 pub struct RcmService {
@@ -290,7 +289,44 @@ fn sink_clip(fc: FragmentContent) -> FragmentContent {
     }
 }
 
-// ── Action decode ────────────────────────────────────────
+fn build_model(spec: &ModelSpec) -> Result<machine::Model, Status> {
+    use machine::Protocol;
+    let protocol = match spec.protocol.as_str() {
+        "openai" => Protocol::OpenAI,
+        "anthropic" => Protocol::Anthropic,
+        "gemini" => Protocol::Gemini,
+        other => {
+            return Err(Status::invalid_argument(format!(
+                "unknown protocol: {}",
+                other
+            )));
+        }
+    };
+    let credentials = spec.credentials.as_ref().and_then(|c| match &c.source {
+        Some(crate::rcm::credential_spec::Source::Env(var)) => std::env::var(var).ok(),
+        Some(crate::rcm::credential_spec::Source::Literal(key)) => Some(key.clone()),
+        None => None,
+    });
+    let limit = spec.limit.as_ref().map(|l| machine::Limit {
+        context: l.context,
+        input: l.input,
+        output: l.output,
+    });
+    Ok(machine::Model {
+        name: spec.name.clone(),
+        protocol,
+        endpoint: spec.endpoint.clone(),
+        credentials,
+        limit,
+        timeout: spec.timeout.unwrap_or(180),
+        headers: if spec.headers.is_empty() {
+            None
+        } else {
+            Some(spec.headers.clone())
+        },
+        ..Default::default()
+    })
+}
 
 fn build_fragment(fc: &FragmentContent) -> Fragment {
     let mut frag = match fc.role.as_str() {
@@ -389,11 +425,8 @@ impl Rcm for RcmService {
         let req = request.into_inner();
 
         let mut resources = accelerator::state::kit();
-        for name in &req.models {
-            let model = machine::Model {
-                name: name.clone(),
-                ..Default::default()
-            };
+        for spec in &req.models {
+            let model = build_model(spec)?;
             resources = resources.with_model(model);
         }
         resources.deactivate_model();

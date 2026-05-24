@@ -9,19 +9,11 @@ from ._pb2 import (
     StepRequest,
 )
 from ._pb2_grpc import RCMStub
+from .model import Model
 
 
 class RCMClient:
-    """Client for the RCM gRPC agent runtime.
-
-    Connects to an RCM server and drives a machine step-by-step:
-
-        rcm = RCMClient("localhost:50051")
-
-        mid, state, actions = rcm.open(purpose="...", models=["fast"])
-        state, actions = rcm.step(mid, command)
-        rcm.destroy(mid)
-    """
+    """Client for the RCM gRPC agent runtime."""
 
     def __init__(self, endpoint: str = "localhost:50051"):
         self._channel = grpc.insecure_channel(endpoint)
@@ -30,19 +22,15 @@ class RCMClient:
     def open(
         self,
         purpose: str,
-        models: list[str] | None = None,
+        models: list["Model"] | None = None,
         tools: list[str] | None = None,
         prompts: dict[str, str] | None = None,
     ):
-        """Create a new machine run.
-
-        Returns (machine_id, state, action_space) — the triple that
-        drives the episode loop.
-        """
+        """Create a new machine run."""
         resp = self._stub.Open(
             OpenRequest(
                 purpose=purpose,
-                models=models or [],
+                models=[m._to_proto() for m in (models or [])],
                 tools=tools or [],
                 prompts=prompts or {},
             )
@@ -50,11 +38,7 @@ class RCMClient:
         return resp.machine_id, resp.state, resp.action_space
 
     def step(self, machine_id: str, command):
-        """Execute one action. Returns (state, action_space).
-
-        command is an ActionCommand message — typically taken from
-        the action_space returned by open() or the previous step().
-        """
+        """Execute one action. Returns (state, action_space)."""
         resp = self._stub.Step(StepRequest(machine_id=machine_id, command=command))
         return resp.state, resp.action_space
 

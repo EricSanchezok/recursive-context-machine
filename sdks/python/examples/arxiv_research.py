@@ -1,6 +1,6 @@
 """ArXiv search — ask the agent to research recent AI papers."""
 
-from rcm import RCMClient
+from rcm import RCMClient, Model
 from rcm._pb2 import ActionCommand, FragmentContent
 from rcm.react import ReactPolicy
 
@@ -22,6 +22,15 @@ def main():
 
     mid, state, actions = rcm.open(
         purpose="search for recent AI research papers on arXiv",
+        models=[
+            Model(
+                name="deepseek-v4-flash",
+                protocol="openai",
+                endpoint="https://api.deepseek.com",
+                credentials=Model.Credentials(env="DEEPSEEK_API_KEY"),
+                limit=Model.Limit(context=128000, output=8192),
+            ),
+        ],
         tools=["arxiv_search"],
         prompts={"captain": CAPTAIN_PROMPT},
     )

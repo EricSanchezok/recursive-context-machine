@@ -1,6 +1,6 @@
 """System info — ask the agent to inspect the local machine."""
 
-from rcm import RCMClient
+from rcm import RCMClient, Model
 from rcm._pb2 import ActionCommand, FragmentContent
 from rcm.react import ReactPolicy
 
@@ -21,11 +21,19 @@ def main():
 
     mid, state, actions = rcm.open(
         purpose="inspect the local machine hardware and resource usage",
+        models=[
+            Model(
+                name="deepseek-v4-flash",
+                protocol="openai",
+                endpoint="https://api.deepseek.com",
+                credentials=Model.Credentials(env="DEEPSEEK_API_KEY"),
+                limit=Model.Limit(context=128000, output=8192),
+            ),
+        ],
         tools=["shell"],
         prompts={"captain": CAPTAIN_PROMPT},
     )
 
-    # Setup — explicit action commands, not from action space.
     rcm.step(
         mid,
         ActionCommand(
