@@ -1,31 +1,6 @@
 """MCP server configuration for the RCM gRPC SDK.
 
-Mirrors the .rcm language `mcp` block:
-
-    mcp filesystem {
-        transport = "stdio"
-        command = "npx"
-        args = ["-y", "@modelcontextprotocol/server-filesystem"]
-        env = { HOME = env(HOME) }
-    }
-
-    mcp remote_api {
-        transport = "http"
-        url = "https://example.com/mcp"
-        headers = { Authorization = "token123" }
-    }
-
-Python equivalent:
-    from rcm import McpServer
-
-    mcp = McpServer(
-        label="filesystem",
-        transport=McpServer.Stdio(
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-filesystem"],
-            env={"HOME": McpServer.Env("HOME")},
-        ),
-    )
+Mirrors the .rcm language `mcp` block.
 """
 
 from dataclasses import dataclass, field
@@ -46,15 +21,6 @@ class McpServer:
         literal: Optional[str] = None
         env: Optional[str] = None
 
-        def _resolve(self):
-            import os
-
-            if self.literal is not None:
-                return self.literal
-            if self.env is not None:
-                return os.environ.get(self.env, "")
-            return ""
-
     @dataclass
     class Stdio:
         command: str
@@ -74,16 +40,20 @@ class McpServer:
 
     def _to_proto(self):
         from ._pb2 import (
-            McpServerSpec,
-            McpTransportSpec,
-            McpStdioSpec,
             McpHttpSpec,
+            McpServerSpec,
             McpSseSpec,
+            McpStdioSpec,
+            McpTransportSpec,
             McpValueSpec,
         )
 
-        def _value_proto(v: "McpServer.Value"):
-            return McpValueSpec(literal=v.literal, env=v.env)
+        def _value_proto(value: "McpServer.Value"):
+            if value.env is not None:
+                return McpValueSpec(env=value.env)
+            if value.literal is not None:
+                return McpValueSpec(literal=value.literal)
+            return McpValueSpec()
 
         spec = McpServerSpec(label=self.label)
         transport = self.transport
@@ -91,7 +61,7 @@ class McpServer:
         if isinstance(transport, McpServer.Stdio):
             spec.transport.CopyFrom(
                 McpTransportSpec(
-                    kind=McpStdioSpec(
+                    stdio=McpStdioSpec(
                         command=transport.command,
                         args=transport.args,
                         env={k: _value_proto(v) for k, v in transport.env.items()},
@@ -102,7 +72,7 @@ class McpServer:
         elif isinstance(transport, McpServer.Http):
             spec.transport.CopyFrom(
                 McpTransportSpec(
-                    kind=McpHttpSpec(
+                    http=McpHttpSpec(
                         url=transport.url,
                         headers={
                             k: _value_proto(v) for k, v in transport.headers.items()
@@ -113,7 +83,7 @@ class McpServer:
         elif isinstance(transport, McpServer.Sse):
             spec.transport.CopyFrom(
                 McpTransportSpec(
-                    kind=McpSseSpec(
+                    sse=McpSseSpec(
                         url=transport.url,
                         headers={
                             k: _value_proto(v) for k, v in transport.headers.items()
