@@ -282,6 +282,7 @@ impl Parser {
         let mut limit_output = 0;
         let mut modalities_input = Vec::new();
         let mut modalities_output = Vec::new();
+        let mut headers = std::collections::HashMap::new();
 
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
@@ -297,6 +298,7 @@ impl Parser {
                     "modalities" => {
                         self.model_modalities(&mut modalities_input, &mut modalities_output)?
                     }
+                    "headers" => headers = self.model_headers()?,
                     other => return Err(format!("unknown model block: {}", other)),
                 }
             } else {
@@ -323,6 +325,7 @@ impl Parser {
             limit_output,
             modalities_input,
             modalities_output,
+            headers,
         })
     }
 
@@ -384,6 +387,20 @@ impl Parser {
             self.eat_ident(",");
         }
         Ok(())
+    }
+
+    fn model_headers(&mut self) -> Result<std::collections::HashMap<String, String>, String> {
+        let mut headers = std::collections::HashMap::new();
+        while !self.eat(Token::RBrace) {
+            let name = self.expect_ident_any()?;
+            self.expect(Token::Equals)?;
+            let value = self.expect_string()?;
+            if headers.insert(name.clone(), value).is_some() {
+                return Err(format!("duplicate header: {}", name));
+            }
+            self.eat_ident(",");
+        }
+        Ok(headers)
     }
 
     fn wire(&mut self) -> Result<WireDef, String> {

@@ -1,3 +1,4 @@
+use http::{HeaderMap, HeaderName, HeaderValue};
 use rig::OneOrMany;
 use rig::client::CompletionClient;
 use rig::completion::{
@@ -50,6 +51,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
             if let Some(endpoint) = endpoint_url {
                 builder = builder.base_url(endpoint);
             }
+            builder = apply_headers(builder, &model.headers);
             let endpoint = builder
                 .build()
                 .expect("failed to build openai client")
@@ -61,6 +63,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
             if let Some(endpoint) = endpoint_url {
                 builder = builder.base_url(endpoint);
             }
+            builder = apply_headers(builder, &model.headers);
             let endpoint = builder
                 .build()
                 .expect("failed to build anthropic client")
@@ -72,6 +75,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
             if let Some(endpoint) = endpoint_url {
                 builder = builder.base_url(endpoint);
             }
+            builder = apply_headers(builder, &model.headers);
             let endpoint = builder
                 .build()
                 .expect("failed to build gemini client")
@@ -167,6 +171,31 @@ fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragmen
         }
     }
     fragments
+}
+
+/// Apply custom headers from model config to a rig client builder.
+fn apply_headers<Ext, ApiKey, H>(
+    mut builder: rig::client::ClientBuilder<Ext, ApiKey, H>,
+    headers: &Option<std::collections::HashMap<String, String>>,
+) -> rig::client::ClientBuilder<Ext, ApiKey, H>
+where
+    Ext: Clone,
+{
+    if let Some(headers_map) = headers {
+        let mut header_map = HeaderMap::new();
+        for (key, value) in headers_map {
+            if let (Ok(name), Ok(val)) = (
+                HeaderName::from_bytes(key.as_bytes()),
+                HeaderValue::from_str(value),
+            ) {
+                header_map.insert(name, val);
+            }
+        }
+        if !header_map.is_empty() {
+            builder = builder.http_headers(header_map);
+        }
+    }
+    builder
 }
 
 /// Encode a context fragment into a rig message.
