@@ -36,7 +36,6 @@ impl Rcm for RcmService {
             let model = build_model(spec)?;
             resources = resources.with_model(model);
         }
-        resources.deactivate_model();
 
         for (name, text) in &req.prompts {
             resources.prompts.insert(name.clone(), text.clone());
