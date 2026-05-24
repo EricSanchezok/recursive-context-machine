@@ -8,63 +8,61 @@ use crate::reactor;
 use crate::resources::Resources;
 use crate::usage::Usage;
 use tracing::trace;
+use utils::MachineId;
 
 pub struct Machine {
+    id: MachineId,
     pub usages: Vec<Usage>,
 }
 
 impl Machine {
-    pub fn new() -> Self {
-        Self { usages: Vec::new() }
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: MachineId::from_raw(id.into()).unwrap_or_else(|_| MachineId::new()),
+            usages: Vec::new(),
+        }
+    }
+
+    pub fn id(&self) -> &str {
+        self.id.as_str()
     }
 
     pub async fn apply(
         &mut self,
         action: Action,
         step: u64,
-        machine_id: &str,
         ctx: &mut Context,
         env: &mut Environment,
         resources: &mut Resources,
         inbox: &mut Inbox,
     ) -> bool {
+        let mid = self.id.to_string();
         match action {
             Action::Halt => {
                 hook!(
                     event = "halt",
-                    machine_id,
+                    machine_id = mid,
                     step,
                     model = %resources.active_model().name,
                     messages = ctx.fragments().len(),
                     tools = resources.active_tools.len(),
                 );
-                let usage = reactor::react(machine_id, ctx, env, resources, inbox).await;
+                let usage = reactor::react(&mid, ctx, env, resources, inbox).await;
                 self.usages.push(usage);
                 false
             }
-            other => {
-                Self::dispatch(
-                    other,
-                    step,
-                    machine_id,
-                    ctx,
-                    resources,
-                    inbox,
-                    &mut self.usages,
-                )
-                .await
-            }
+            other => Self::dispatch(other, step, &mid, ctx, resources, inbox, self).await,
         }
     }
 
     async fn dispatch(
         action: Action,
         step: u64,
-        machine_id: &str,
+        mid: &str,
         ctx: &mut Context,
         resources: &mut Resources,
         inbox: &mut Inbox,
-        usages: &mut Vec<Usage>,
+        machine: &mut Machine,
     ) -> bool {
         match action {
             Action::Append(frag) => {
@@ -72,7 +70,7 @@ impl Machine {
                 let frag = ctx.get(id).expect("just appended");
                 hook!(
                     event = "appended",
-                    machine_id,
+                    machine_id = mid,
                     id,
                     step,
                     role = role_name(frag.role),
@@ -85,7 +83,7 @@ impl Machine {
                 let frag = ctx.get(id).expect("just inserted");
                 hook!(
                     event = "inserted",
-                    machine_id,
+                    machine_id = mid,
                     id,
                     step,
                     role = role_name(frag.role),
@@ -98,7 +96,7 @@ impl Machine {
                 let frag = ctx.get(id).expect("just replaced");
                 hook!(
                     event = "replaced",
-                    machine_id,
+                    machine_id = mid,
                     id,
                     step,
                     role = role_name(frag.role),
@@ -108,11 +106,11 @@ impl Machine {
             }
             Action::Remove(id) => {
                 ctx.remove(id);
-                hook!(event = "removed", machine_id, id, step);
+                hook!(event = "removed", machine_id = mid, id, step);
             }
             Action::Swap(id1, id2) => {
                 ctx.swap(id1, id2);
-                hook!(event = "swapped", machine_id, id1, id2, step);
+                hook!(event = "swapped", machine_id = mid, id1, id2, step);
             }
             Action::Model(name) => {
                 trace!(model = %name, "switch model");
@@ -129,13 +127,11 @@ impl Machine {
             Action::Take => {
                 if let Some(frag) = inbox.pop() {
                     let id = ctx.append(frag);
-                    if let Some(last) = usages.last_mut() {
-                        last.fragment_ids.push(id);
-                    }
+                    machine.usages.last_mut().map(|u| u.fragment_ids.push(id));
                     let frag = ctx.get(id).expect("just taken");
                     hook!(
                         event = "taken",
-                        machine_id,
+                        machine_id = mid,
                         id,
                         step,
                         role = role_name(frag.role),
@@ -145,7 +141,7 @@ impl Machine {
                 }
             }
             Action::Done => {
-                hook!(event = "done", machine_id, step);
+                hook!(event = "done", machine_id = mid, step);
                 return true;
             }
             Action::Halt => unreachable!("dispatch never receives Halt; apply() intercepts it"),

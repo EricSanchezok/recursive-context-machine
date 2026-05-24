@@ -1,7 +1,8 @@
 use machine::{Action, Content, Fragment, Inbox, Machine, Role};
 use tonic::{Request, Response, Status};
+use utils;
 
-use crate::manager::{MachineId, MachineManager, Run};
+use crate::manager::{MachineManager, Run};
 use crate::rcm::{
     self, ActionCommand, ActionItem, ActionSpace, DestroyRequest, FragmentContent, OpenRequest,
     OpenResponse, State, StepRequest, StepResponse, rcm_server::Rcm,
@@ -342,8 +343,10 @@ impl Rcm for RcmService {
             resources.prompts.insert(name.clone(), text.clone());
         }
 
+        let machine_id = utils::MachineId::new();
+
         let run = Run {
-            machine: Machine::new(),
+            machine: Machine::new(machine_id.as_str()),
             ctx: machine::Context::new(),
             env: accelerator::state::local(),
             resources,
@@ -355,13 +358,13 @@ impl Rcm for RcmService {
         let action_space = build_action_space(&run);
         let state = build_state(&run);
 
-        let machine_id = {
+        {
             let mut mgr = self.manager.lock().await;
-            mgr.create(run)
-        };
+            mgr.insert(machine_id.clone(), run);
+        }
 
         Ok(Response::new(OpenResponse {
-            machine_id: machine_id.into(),
+            machine_id: machine_id.to_string(),
             state: Some(state),
             action_space: Some(action_space),
         }))
@@ -369,12 +372,12 @@ impl Rcm for RcmService {
 
     async fn step(&self, request: Request<StepRequest>) -> Result<Response<StepResponse>, Status> {
         let req = request.into_inner();
-        let mid = MachineId::from(req.machine_id);
+        let mid = utils::MachineId::from_raw(req.machine_id)
+            .map_err(|e| Status::invalid_argument(e.to_string()))?;
         let command = req
             .command
             .ok_or(Status::invalid_argument("command required"))?;
         let action = decode_command(&command)?;
-
         let mut mgr = self.manager.lock().await;
         let run = mgr
             .get_mut(&mid)
@@ -386,7 +389,6 @@ impl Rcm for RcmService {
             .apply(
                 action,
                 run.step,
-                mid.as_str(),
                 &mut run.ctx,
                 &mut run.env,
                 &mut run.resources,
@@ -405,7 +407,8 @@ impl Rcm for RcmService {
 
     async fn destroy(&self, request: Request<DestroyRequest>) -> Result<Response<()>, Status> {
         let req = request.into_inner();
-        let mid = MachineId::from(req.machine_id);
+        let mid = utils::MachineId::from_raw(req.machine_id)
+            .map_err(|e| Status::invalid_argument(e.to_string()))?;
         self.manager.lock().await.destroy(&mid);
         Ok(Response::new(()))
     }

@@ -1,33 +1,6 @@
-use machine::{Context, Environment, Inbox, Resources};
+use machine::{Context, Environment, Inbox, Machine, Resources};
 use std::collections::HashMap;
-use uuid::Uuid;
-
-use machine::Machine;
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct MachineId(String);
-
-impl MachineId {
-    pub fn new() -> Self {
-        Self(Uuid::new_v4().to_string())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<String> for MachineId {
-    fn from(s: String) -> Self {
-        Self(s)
-    }
-}
-
-impl From<MachineId> for String {
-    fn from(id: MachineId) -> Self {
-        id.0
-    }
-}
+use utils::MachineId;
 
 pub struct Run {
     pub machine: Machine,
@@ -50,10 +23,8 @@ impl MachineManager {
         }
     }
 
-    pub fn create(&mut self, state: Run) -> MachineId {
-        let id = MachineId::new();
-        self.machines.insert(id.clone(), state);
-        id
+    pub fn insert(&mut self, id: MachineId, run: Run) {
+        self.machines.insert(id, run);
     }
 
     pub fn get(&self, id: &MachineId) -> Option<&Run> {

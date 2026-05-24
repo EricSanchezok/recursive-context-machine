@@ -115,7 +115,7 @@ impl PrimitiveAccelerator {
         let purpose = Purpose::new(&state.purpose);
         let mut inbox = Inbox::new();
         let mut step = 0u64;
-        let mut machine = Machine::new();
+        let mut machine = Machine::new("ephemeral");
         let policy = self.policy;
 
         hook!(event = "machine_start", purpose = %purpose.text);
@@ -164,7 +164,6 @@ impl PrimitiveAccelerator {
                 .apply(
                     action,
                     step,
-                    "ephemeral",
                     &mut state.ctx,
                     &mut state.env,
                     &mut state.res,
@@ -228,7 +227,7 @@ async fn run_phase(
             PhaseOutcome::Action(action) => {
                 *step += 1;
                 if machine
-                    .apply(action, *step, "ephemeral", ctx, env, resources, inbox)
+                    .apply(action, *step, ctx, env, resources, inbox)
                     .await
                 {
                     return true;

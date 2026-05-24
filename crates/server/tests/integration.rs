@@ -204,7 +204,7 @@ async fn take_in_consumption_mode() {
     {
         let mut mgr = svc.manager.lock().await;
         let run = mgr
-            .get_mut(&server::manager::MachineId::from(mid.clone()))
+            .get_mut(&utils::MachineId::from_raw(mid.clone()).unwrap())
             .unwrap();
         run.inbox.push(machine::Fragment::system("LLM response"));
     }
