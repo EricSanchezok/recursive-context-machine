@@ -25,10 +25,6 @@ impl Machine {
         }
     }
 
-    pub fn id_str(&self) -> &str {
-        self.id.as_str()
-    }
-
     pub async fn apply(
         &mut self,
         action: Action,
@@ -39,36 +35,19 @@ impl Machine {
         inbox: &mut Inbox,
     ) -> bool {
         let mid = self.id.to_string();
-        match action {
-            Action::Halt => {
-                hook!(
-                    event = "halt",
-                    machine_id = mid,
-                    step,
-                    model = %resources.active_model().name,
-                    messages = ctx.fragments().len(),
-                    tools = resources.active_tools.len(),
-                );
-                let usage = reactor::react(&mid, ctx, env, resources, inbox).await;
-                self.usages.push(usage);
-                false
-            }
-            other => {
-                self.dispatch(other, step, &mid, ctx, resources, inbox)
-                    .await
-            }
+        if let Action::Halt = &action {
+            hook!(
+                event = "halt",
+                machine_id = mid,
+                step,
+                model = %resources.active_model().name,
+                messages = ctx.fragments().len(),
+                tools = resources.active_tools.len(),
+            );
+            let usage = reactor::react(&mid, ctx, env, resources, inbox).await;
+            self.usages.push(usage);
+            return false;
         }
-    }
-
-    async fn dispatch(
-        &mut self,
-        action: Action,
-        step: u64,
-        mid: &str,
-        ctx: &mut Context,
-        resources: &mut Resources,
-        inbox: &mut Inbox,
-    ) -> bool {
         match action {
             Action::Append(frag) => {
                 let id = ctx.append(frag);
@@ -149,7 +128,7 @@ impl Machine {
                 hook!(event = "done", machine_id = mid, step);
                 return true;
             }
-            Action::Halt => unreachable!("dispatch never receives Halt; apply() intercepts it"),
+            _ => {}
         }
         false
     }

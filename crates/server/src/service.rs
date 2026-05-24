@@ -1,6 +1,7 @@
+use machine::event;
 use machine::{Action, Content, Fragment, Inbox, Machine, Role};
 use tonic::{Request, Response, Status};
-use utils;
+use utils::MachineId;
 
 use crate::manager::{MachineManager, Run};
 use crate::rcm::{
@@ -52,19 +53,10 @@ fn fragment_to_proto(f: &Fragment) -> rcm::Fragment {
     };
     rcm::Fragment {
         id: f.id(),
-        role: role_label(f.role).into(),
+        role: event::role_name(f.role).into(),
         kind: kind.into(),
         text_preview: clip(f),
         tag: Some(f.tag.clone()),
-    }
-}
-
-fn role_label(role: Role) -> &'static str {
-    match role {
-        Role::System => "system",
-        Role::User => "user",
-        Role::Assistant => "assistant",
-        Role::Tool => "tool",
     }
 }
 
