@@ -34,7 +34,7 @@ Python controller                    Rust RCM server
 ```bash
 pip install grpcio protobuf
 
-pip install -e ../../sdks/python
+pip install -e ..
 ```
 
 ## Running

@@ -1,8 +1,8 @@
 """
 RCM Python controller — drives an RCM machine over gRPC.
 
-Requires the RCM Python SDK (sdks/python/). Install with:
-    pip install -e ../../sdks/python
+Requires the RCM Python SDK. Install with:
+    pip install -e ..
 
 Then start the server:
     cargo run -p server
@@ -10,11 +10,6 @@ Then start the server:
 And run this controller:
     python controller.py
 """
-
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../sdks/python/src"))
 
 from rcm import RCMClient
 
