@@ -1,0 +1,21 @@
+[package]
+name = "server"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "rcm-server"
+path = "src/main.rs"
+
+[dependencies]
+tonic = "0.13"
+prost = "0.13"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+machine = { path = "../machine" }
+accelerator = { path = "../accelerator" }
+
+[build-dependencies]
+tonic-build = "0.13"
