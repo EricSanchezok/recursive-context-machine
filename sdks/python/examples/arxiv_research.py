@@ -1,30 +1,47 @@
 """ArXiv search — ask the agent to research recent AI papers."""
 
 from rcm import RCMClient
-from rcm.react import run
+from rcm.react import ReactPolicy
 
 
 def main():
     rcm = RCMClient("localhost:50051")
 
-    state = run(
-        rcm,
+    mid, state, actions = rcm.open(
         purpose="search for recent AI research papers on arXiv",
-        prompt=(
-            "You are a research assistant. Search arXiv for recent papers "
-            "using the arxiv_search tool.\n\n"
-            "Run two searches:\n"
-            "1. Query: 'large language model reasoning chain of thought 2025'\n"
-            "2. Query: 'RLHF reinforcement learning human feedback alignment 2025'\n\n"
-            "For each search, pick 2-3 interesting papers and report:\n"
-            "- Title and authors\n"
-            "- One-sentence summary of the abstract\n\n"
-            "Stop after reporting."
-        ),
         tools=["arxiv_search"],
-        max_halts=4,
-        verbose=True,
+        prompts={
+            "captain": (
+                "You are a research assistant. Search arXiv for recent papers "
+                "using the arxiv_search tool.\n\n"
+                "Run these queries:\n"
+                "1. 'large language model reasoning chain of thought 2025'\n"
+                "2. 'RLHF reinforcement learning human feedback alignment 2025'\n\n"
+                "For each search, pick 2-3 interesting papers and report:\n"
+                "- Title and authors\n"
+                "- One-sentence summary of the abstract\n\n"
+                "Stop after reporting."
+            ),
+        },
     )
+
+    policy = ReactPolicy()
+
+    for step in range(40):
+        cmd, label = policy(state, actions)
+        print(f"[{step + 1}] {label}")
+
+        state, actions = rcm.step(mid, cmd)
+
+        if state.fragments:
+            frag = state.fragments[-1]
+            print(f"  → [{frag.role}/{frag.kind}] {frag.text_preview[:120]}")
+
+        if state.done:
+            print("done.\n")
+            break
+
+    rcm.destroy(mid)
 
     print("── ArXiv Research ──")
     for frag in state.fragments:
