@@ -2,11 +2,12 @@ name = "Issue Triage ({{REPO}}#{{ISSUE_NUMBER}})"
 
 model kimi-k2-6 {
     protocol = "openai"
-    endpoint = "https://api.kimi.com/coding"
+    endpoint = "https://api.kimi.com/coding/v1"
     credentials = { env = "KIMI_CODING_API_KEY" }
     headers = { User-Agent = "KimiCLI/1.5" }
-    limit = { context = "1000000", output = "393216" }
+    limit = { context = "262144", output = "32768" }
     modalities = { input = ["text"], output = ["text"] }
+    thinking = "true"
 }
 
 graph {

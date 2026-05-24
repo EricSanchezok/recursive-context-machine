@@ -1,6 +1,7 @@
 use http::{HeaderMap, HeaderName, HeaderValue};
 use rig::OneOrMany;
 use rig::client::CompletionClient;
+use rig::completion::message::Reasoning;
 use rig::completion::{
     AssistantContent, CompletionError, CompletionModel, Message, ToolDefinition,
 };
@@ -14,10 +15,34 @@ use crate::resources::Resources;
 use crate::usage::Usage;
 use tracing::{debug, warn};
 
+/// Call the active LLM and return the response fragments or an error.
 pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, Usage) {
-    let model = resources.active_model();
+    let Some(model) = resources.active_model() else {
+        warn!("completion requested but no active model is set");
+        let hitch = Fragment::hitch(
+            "no active model set; register and activate a model before completing",
+            None,
+            Role::System,
+            None::<&str>,
+        );
+        return (
+            vec![hitch],
+            Usage {
+                input_tokens: 0,
+                output_tokens: 0,
+                total_tokens: 0,
+                cached_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+                fragment_ids: Vec::new(),
+            },
+        );
+    };
 
-    let messages: Vec<Message> = ctx.fragments().iter().filter_map(encode).collect();
+    let messages: Vec<Message> = ctx
+        .fragments()
+        .iter()
+        .filter_map(|frag| encode(frag, model.thinking))
+        .collect();
 
     let tools: Vec<ToolDefinition> = resources
         .active_tools()
@@ -115,7 +140,7 @@ async fn send(
     tools: &[ToolDefinition],
 ) -> Result<(OneOrMany<AssistantContent>, Usage), Fragment> {
     let mut request = endpoint
-        .completion_request(Message::user(""))
+        .completion_request(Message::user("."))
         .messages(messages.to_vec())
         .tools(tools.to_vec());
 
@@ -209,22 +234,31 @@ where
     builder
 }
 
-fn encode(frag: &Fragment) -> Option<Message> {
+/// Encode a context fragment into a rig message.
+pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
     match frag.role {
-        Role::System => frag.as_text().map(Message::system),
+        Role::System => match &frag.content {
+            Content::Hitch { message, .. } => Some(Message::system(message)),
+            _ => frag.as_text().map(Message::system),
+        },
         Role::User => frag.as_text().map(Message::user),
         Role::Assistant => {
             if let Content::ToolCall(tc) = &frag.content {
-                Some(Message::Assistant {
-                    id: None,
-                    content: OneOrMany::one(AssistantContent::tool_call(
-                        &tc.id,
-                        &tc.name,
-                        tc.arguments.clone(),
-                    )),
-                })
+                let mut content = OneOrMany::one(AssistantContent::tool_call(
+                    &tc.id,
+                    &tc.name,
+                    tc.arguments.clone(),
+                ));
+                if thinking {
+                    content.push(AssistantContent::Reasoning(Reasoning::new(".")));
+                }
+                Some(Message::Assistant { id: None, content })
             } else {
-                frag.as_text().map(Message::assistant)
+                match &frag.content {
+                    Content::Hitch { message, .. } => Some(Message::assistant(message)),
+                    Content::Text(t) => Some(Message::assistant(&t.text)),
+                    _ => None,
+                }
             }
         }
         Role::Tool => {

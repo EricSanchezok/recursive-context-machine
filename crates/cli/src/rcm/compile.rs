@@ -368,6 +368,7 @@ fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String
             cost: None,
             modalities: Some(modalities),
             headers,
+            thinking: def.thinking,
             ..Default::default()
         };
         if models.insert(def.id.clone(), model).is_some() {
