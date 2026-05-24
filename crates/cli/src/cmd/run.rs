@@ -115,29 +115,49 @@ async fn stream_run(
             HookKind::Completion(hook::CompletionEvent::Start) => {
                 json_line("completion_start", serde_json::json!({}))
             }
-            HookKind::Completion(hook::CompletionEvent::End { fragments }) => json_line(
+            HookKind::Completion(hook::CompletionEvent::End {
+                fragments,
+                input_tokens,
+                output_tokens,
+                total_tokens,
+                cached_input_tokens,
+                cache_creation_input_tokens,
+            }) => json_line(
                 "completion_end",
-                serde_json::json!({ "fragments": fragments }),
+                serde_json::json!({
+                    "fragments": fragments,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                    "cached_input_tokens": cached_input_tokens,
+                    "cache_creation_input_tokens": cache_creation_input_tokens,
+                }),
             ),
-            HookKind::Tool(hook::ToolEvent::Call { tool, arguments }) => json_line(
+            HookKind::Tool(hook::ToolEvent::Call {
+                call_id,
+                tool,
+                arguments,
+            }) => json_line(
                 "tool_call",
-                serde_json::json!({ "tool": tool, "arguments": arguments }),
+                serde_json::json!({ "call_id": call_id, "tool": tool, "arguments": arguments }),
             ),
             HookKind::Tool(hook::ToolEvent::Result {
+                call_id,
                 tool,
                 result_len,
                 duration,
             }) => json_line(
                 "tool_result",
-                serde_json::json!({ "tool": tool, "result_len": result_len, "duration": duration }),
+                serde_json::json!({ "call_id": call_id, "tool": tool, "result_len": result_len, "duration": duration }),
             ),
             HookKind::Tool(hook::ToolEvent::Error {
+                call_id,
                 tool,
                 error,
                 retryable,
             }) => json_line(
                 "tool_error",
-                serde_json::json!({ "tool": tool, "error": error, "retryable": retryable }),
+                serde_json::json!({ "call_id": call_id, "tool": tool, "error": error, "retryable": retryable }),
             ),
             HookKind::Fragment(hook::FragmentEvent::Appended(meta)) => {
                 json_line("appended", fragment_json(meta))

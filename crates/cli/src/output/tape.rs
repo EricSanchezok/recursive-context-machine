@@ -511,10 +511,16 @@ fn apply_fragment_event(tape: &mut TapeState, event: FragmentEvent) {
 
 fn apply_tool_event(view: &mut ViewState, source: Option<&ComponentMeta>, event: ToolEvent) {
     match event {
-        ToolEvent::Call { tool, arguments } => {
-            tape_for_source(view, source).status = format!("tool {tool} args={}B", arguments.len());
+        ToolEvent::Call {
+            call_id,
+            tool,
+            arguments,
+        } => {
+            tape_for_source(view, source).status =
+                format!("tool {tool} #{call_id} args={}B", arguments.len());
         }
         ToolEvent::Result {
+            call_id,
             tool,
             result_len,
             duration,
@@ -522,15 +528,17 @@ fn apply_tool_event(view: &mut ViewState, source: Option<&ComponentMeta>, event:
             view.summary.tool_calls += 1;
             let tape = tape_for_source(view, source);
             tape.tool_calls += 1;
-            tape.status = format!("tool {tool} done {result_len}B {duration}");
+            tape.status = format!("tool {tool} #{call_id} done {result_len}B {duration}");
         }
         ToolEvent::Error {
+            call_id,
             tool,
             error,
             retryable,
         } => {
             let retry = if retryable { "retry" } else { "fatal" };
-            tape_for_source(view, source).status = format!("tool {tool} error {retry}: {error}");
+            tape_for_source(view, source).status =
+                format!("tool {tool} #{call_id} error {retry}: {error}");
         }
     }
 }
@@ -538,7 +546,9 @@ fn apply_tool_event(view: &mut ViewState, source: Option<&ComponentMeta>, event:
 fn apply_completion_event(tape: &mut TapeState, event: CompletionEvent) {
     match event {
         CompletionEvent::Start => tape.status = "completion".into(),
-        CompletionEvent::End { fragments } => tape.status = format!("drain {fragments} fragments"),
+        CompletionEvent::End { fragments, .. } => {
+            tape.status = format!("drain {fragments} fragments")
+        }
     }
 }
 
