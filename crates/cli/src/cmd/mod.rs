@@ -1,7 +1,7 @@
 pub mod dispatch;
 mod inventory;
 mod parse;
-mod run;
+pub mod run;
 
 use crate::args::{Cli, Command};
 
