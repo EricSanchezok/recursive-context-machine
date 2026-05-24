@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::sync::Arc;
 
 use utils::{Name, ResourcesId};
@@ -86,17 +87,14 @@ impl Resources {
     }
 
     /// Enable a tool. Idempotent.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tool is not registered.
-    pub fn enable(&mut self, name: impl Into<String>) {
+    pub fn enable(&mut self, name: impl Into<String>) -> Result<(), ToolNotRegistered> {
         let name = name.into();
-        assert!(
-            self.tools.contains_key(&name),
-            "tool '{name}' not registered"
-        );
-        self.active_tools.insert(name);
+        if self.tools.contains_key(&name) {
+            self.active_tools.insert(name);
+            Ok(())
+        } else {
+            Err(ToolNotRegistered(name))
+        }
     }
 
     /// Disable a tool.
@@ -105,28 +103,19 @@ impl Resources {
     }
 
     /// Switch the active model.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the model is not registered.
-    pub fn use_model(&mut self, name: impl Into<String>) {
+    pub fn use_model(&mut self, name: impl Into<String>) -> Result<(), ModelNotRegistered> {
         let name = name.into();
-        assert!(
-            self.models.contains_key(&name),
-            "model '{name}' not registered"
-        );
-        self.active_model = name;
+        if self.models.contains_key(&name) {
+            self.active_model = name;
+            Ok(())
+        } else {
+            Err(ModelNotRegistered(name))
+        }
     }
 
-    /// The currently active model.
-    ///
-    /// # Panics
-    ///
-    /// Panics when no model has been activated.
-    pub fn active_model(&self) -> &Model {
-        self.models
-            .get(&self.active_model)
-            .expect("active model not found")
+    /// The currently active model, if any.
+    pub fn active_model(&self) -> Option<&Model> {
+        self.models.get(&self.active_model)
     }
 
     /// All active tools.
@@ -146,3 +135,27 @@ impl Resources {
         self.tools.get(name).map(|t| t.as_ref())
     }
 }
+
+/// Error returned when switching to a model that has not been registered.
+#[derive(Debug)]
+pub struct ModelNotRegistered(pub String);
+
+impl fmt::Display for ModelNotRegistered {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "model '{}' not registered", self.0)
+    }
+}
+
+impl std::error::Error for ModelNotRegistered {}
+
+/// Error returned when enabling a tool that has not been registered.
+#[derive(Debug)]
+pub struct ToolNotRegistered(pub String);
+
+impl fmt::Display for ToolNotRegistered {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "tool '{}' not registered", self.0)
+    }
+}
+
+impl std::error::Error for ToolNotRegistered {}
