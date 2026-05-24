@@ -21,7 +21,7 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     }
 
     if args.stream {
-        return stream_run(accelerator).await;
+        return stream_run(accelerator, hook_rx).await;
     }
 
     let start = Instant::now();
@@ -49,7 +49,10 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn stream_run(accelerator: accelerator::Accelerator) -> anyhow::Result<()> {
+async fn stream_run(
+    accelerator: accelerator::Accelerator,
+    hook_rx: mpsc::Receiver<hook::HookEvent>,
+) -> anyhow::Result<()> {
     let (ctx_tx, ctx_rx) = mpsc::channel();
 
     thread::spawn(move || {
@@ -63,7 +66,11 @@ async fn stream_run(accelerator: accelerator::Accelerator) -> anyhow::Result<()>
         });
     });
 
-    for event in hook_rx() {
+    let mut graph_seen = false;
+    for event in hook_rx.iter() {
+        if matches!(event.kind, HookKind::Graph(hook::GraphEvent::Start { .. })) {
+            graph_seen = true;
+        }
         let line = match &event.kind {
             HookKind::Graph(hook::GraphEvent::Start { graph }) => {
                 json_line("graph_start", serde_json::json!({ "graph": graph }))
@@ -162,10 +169,21 @@ async fn stream_run(accelerator: accelerator::Accelerator) -> anyhow::Result<()>
             }
         };
         println!("{line}");
+        if is_terminal_event(&event, graph_seen) {
+            break;
+        }
     }
 
-    drop(ctx_rx);
+    let _ = ctx_rx.recv();
     Ok(())
+}
+
+pub fn is_terminal_event(event: &hook::HookEvent, graph_seen: bool) -> bool {
+    match &event.kind {
+        HookKind::Graph(hook::GraphEvent::Done { .. }) => true,
+        HookKind::Machine(hook::MachineEvent::Done) => !graph_seen,
+        _ => false,
+    }
 }
 
 fn json_line(event_type: &str, payload: serde_json::Value) -> String {
@@ -194,13 +212,6 @@ fn fragment_json(meta: &hook::FragmentMeta) -> serde_json::Value {
         "kind": meta.kind,
         "preview": meta.preview,
     })
-}
-
-fn hook_rx() -> mpsc::Receiver<crate::hook::HookEvent> {
-    let (tx, rx) = mpsc::channel();
-    let subscriber = tracing_subscriber::registry().with(crate::hook::hook_layer(tx));
-    tracing::subscriber::set_global_default(subscriber).ok();
-    rx
 }
 
 fn init_tracing(tx: mpsc::Sender<hook::HookEvent>) {
