@@ -1,6 +1,6 @@
 mod args;
 pub mod cmd;
-mod hook;
+pub mod hook;
 mod output;
 pub mod rcm;
 

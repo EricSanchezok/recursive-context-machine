@@ -26,9 +26,6 @@ permissions:
   contents: write
 
 env:
-  CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: 0
-  CARGO_NET_RETRY: 10
   RUST_BACKTRACE: 1
 
 jobs:
@@ -58,14 +55,15 @@ jobs:
           # Full history so the code_change path can branch off main cleanly.
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: rcm-ci
-
-      - name: Build accelerate
-        run: cargo build --release --bin accelerate --locked
+      - name: Download accelerate from the latest release
+        # Decouples maintainer runs from the current HEAD: every run uses the
+        # last published, known-good binary. If main breaks the build the bot
+        # keeps working off the previous tag until a new release lands.
+        run: |
+          gh release download \
+            --pattern 'accelerate-x86_64-linux' \
+            --output accelerate
+          chmod +x accelerate
 
       - name: Configure git identity for code_change commits
         # Only the CI shell sets repo-level git config — the agent's `git` tool
@@ -79,7 +77,7 @@ jobs:
         id: dispatch
         run: |
           ACTION=$(jq -r '.action // ""' "$GITHUB_EVENT_PATH")
-          RENDERED=$(./target/release/accelerate dispatch \
+          RENDERED=$(./accelerate dispatch \
             --config examples/project-maintainer/dispatch.toml \
             --event-name "$GITHUB_EVENT_NAME" \
             --action "$ACTION" \
@@ -94,7 +92,7 @@ jobs:
 
       - name: Run rendered pipeline
         if: steps.dispatch.outputs.rendered != ''
-        run: ./target/release/accelerate run "${{ steps.dispatch.outputs.rendered }}" --stream
+        run: ./accelerate run "${{ steps.dispatch.outputs.rendered }}" --stream
 
       - name: Upload rendered .rcm as audit artifact
         # Keep even on failure — a busted run is exactly when we need the rendered
