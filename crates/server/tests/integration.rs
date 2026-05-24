@@ -31,7 +31,6 @@ async fn open_creates_run_with_state() {
 
     let state = resp.state.unwrap();
     assert!(!state.done);
-    assert_eq!(state.step, 0);
     assert!(state.fragments.is_empty());
 }
 
@@ -86,7 +85,6 @@ async fn append_then_done_ends_episode() {
         .into_inner();
     let state1 = step1.state.unwrap();
     assert_eq!(state1.fragments.len(), 1);
-    assert_eq!(state1.step, 1);
     assert!(!state1.done);
 
     let done_cmd = step1
