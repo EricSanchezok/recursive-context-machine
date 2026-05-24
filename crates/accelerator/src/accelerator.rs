@@ -115,6 +115,7 @@ impl PrimitiveAccelerator {
         let purpose = Purpose::new(&state.purpose);
         let mut inbox = Inbox::new();
         let mut step = 0u64;
+        let mut machine = Machine::new("ephemeral", "ephemeral");
         let policy = self.policy;
 
         hook!(event = "machine_start", purpose = %purpose.text);
@@ -128,6 +129,7 @@ impl PrimitiveAccelerator {
                 &mut state.res,
                 &mut inbox,
                 &mut step,
+                &mut machine,
             )
             .await
             {
@@ -151,21 +153,23 @@ impl PrimitiveAccelerator {
                         &mut state.res,
                         &mut inbox,
                         &mut step,
+                        &mut machine,
                     )
                     .await;
                 }
             }
 
             step += 1;
-            if Machine::apply(
-                action,
-                step,
-                &mut state.ctx,
-                &mut state.env,
-                &mut state.res,
-                &mut inbox,
-            )
-            .await
+            if machine
+                .apply(
+                    action,
+                    step,
+                    &mut state.ctx,
+                    &mut state.env,
+                    &mut state.res,
+                    &mut inbox,
+                )
+                .await
             {
                 break;
             }
@@ -180,6 +184,7 @@ impl PrimitiveAccelerator {
                         &mut state.res,
                         &mut inbox,
                         &mut step,
+                        &mut machine,
                     )
                     .await;
                 }
@@ -195,6 +200,7 @@ impl PrimitiveAccelerator {
                 &mut state.res,
                 &mut inbox,
                 &mut step,
+                &mut machine,
             )
             .await;
         }
@@ -211,6 +217,7 @@ async fn run_phase(
     resources: &mut machine::Resources,
     inbox: &mut Inbox,
     step: &mut u64,
+    machine: &mut Machine,
 ) -> bool {
     loop {
         match phase.decide(purpose, ctx, env, resources) {
@@ -219,7 +226,10 @@ async fn run_phase(
             }
             PhaseOutcome::Action(action) => {
                 *step += 1;
-                if Machine::apply(action, *step, ctx, env, resources, inbox).await {
+                if machine
+                    .apply(action, *step, ctx, env, resources, inbox)
+                    .await
+                {
                     return true;
                 }
             }

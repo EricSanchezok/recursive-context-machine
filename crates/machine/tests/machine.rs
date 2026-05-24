@@ -9,11 +9,14 @@ async fn run_actions(
     env: &mut Environment,
     resources: &mut machine::Resources,
 ) {
+    let mut machine = Machine::new("test", "test-machine");
     let mut inbox = Inbox::new();
     let mut step = 0u64;
     for action in actions {
         step += 1;
-        let done = Machine::apply(action.clone(), step, ctx, env, resources, &mut inbox).await;
+        let done = machine
+            .apply(action.clone(), step, ctx, env, resources, &mut inbox)
+            .await;
         if done {
             break;
         }
@@ -179,28 +182,31 @@ async fn take_drains_inbox_into_context() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
     let mut inbox = Inbox::new();
+    let mut machine = Machine::new("test", "test-machine");
 
     inbox.push(Fragment::assistant("reply"));
     inbox.push(Fragment::tool_result("1", "5", None));
 
-    Machine::apply(
-        Action::Take,
-        1,
-        &mut ctx,
-        &mut env,
-        &mut resources,
-        &mut inbox,
-    )
-    .await;
-    Machine::apply(
-        Action::Take,
-        2,
-        &mut ctx,
-        &mut env,
-        &mut resources,
-        &mut inbox,
-    )
-    .await;
+    machine
+        .apply(
+            Action::Take,
+            1,
+            &mut ctx,
+            &mut env,
+            &mut resources,
+            &mut inbox,
+        )
+        .await;
+    machine
+        .apply(
+            Action::Take,
+            2,
+            &mut ctx,
+            &mut env,
+            &mut resources,
+            &mut inbox,
+        )
+        .await;
 
     assert_eq!(ctx.len(), 2);
     assert_eq!(ctx.fragments()[0].as_text(), Some("reply"));
@@ -278,16 +284,18 @@ async fn dispatch_model_nonexistent_pushes_hitch() {
     let mut env = Environment::new("/tmp");
     let mut res = common::test_resources();
     let mut inbox = Inbox::new();
+    let mut machine = Machine::new("test", "test");
 
-    Machine::apply(
-        Action::Model("nonexistent".to_string()),
-        1,
-        &mut ctx,
-        &mut env,
-        &mut res,
-        &mut inbox,
-    )
-    .await;
+    machine
+        .apply(
+            Action::Model("nonexistent".to_string()),
+            1,
+            &mut ctx,
+            &mut env,
+            &mut res,
+            &mut inbox,
+        )
+        .await;
 
     assert_eq!(inbox.len(), 1);
     let frag = inbox.pop().unwrap();
@@ -304,16 +312,18 @@ async fn dispatch_activate_nonexistent_pushes_hitch() {
     let mut env = Environment::new("/tmp");
     let mut res = common::test_resources();
     let mut inbox = Inbox::new();
+    let mut machine = Machine::new("test", "test");
 
-    Machine::apply(
-        Action::Activate("unknown".to_string()),
-        2,
-        &mut ctx,
-        &mut env,
-        &mut res,
-        &mut inbox,
-    )
-    .await;
+    machine
+        .apply(
+            Action::Activate("unknown".to_string()),
+            2,
+            &mut ctx,
+            &mut env,
+            &mut res,
+            &mut inbox,
+        )
+        .await;
 
     assert_eq!(inbox.len(), 1);
     let frag = inbox.pop().unwrap();
@@ -331,7 +341,7 @@ async fn complete_no_active_model_returns_hitch() {
     let mut res = common::test_resources();
     res.deactivate_model(); // remove active model
 
-    let fragments = machine::completion::complete(&ctx, &res).await;
+    let (fragments, _usage) = machine::completion::complete(&ctx, &res).await;
     assert_eq!(fragments.len(), 1);
     assert_eq!(fragments[0].role, machine::Role::System);
     assert!(matches!(

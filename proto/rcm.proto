@@ -1,0 +1,171 @@
+syntax = "proto3";
+package rcm;
+
+import "google/protobuf/empty.proto";
+
+service RCM {
+  rpc Open(OpenRequest) returns (OpenResponse);
+  rpc Step(StepRequest) returns (StepResponse);
+  rpc Destroy(DestroyRequest) returns (google.protobuf.Empty);
+}
+
+// ── Open ─────────────────────────────────────────────────
+
+message OpenRequest {
+  string purpose = 1;
+  repeated ModelSpec models = 2;
+  repeated McpServerSpec mcps = 3;
+  repeated string tools = 4;
+  map<string, string> prompts = 5;
+}
+
+message ModelSpec {
+  string name = 1;
+  string protocol = 2;
+  optional string endpoint = 3;
+  optional CredentialSpec credentials = 4;
+  optional LimitSpec limit = 5;
+  repeated string modalities_input = 6;
+  repeated string modalities_output = 7;
+  map<string, string> headers = 8;
+  optional uint64 timeout = 9;
+}
+
+message CredentialSpec {
+  oneof source {
+    string env = 1;
+    string literal = 2;
+  }
+}
+
+message LimitSpec {
+  uint64 context = 1;
+  optional uint64 input = 2;
+  uint64 output = 3;
+}
+
+message McpServerSpec {
+  string label = 1;
+  McpTransportSpec transport = 2;
+}
+
+message McpTransportSpec {
+  oneof kind {
+    McpStdioSpec stdio = 1;
+    McpHttpSpec http = 2;
+    McpSseSpec sse = 3;
+  }
+}
+
+message McpStdioSpec {
+  string command = 1;
+  repeated string args = 2;
+  map<string, McpValueSpec> env = 3;
+  optional string cwd = 4;
+}
+
+message McpHttpSpec {
+  string url = 1;
+  map<string, McpValueSpec> headers = 2;
+}
+
+message McpSseSpec {
+  string url = 1;
+  map<string, McpValueSpec> headers = 2;
+}
+
+message McpValueSpec {
+  oneof source {
+    string literal = 1;
+    string env = 2;
+  }
+}
+
+message OpenResponse {
+  string machine_id = 1;
+  State state = 2;
+  ActionSpace action_space = 3;
+}
+
+// ── Step ────────────────────────────────────────────────
+
+message StepRequest {
+  string machine_id = 1;
+  ActionCommand command = 2;
+}
+
+message StepResponse {
+  State state = 1;
+  ActionSpace action_space = 2;
+}
+
+// ── Destroy ─────────────────────────────────────────────
+
+message DestroyRequest {
+  string machine_id = 1;
+}
+
+// ── ActionCommand ───────────────────────────────────────
+
+message ActionCommand {
+  string verb = 1;
+
+  optional uint64 fragment_id = 2;
+  optional uint64 fragment_id2 = 3;
+  optional FragmentContent fragment = 4;
+  optional string name = 5;
+}
+
+message FragmentContent {
+  string role = 1;
+  string text = 2;
+  optional string tag = 3;
+}
+
+// ── ActionSpace ─────────────────────────────────────────
+
+message ActionSpace {
+  repeated ActionItem actions = 1;
+}
+
+message ActionItem {
+  ActionCommand command = 1;
+  string label = 2;
+  FragmentContent sink = 3;
+}
+
+// ── State ───────────────────────────────────────────────
+
+message State {
+  string purpose = 1;
+  string machine_id = 10;
+  repeated Fragment fragments = 2;
+  string workdir = 3;
+  map<string, string> env_vars = 4;
+  string active_model = 5;
+  repeated string active_tools = 6;
+  repeated string available_models = 7;
+  repeated string available_tools = 8;
+  bool done = 9;
+  bool inbox_pending = 11;
+  optional Fragment inbox_peek = 12;
+  map<string, uint64> counts = 13;
+  repeated Usage usages = 14;
+}
+
+message Usage {
+  uint64 input_tokens = 1;
+  uint64 output_tokens = 2;
+  uint64 total_tokens = 3;
+  uint64 cached_input_tokens = 4;
+  uint64 cache_creation_input_tokens = 5;
+  repeated uint64 fragment_ids = 6;
+}
+
+message Fragment {
+  uint64 id = 1;
+  string role = 2;
+  string kind = 3;
+  string text_preview = 4;
+  optional string tag = 5;
+}

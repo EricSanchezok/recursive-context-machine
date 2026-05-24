@@ -68,21 +68,31 @@ pub enum MachineEvent {
 #[derive(Debug, Clone)]
 pub enum CompletionEvent {
     Start,
-    End { fragments: usize },
+    End {
+        fragments: usize,
+        input_tokens: u64,
+        output_tokens: u64,
+        total_tokens: u64,
+        cached_input_tokens: u64,
+        cache_creation_input_tokens: u64,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub enum ToolEvent {
     Call {
+        call_id: String,
         tool: String,
         arguments: String,
     },
     Result {
+        call_id: String,
         tool: String,
         result_len: usize,
         duration: String,
     },
     Error {
+        call_id: String,
         tool: String,
         error: String,
         retryable: bool,
@@ -102,6 +112,7 @@ pub enum FragmentEvent {
 #[derive(Debug, Clone)]
 pub struct FragmentMeta {
     pub id: u64,
+    pub step: u64,
     pub role: String,
     pub kind: String,
     pub preview: String,
@@ -246,6 +257,7 @@ impl HookFields {
     fn fragment_meta(&self) -> FragmentMeta {
         FragmentMeta {
             id: self.u64("id").unwrap_or(0),
+            step: self.u64("step").unwrap_or(0),
             role: self.string("role").unwrap_or_default(),
             kind: self.string("kind").unwrap_or_default(),
             preview: self.string("preview").unwrap_or_default(),
@@ -319,12 +331,19 @@ impl HookEvent {
             "completion_start" => HookKind::Completion(CompletionEvent::Start),
             "completion_end" => HookKind::Completion(CompletionEvent::End {
                 fragments: fields.usize("fragments").unwrap_or(0),
+                input_tokens: fields.u64("input_tokens").unwrap_or(0),
+                output_tokens: fields.u64("output_tokens").unwrap_or(0),
+                total_tokens: fields.u64("total_tokens").unwrap_or(0),
+                cached_input_tokens: fields.u64("cached_input_tokens").unwrap_or(0),
+                cache_creation_input_tokens: fields.u64("cache_creation_input_tokens").unwrap_or(0),
             }),
             "tool_call" => HookKind::Tool(ToolEvent::Call {
+                call_id: fields.string("call_id").unwrap_or_default(),
                 tool: fields.string("tool").unwrap_or_default(),
                 arguments: fields.string("arguments").unwrap_or_default(),
             }),
             "tool_result" => HookKind::Tool(ToolEvent::Result {
+                call_id: fields.string("call_id").unwrap_or_default(),
                 tool: fields.string("tool").unwrap_or_default(),
                 result_len: fields
                     .string("result")
@@ -333,6 +352,7 @@ impl HookEvent {
                 duration: fields.string("duration").unwrap_or_default(),
             }),
             "tool_error" => HookKind::Tool(ToolEvent::Error {
+                call_id: fields.string("call_id").unwrap_or_default(),
                 tool: fields.string("tool").unwrap_or_default(),
                 error: fields.string("error").unwrap_or_default(),
                 retryable: fields.bool("retryable").unwrap_or(true),

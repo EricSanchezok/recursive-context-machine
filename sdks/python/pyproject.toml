@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rcm"
+version = "0.1.0"
+description = "RCM (Recursive Context Machine) Python SDK"
+requires-python = ">=3.10"
+dependencies = [
+    "grpcio>=1.60",
+    "protobuf>=4.20",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rcm"]
