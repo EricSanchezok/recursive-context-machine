@@ -73,6 +73,7 @@ pub struct ModelDef {
     pub limit_output: u64,
     pub modalities_input: Vec<String>,
     pub modalities_output: Vec<String>,
+    pub headers: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

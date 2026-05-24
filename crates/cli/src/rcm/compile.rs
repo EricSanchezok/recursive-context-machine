@@ -350,6 +350,11 @@ fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String
                 return Err("model limit requires at least one of context or input".to_string());
             }
         };
+        let headers = if def.headers.is_empty() {
+            None
+        } else {
+            Some(def.headers.clone())
+        };
         let model = Model {
             name: def.id.clone(),
             protocol,
@@ -362,6 +367,7 @@ fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String
             }),
             cost: None,
             modalities: Some(modalities),
+            headers,
             ..Default::default()
         };
         if models.insert(def.id.clone(), model).is_some() {

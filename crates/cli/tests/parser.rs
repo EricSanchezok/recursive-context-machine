@@ -217,3 +217,55 @@ fn parse_rejects_unclosed_string() {
     let result = rcm::parse(r#"name = "test" accelerator { purpose = "unclosed"#);
     assert!(result.is_err());
 }
+
+#[test]
+fn parse_model_with_headers() {
+    let source = r#"
+        name = "kimi-coder"
+        model kimi {
+            protocol = "openai"
+            endpoint = "https://api.kimi.com/coding"
+            credentials = { env = "KIMI_KEY" }
+            headers = { User-Agent = "KimiCLI/1.5" X-Custom = "value" }
+            limit = { context = "262144", output = "32768" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            models = ["kimi"]
+        }
+    "#;
+
+    let file = rcm::parse(source).unwrap();
+    assert_eq!(file.models.len(), 1);
+    let model = &file.models[0];
+    assert_eq!(model.id, "kimi");
+    assert_eq!(model.protocol, "openai");
+    assert_eq!(
+        model.endpoint.as_deref(),
+        Some("https://api.kimi.com/coding")
+    );
+    assert_eq!(
+        model.headers.get("User-Agent"),
+        Some(&"KimiCLI/1.5".to_string())
+    );
+    assert_eq!(model.headers.get("X-Custom"), Some(&"value".to_string()));
+}
+
+#[test]
+fn parse_model_without_headers() {
+    let source = r#"
+        name = "basic"
+        model gpt {
+            protocol = "openai"
+            credentials = { env = "OPENAI_KEY" }
+            limit = { context = "100000", output = "4096" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            models = ["gpt"]
+        }
+    "#;
+
+    let file = rcm::parse(source).unwrap();
+    assert!(file.models[0].headers.is_empty());
+}
