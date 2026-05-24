@@ -29,16 +29,22 @@ impl Rcm for RcmService {
     async fn open(&self, request: Request<OpenRequest>) -> Result<Response<OpenResponse>, Status> {
         let req = request.into_inner();
 
-        let mut resources = self.catalog.default_resources();
-
-        if !req.tools.is_empty() {
-            let selected = req
-                .tools
-                .iter()
-                .cloned()
-                .collect::<std::collections::HashSet<_>>();
-            resources = resources.retain_tools(|name| selected.contains(name));
-        }
+        let mut resources = if req.tools.is_empty() {
+            self.catalog.default_resources()
+        } else {
+            let mut res = machine::Resources::new();
+            for name in &req.tools {
+                let tool =
+                    self.catalog.tools.get(name).ok_or_else(|| {
+                        Status::invalid_argument(format!("unknown tool: {}", name))
+                    })?;
+                res = res.with_tool(tool.clone());
+            }
+            for (name, content) in &self.catalog.prompts {
+                res.prompts.entry(name.clone()).or_insert(content.clone());
+            }
+            res
+        };
 
         for spec in &req.models {
             let model = build_model(spec)?;
