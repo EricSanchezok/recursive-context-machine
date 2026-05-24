@@ -9,7 +9,7 @@ service RCM {
   rpc Destroy(DestroyRequest) returns (google.protobuf.Empty);
 }
 
-// ── New ─────────────────────────────────────────────────
+// ── Open ─────────────────────────────────────────────────
 
 message OpenRequest {
   string purpose = 1;
@@ -74,6 +74,7 @@ message ActionItem {
 
 message State {
   string purpose = 1;
+  string machine_id = 10;
   repeated Fragment fragments = 2;
   string workdir = 3;
   map<string, string> env_vars = 4;
