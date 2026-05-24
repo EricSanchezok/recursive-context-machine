@@ -23,7 +23,7 @@ def main():
                 protocol="openai",
                 endpoint="https://api.deepseek.com",
                 credentials=Model.Credentials(env="DEEPSEEK_API_KEY"),
-                limit=Model.Limit(context=128000, output=8192),
+                limit=Model.Limit(context=1000000, output=393216),
             ),
         ],
         tools=["shell"],
