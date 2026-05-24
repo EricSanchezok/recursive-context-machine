@@ -8,7 +8,7 @@ use crate::rcm::{
 };
 
 pub struct RcmService {
-    manager: std::sync::Arc<tokio::sync::Mutex<MachineManager>>,
+    pub manager: std::sync::Arc<tokio::sync::Mutex<MachineManager>>,
 }
 
 impl RcmService {
