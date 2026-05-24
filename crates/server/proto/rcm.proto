@@ -1,0 +1,96 @@
+syntax = "proto3";
+package rcm;
+
+import "google/protobuf/empty.proto";
+
+service RCM {
+  rpc Open(OpenRequest) returns (OpenResponse);
+  rpc Step(StepRequest) returns (StepResponse);
+  rpc Destroy(DestroyRequest) returns (google.protobuf.Empty);
+}
+
+// ── New ─────────────────────────────────────────────────
+
+message OpenRequest {
+  string purpose = 1;
+  repeated string models = 2;
+  repeated string tools = 3;
+  map<string, string> prompts = 4;
+}
+
+message OpenResponse {
+  string machine_id = 1;
+  State state = 2;
+  ActionSpace action_space = 3;
+}
+
+// ── Step ────────────────────────────────────────────────
+
+message StepRequest {
+  string machine_id = 1;
+  ActionCommand command = 2;
+}
+
+message StepResponse {
+  State state = 1;
+  ActionSpace action_space = 2;
+}
+
+// ── Destroy ─────────────────────────────────────────────
+
+message DestroyRequest {
+  string machine_id = 1;
+}
+
+// ── ActionCommand ───────────────────────────────────────
+
+message ActionCommand {
+  string verb = 1;
+
+  optional uint64 fragment_id = 2;
+  optional uint64 fragment_id2 = 3;
+  optional FragmentContent fragment = 4;
+  optional string name = 5;
+}
+
+message FragmentContent {
+  string role = 1;
+  string text = 2;
+}
+
+// ── ActionSpace ─────────────────────────────────────────
+
+message ActionSpace {
+  repeated ActionItem actions = 1;
+}
+
+message ActionItem {
+  ActionCommand command = 1;
+  string label = 2;
+  FragmentContent sink = 3;
+}
+
+// ── State ───────────────────────────────────────────────
+
+message State {
+  string purpose = 1;
+  repeated Fragment fragments = 2;
+  string workdir = 3;
+  map<string, string> env_vars = 4;
+  string active_model = 5;
+  repeated string active_tools = 6;
+  repeated string available_models = 7;
+  repeated string available_tools = 8;
+  bool done = 9;
+  uint64 step = 10;
+  bool inbox_pending = 11;
+  optional Fragment inbox_peek = 12;
+}
+
+message Fragment {
+  uint64 id = 1;
+  string role = 2;
+  string kind = 3;
+  string text_preview = 4;
+  optional string tag = 5;
+}
