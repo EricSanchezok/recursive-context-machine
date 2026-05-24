@@ -122,6 +122,7 @@ fn build_action_space(run: &Run) -> ActionSpace {
             let fc = FragmentContent {
                 role: "system".into(),
                 text: text.clone(),
+                ..Default::default()
             };
             actions.push(ActionItem {
                 command: Some(ActionCommand {
@@ -153,6 +154,7 @@ fn build_action_space(run: &Run) -> ActionSpace {
                 let fc = FragmentContent {
                     role: "system".into(),
                     text: text.clone(),
+                    ..Default::default()
                 };
                 actions.push(ActionItem {
                     command: Some(ActionCommand {
@@ -173,6 +175,7 @@ fn build_action_space(run: &Run) -> ActionSpace {
                 let fc = FragmentContent {
                     role: "system".into(),
                     text: text.clone(),
+                    ..Default::default()
                 };
                 actions.push(ActionItem {
                     command: Some(ActionCommand {
@@ -290,10 +293,14 @@ fn sink_clip(fc: FragmentContent) -> FragmentContent {
 // ── Action decode ────────────────────────────────────────
 
 fn build_fragment(fc: &FragmentContent) -> Fragment {
-    match fc.role.as_str() {
+    let mut frag = match fc.role.as_str() {
         "user" => Fragment::user(&fc.text),
         _ => Fragment::system(&fc.text),
+    };
+    if let Some(tag) = &fc.tag {
+        frag.tag = tag.clone();
     }
+    frag
 }
 
 fn decode_command(cmd: &ActionCommand) -> Result<Action, Status> {

@@ -1,7 +1,15 @@
 """Weather check — ask the agent for the weather at a given city."""
 
 from rcm import RCMClient
+from rcm._pb2 import ActionCommand, FragmentContent
 from rcm.react import ReactPolicy
+
+CAPTAIN_PROMPT = (
+    "You are a weather assistant. The user wants to know the current weather "
+    "in Beijing, China.\n\n"
+    'Use the shell tool: curl -s "wttr.in/Beijing?format=3"\n\n'
+    "Report the result. Stop after reporting."
+)
 
 
 def main():
@@ -10,14 +18,30 @@ def main():
     mid, state, actions = rcm.open(
         purpose="check the weather in Beijing",
         tools=["shell"],
-        prompts={
-            "captain": (
-                "You are a weather assistant. The user wants to know the current weather "
-                "in Beijing, China.\n\n"
-                'Use the shell tool: curl -s "wttr.in/Beijing?format=3"\n\n'
-                "Report the result. Stop after reporting."
+        prompts={"captain": CAPTAIN_PROMPT},
+    )
+
+    rcm.step(
+        mid,
+        ActionCommand(
+            verb="Append",
+            fragment=FragmentContent(
+                role="system",
+                text=CAPTAIN_PROMPT,
+                tag="agent",
             ),
-        },
+        ),
+    )
+    rcm.step(
+        mid,
+        ActionCommand(
+            verb="Append",
+            fragment=FragmentContent(
+                role="user",
+                text="check the weather in Beijing",
+                tag="purpose",
+            ),
+        ),
     )
 
     policy = ReactPolicy()
