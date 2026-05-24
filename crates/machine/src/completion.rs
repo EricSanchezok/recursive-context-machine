@@ -22,7 +22,15 @@ use tracing::{debug, warn};
 /// On failure, returns `Content::Hitch` so the caller (Policy) can
 /// decide to retry, switch model, or abort.
 pub async fn complete(ctx: &Context, resources: &Resources) -> Vec<Fragment> {
-    let model = resources.active_model();
+    let Some(model) = resources.active_model() else {
+        warn!("completion requested but no active model is set");
+        return vec![Fragment::hitch(
+            "no active model set; register and activate a model before completing",
+            None,
+            Role::System,
+            None::<&str>,
+        )];
+    };
 
     let messages: Vec<Message> = ctx
         .fragments()
