@@ -116,12 +116,28 @@ pub fn build_model(spec: &ModelSpec) -> Result<machine::Model, Status> {
         input: l.input,
         output: l.output,
     });
+    let modalities = if !spec.modalities_input.is_empty() || !spec.modalities_output.is_empty() {
+        let input = spec
+            .modalities_input
+            .iter()
+            .map(|m| parse_modality(m))
+            .collect::<Result<Vec<_>, _>>()?;
+        let output = spec
+            .modalities_output
+            .iter()
+            .map(|m| parse_modality(m))
+            .collect::<Result<Vec<_>, _>>()?;
+        Some(machine::Modalities { input, output })
+    } else {
+        None
+    };
     Ok(machine::Model {
         name: spec.name.clone(),
         protocol,
         endpoint: spec.endpoint.clone(),
         credentials,
         limit,
+        modalities,
         timeout: spec.timeout.unwrap_or(180),
         headers: if spec.headers.is_empty() {
             None
@@ -130,4 +146,18 @@ pub fn build_model(spec: &ModelSpec) -> Result<machine::Model, Status> {
         },
         ..Default::default()
     })
+}
+
+fn parse_modality(value: &str) -> Result<machine::Modality, Status> {
+    match value {
+        "text" => Ok(machine::Modality::Text),
+        "audio" => Ok(machine::Modality::Audio),
+        "image" => Ok(machine::Modality::Image),
+        "video" => Ok(machine::Modality::Video),
+        "pdf" => Ok(machine::Modality::Pdf),
+        other => Err(Status::invalid_argument(format!(
+            "unknown modality: {}",
+            other
+        ))),
+    }
 }
