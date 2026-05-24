@@ -11,7 +11,7 @@ mod wait;
 pub use arxiv::{ArxivDownloadTool, ArxivSearchTool};
 pub use find::FindTool;
 pub use fs::FsTool;
-pub use git::{check_safety as check_git_safety, tokenize as tokenize_git, GitTool};
+pub use git::{GitTool, check_safety as check_git_safety, tokenize as tokenize_git};
 pub use lsp::LspTool;
 pub use shell::ShellTool;
 pub use wait::WaitTool;

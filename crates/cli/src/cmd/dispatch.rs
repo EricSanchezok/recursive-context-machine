@@ -44,15 +44,12 @@ pub enum FieldSource {
 
 pub fn run(args: DispatchArgs) -> Result<()> {
     let config_path = args.config.clone();
-    let config_text = fs::read_to_string(&config_path).with_context(|| {
-        format!("reading dispatch config from {}", config_path.display())
-    })?;
-    let config: DispatchConfig =
-        toml::from_str(&config_text).context("parsing dispatch config")?;
+    let config_text = fs::read_to_string(&config_path)
+        .with_context(|| format!("reading dispatch config from {}", config_path.display()))?;
+    let config: DispatchConfig = toml::from_str(&config_text).context("parsing dispatch config")?;
 
-    let event_text = fs::read_to_string(&args.event_path).with_context(|| {
-        format!("reading event payload from {}", args.event_path.display())
-    })?;
+    let event_text = fs::read_to_string(&args.event_path)
+        .with_context(|| format!("reading event payload from {}", args.event_path.display()))?;
     let event_json: Value = serde_json::from_str(&event_text).context("parsing event JSON")?;
 
     let action_filter = if args.action.is_empty() {
@@ -81,28 +78,26 @@ pub fn run(args: DispatchArgs) -> Result<()> {
     let substitutions = collect_substitutions(route, &event_json)?;
 
     let config_dir = config_path.parent().unwrap_or(Path::new("."));
-    let template_path = config_dir
-        .join(&config.templates_dir)
-        .join(&route.template);
-    let template_text = fs::read_to_string(&template_path).with_context(|| {
-        format!("reading template from {}", template_path.display())
-    })?;
+    let template_path = config_dir.join(&config.templates_dir).join(&route.template);
+    let template_text = fs::read_to_string(&template_path)
+        .with_context(|| format!("reading template from {}", template_path.display()))?;
 
     let rendered = render_template(&template_text, &substitutions)?;
 
     let cache_dir = config_dir.join(&config.cache_dir);
-    fs::create_dir_all(&cache_dir).with_context(|| {
-        format!("creating cache dir {}", cache_dir.display())
-    })?;
+    fs::create_dir_all(&cache_dir)
+        .with_context(|| format!("creating cache dir {}", cache_dir.display()))?;
 
     let stem = route.template.trim_end_matches(".tpl");
-    let stem = Path::new(stem).file_stem().and_then(|s| s.to_str()).unwrap_or("rendered");
+    let stem = Path::new(stem)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("rendered");
     let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S%6f");
     let output_name = format!("{timestamp}-{stem}.rcm");
     let output_path = cache_dir.join(output_name);
-    fs::write(&output_path, &rendered).with_context(|| {
-        format!("writing rendered .rcm to {}", output_path.display())
-    })?;
+    fs::write(&output_path, &rendered)
+        .with_context(|| format!("writing rendered .rcm to {}", output_path.display()))?;
 
     println!("{}", output_path.display());
     Ok(())
@@ -134,10 +129,7 @@ pub fn passes_filter(route: &Route, event: &Value) -> bool {
     value.contains(&filter.contains)
 }
 
-pub fn collect_substitutions(
-    route: &Route,
-    event: &Value,
-) -> Result<HashMap<String, String>> {
+pub fn collect_substitutions(route: &Route, event: &Value) -> Result<HashMap<String, String>> {
     let mut substitutions = HashMap::with_capacity(route.fields.len());
     for (placeholder, source) in &route.fields {
         let value = match source {
@@ -169,10 +161,7 @@ fn json_value_to_string(value: &Value) -> Option<String> {
     }
 }
 
-pub fn render_template(
-    template: &str,
-    substitutions: &HashMap<String, String>,
-) -> Result<String> {
+pub fn render_template(template: &str, substitutions: &HashMap<String, String>) -> Result<String> {
     let mut output = String::with_capacity(template.len());
     let mut rest = template;
     let mut missing = Vec::new();
@@ -216,5 +205,7 @@ fn is_valid_placeholder(name: &str) -> bool {
     if !(first.is_ascii_uppercase() || first == '_') {
         return false;
     }
-    chars.all(|character| character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_')
+    chars.all(|character| {
+        character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
+    })
 }

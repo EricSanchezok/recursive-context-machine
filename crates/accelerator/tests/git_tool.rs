@@ -44,10 +44,7 @@ fn tokenize_rejects_unbalanced_quotes() {
 fn push_force_is_denied() {
     assert_denied("push --force origin feature/foo", "force push");
     assert_denied("push -f origin feature/foo", "force push");
-    assert_denied(
-        "push --force-with-lease origin feature/foo",
-        "force push",
-    );
+    assert_denied("push --force-with-lease origin feature/foo", "force push");
 }
 
 #[test]
