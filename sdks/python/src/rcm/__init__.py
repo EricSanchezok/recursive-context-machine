@@ -22,6 +22,7 @@ Usage:
 """
 
 from .client import RCMClient
+from .mcp import McpServer
 from .model import Model
 
-__all__ = ["RCMClient", "Model"]
+__all__ = ["RCMClient", "Model", "McpServer"]

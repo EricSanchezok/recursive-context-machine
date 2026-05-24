@@ -3,4 +3,5 @@ pub mod rcm {
 }
 
 pub mod manager;
+pub mod mcp;
 pub mod service;

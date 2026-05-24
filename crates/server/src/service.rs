@@ -435,6 +435,24 @@ impl Rcm for RcmService {
             resources.prompts.insert(name.clone(), text.clone());
         }
 
+        if !req.mcps.is_empty() {
+            let configs: Vec<_> = req
+                .mcps
+                .iter()
+                .map(crate::mcp::build_mcp_config)
+                .collect::<Result<_, _>>()?;
+            let registry = accelerator::mcp::McpRegistry::start(&configs)
+                .await
+                .map_err(|e| Status::internal(format!("mcp start failed: {}", e)))?;
+            for spec in &req.mcps {
+                if let Some(tools) = registry.tools_for(&spec.label) {
+                    for tool in tools {
+                        resources = resources.with_tool(tool);
+                    }
+                }
+            }
+        }
+
         let machine_id = utils::MachineId::new();
 
         let run = Run {
