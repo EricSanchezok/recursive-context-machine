@@ -383,6 +383,7 @@ impl Rcm for RcmService {
         run.done = Machine::apply(
             action,
             run.step,
+            mid.as_str(),
             &mut run.ctx,
             &mut run.env,
             &mut run.resources,

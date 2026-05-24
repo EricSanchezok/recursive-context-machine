@@ -13,7 +13,16 @@ async fn run_actions(
     let mut step = 0u64;
     for action in actions {
         step += 1;
-        let done = Machine::apply(action.clone(), step, ctx, env, resources, &mut inbox).await;
+        let done = Machine::apply(
+            action.clone(),
+            step,
+            "test",
+            ctx,
+            env,
+            resources,
+            &mut inbox,
+        )
+        .await;
         if done {
             break;
         }
@@ -186,6 +195,7 @@ async fn take_drains_inbox_into_context() {
     Machine::apply(
         Action::Take,
         1,
+        "test",
         &mut ctx,
         &mut env,
         &mut resources,
@@ -195,6 +205,7 @@ async fn take_drains_inbox_into_context() {
     Machine::apply(
         Action::Take,
         2,
+        "test",
         &mut ctx,
         &mut env,
         &mut resources,
