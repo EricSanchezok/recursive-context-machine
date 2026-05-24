@@ -111,9 +111,19 @@ async fn send(
     messages: &[Message],
     tools: &[ToolDefinition],
 ) -> Result<OneOrMany<AssistantContent>, Fragment> {
+    let initial_prompt = messages
+        .first()
+        .cloned()
+        .unwrap_or_else(|| Message::user("."));
+    let remaining_messages = if messages.len() > 1 {
+        messages[1..].to_vec()
+    } else {
+        Vec::new()
+    };
+
     let mut request = endpoint
-        .completion_request(Message::user(""))
-        .messages(messages.to_vec())
+        .completion_request(initial_prompt)
+        .messages(remaining_messages)
         .tools(tools.to_vec());
 
     if let Some(temp) = model.temperature {
