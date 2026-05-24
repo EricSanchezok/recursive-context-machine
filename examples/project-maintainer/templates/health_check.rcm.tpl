@@ -44,23 +44,36 @@ graph {
         tools = []
     }
 
-    flux analysis_merge {
+    flux issue_fetch_to_triage {
         channel = context
-        mode = append
+        mode = digest
+        arity = 1
+    }
+
+    flux pr_fetch_to_summary {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    flux analysis_to_report {
+        channel = context
+        mode = digest
         arity = 2
     }
 
-    issue_fetcher.context -> issue_triage.context
+    issue_fetcher.context -> issue_fetch_to_triage.slot(0)
+    issue_fetch_to_triage.out -> issue_triage.context
     issue_fetcher.done -> issue_triage.trigger
 
-    pr_fetcher.context -> pr_summary.context
+    pr_fetcher.context -> pr_fetch_to_summary.slot(0)
+    pr_fetch_to_summary.out -> pr_summary.context
     pr_fetcher.done -> pr_summary.trigger
 
-    issue_triage.context -> analysis_merge.slot(0)
-    pr_summary.context -> analysis_merge.slot(1)
-
+    issue_triage.context -> analysis_to_report.slot(0)
+    pr_summary.context -> analysis_to_report.slot(1)
     pr_summary.done -> health_report.trigger
-    analysis_merge.out -> health_report.context
+    analysis_to_report.out -> health_report.context
 
     health_report.done -> output.done
     health_report.context -> output.context
