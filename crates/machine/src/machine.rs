@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::context::Context;
 use crate::env::Environment;
 use crate::event::{content_kind, preview, role_name};
@@ -14,6 +16,7 @@ pub struct Machine {
     pub id: MachineId,
     pub name: Name,
     pub usages: Vec<Usage>,
+    pub counts: HashMap<&'static str, u64>,
 }
 
 impl Machine {
@@ -22,6 +25,7 @@ impl Machine {
             id: MachineId::from_raw(id.into()).unwrap_or_else(|_| MachineId::new()),
             name: Name::new(name).unwrap_or_else(|_| Name::from_static("rcm")),
             usages: Vec::new(),
+            counts: HashMap::new(),
         }
     }
 
@@ -34,6 +38,7 @@ impl Machine {
         resources: &mut Resources,
         inbox: &mut Inbox,
     ) -> bool {
+        *self.counts.entry(action.name()).or_default() += 1;
         let mid = self.id.to_string();
         if let Action::Halt = &action {
             hook!(
