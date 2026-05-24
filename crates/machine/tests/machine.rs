@@ -9,7 +9,7 @@ async fn run_actions(
     env: &mut Environment,
     resources: &mut machine::Resources,
 ) {
-    let mut machine = Machine::new("test");
+    let mut machine = Machine::new("test", "test-machine");
     let mut inbox = Inbox::new();
     let mut step = 0u64;
     for action in actions {
@@ -182,7 +182,7 @@ async fn take_drains_inbox_into_context() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
     let mut inbox = Inbox::new();
-    let mut machine = Machine::new("test");
+    let mut machine = Machine::new("test", "test-machine");
 
     inbox.push(Fragment::assistant("reply"));
     inbox.push(Fragment::tool_result("1", "5", None));

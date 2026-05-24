@@ -115,7 +115,7 @@ impl PrimitiveAccelerator {
         let purpose = Purpose::new(&state.purpose);
         let mut inbox = Inbox::new();
         let mut step = 0u64;
-        let mut machine = Machine::new("ephemeral");
+        let mut machine = Machine::new("ephemeral", "ephemeral");
         let policy = self.policy;
 
         hook!(event = "machine_start", purpose = %purpose.text);

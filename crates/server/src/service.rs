@@ -346,7 +346,7 @@ impl Rcm for RcmService {
         let machine_id = utils::MachineId::new();
 
         let run = Run {
-            machine: Machine::new(machine_id.as_str()),
+            machine: Machine::new(machine_id.as_str(), "rcm"),
             ctx: machine::Context::new(),
             env: accelerator::state::local(),
             resources,
