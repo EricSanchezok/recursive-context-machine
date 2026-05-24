@@ -51,28 +51,57 @@ graph {
         tools = ["shell", "fs", "find", "git"]
     }
 
-    flux scan_merge {
+    flux fetch_to_scan_issues {
         channel = context
-        mode = append
+        mode = digest
+        arity = 1
+    }
+
+    flux fetch_to_scan_prs {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    flux fetch_to_scan_code {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    flux scans_to_classify {
+        channel = context
+        mode = digest
         arity = 4
     }
 
-    fetch_thread.context -> scan_issues.context
+    flux classify_to_executor {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    fetch_thread.context -> fetch_to_scan_issues.slot(0)
+    fetch_to_scan_issues.out -> scan_issues.context
     fetch_thread.done -> scan_issues.trigger
-    fetch_thread.context -> scan_prs.context
+
+    fetch_thread.context -> fetch_to_scan_prs.slot(0)
+    fetch_to_scan_prs.out -> scan_prs.context
     fetch_thread.done -> scan_prs.trigger
-    fetch_thread.context -> scan_code.context
+
+    fetch_thread.context -> fetch_to_scan_code.slot(0)
+    fetch_to_scan_code.out -> scan_code.context
     fetch_thread.done -> scan_code.trigger
 
-    fetch_thread.context -> scan_merge.slot(0)
-    scan_issues.context -> scan_merge.slot(1)
-    scan_prs.context -> scan_merge.slot(2)
-    scan_code.context -> scan_merge.slot(3)
-
+    fetch_thread.context -> scans_to_classify.slot(0)
+    scan_issues.context -> scans_to_classify.slot(1)
+    scan_prs.context -> scans_to_classify.slot(2)
+    scan_code.context -> scans_to_classify.slot(3)
     scan_code.done -> classify_intent.trigger
-    scan_merge.out -> classify_intent.context
+    scans_to_classify.out -> classify_intent.context
 
-    classify_intent.context -> executor.context
+    classify_intent.context -> classify_to_executor.slot(0)
+    classify_to_executor.out -> executor.context
     classify_intent.done -> executor.trigger
 
     executor.done -> output.done

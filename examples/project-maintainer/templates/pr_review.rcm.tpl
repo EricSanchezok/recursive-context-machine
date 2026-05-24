@@ -30,10 +30,24 @@ graph {
         tools = ["shell"]
     }
 
-    fetch.context -> analyze.context
+    flux fetch_to_analyze {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    flux analyze_to_respond {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    fetch.context -> fetch_to_analyze.slot(0)
+    fetch_to_analyze.out -> analyze.context
     fetch.done -> analyze.trigger
 
-    analyze.context -> respond.context
+    analyze.context -> analyze_to_respond.slot(0)
+    analyze_to_respond.out -> respond.context
     analyze.done -> respond.trigger
 
     respond.done -> output.done

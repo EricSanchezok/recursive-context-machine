@@ -37,22 +37,35 @@ graph {
         tools = ["shell"]
     }
 
-    flux fetch_search_merge {
+    flux fetch_to_search {
         channel = context
-        mode = append
+        mode = digest
+        arity = 1
+    }
+
+    flux fetch_search_to_analyze {
+        channel = context
+        mode = digest
         arity = 2
     }
 
-    fetch.context -> search_dups.context
+    flux analyze_to_respond {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    fetch.context -> fetch_to_search.slot(0)
+    fetch_to_search.out -> search_dups.context
     fetch.done -> search_dups.trigger
 
-    fetch.context -> fetch_search_merge.slot(0)
-    search_dups.context -> fetch_search_merge.slot(1)
-
+    fetch.context -> fetch_search_to_analyze.slot(0)
+    search_dups.context -> fetch_search_to_analyze.slot(1)
     search_dups.done -> analyze.trigger
-    fetch_search_merge.out -> analyze.context
+    fetch_search_to_analyze.out -> analyze.context
 
-    analyze.context -> respond.context
+    analyze.context -> analyze_to_respond.slot(0)
+    analyze_to_respond.out -> respond.context
     analyze.done -> respond.trigger
 
     respond.done -> output.done
