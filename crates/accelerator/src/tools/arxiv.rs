@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use machine::{Environment, Tool, ToolResult};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use tracing::info;
 
