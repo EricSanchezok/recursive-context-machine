@@ -74,6 +74,7 @@ pub struct ModelDef {
     pub modalities_input: Vec<String>,
     pub modalities_output: Vec<String>,
     pub headers: HashMap<String, String>,
+    pub thinking: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
