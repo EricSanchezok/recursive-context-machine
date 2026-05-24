@@ -1,3 +1,4 @@
+pub mod dispatch;
 mod inventory;
 mod parse;
 mod run;
@@ -12,5 +13,6 @@ pub fn dispatch(cli: Cli) -> anyhow::Result<()> {
         Command::Run(args) => runtime.block_on(run::run(args)),
         Command::Parse(args) => runtime.block_on(parse::run(args)),
         Command::Inventory(args) => inventory::run(args),
+        Command::Dispatch(args) => dispatch::run(args),
     }
 }

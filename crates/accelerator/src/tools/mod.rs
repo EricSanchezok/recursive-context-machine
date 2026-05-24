@@ -3,6 +3,7 @@
 mod arxiv;
 mod find;
 mod fs;
+mod git;
 mod lsp;
 mod shell;
 mod wait;
@@ -10,6 +11,7 @@ mod wait;
 pub use arxiv::{ArxivDownloadTool, ArxivSearchTool};
 pub use find::FindTool;
 pub use fs::FsTool;
+pub use git::{GitTool, check_safety as check_git_safety, tokenize as tokenize_git};
 pub use lsp::LspTool;
 pub use shell::ShellTool;
 pub use wait::WaitTool;
@@ -33,6 +35,7 @@ pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
         std::sync::Arc::new(ArxivDownloadTool),
         std::sync::Arc::new(FindTool),
         std::sync::Arc::new(FsTool),
+        std::sync::Arc::new(GitTool),
         std::sync::Arc::new(LspTool),
         std::sync::Arc::new(ShellTool),
         std::sync::Arc::new(WaitTool),
