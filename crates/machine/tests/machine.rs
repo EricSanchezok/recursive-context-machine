@@ -261,3 +261,94 @@ fn inbox_drain_order_with_mixed_response() {
         machine::Content::ToolResult(_)
     ));
 }
+
+// ── Issue #43 panic → Result / Option ──
+
+#[test]
+fn use_model_nonexistent_returns_error() {
+    let mut res = common::test_resources();
+    let err = res.use_model("nonexistent").unwrap_err();
+    assert_eq!(err.to_string(), "model 'nonexistent' not registered");
+}
+
+#[test]
+fn enable_nonexistent_tool_returns_error() {
+    let mut res = common::test_resources();
+    let err = res.enable("nonexistent").unwrap_err();
+    assert_eq!(err.to_string(), "tool 'nonexistent' not registered");
+}
+
+#[tokio::test]
+async fn dispatch_model_nonexistent_pushes_hitch() {
+    let mut ctx = Context::new();
+    let mut env = Environment::new("/tmp");
+    let mut res = common::test_resources();
+    let mut inbox = Inbox::new();
+    let mut machine = Machine::new("test", "test");
+
+    machine
+        .apply(
+            Action::Model("nonexistent".to_string()),
+            1,
+            &mut ctx,
+            &mut env,
+            &mut res,
+            &mut inbox,
+        )
+        .await;
+
+    assert_eq!(inbox.len(), 1);
+    let frag = inbox.pop().unwrap();
+    assert!(matches!(frag.content, machine::Content::Hitch { .. }));
+    assert_eq!(frag.role, machine::Role::System);
+    if let machine::Content::Hitch { message, .. } = &frag.content {
+        assert!(message.contains("nonexistent"));
+    }
+}
+
+#[tokio::test]
+async fn dispatch_activate_nonexistent_pushes_hitch() {
+    let mut ctx = Context::new();
+    let mut env = Environment::new("/tmp");
+    let mut res = common::test_resources();
+    let mut inbox = Inbox::new();
+    let mut machine = Machine::new("test", "test");
+
+    machine
+        .apply(
+            Action::Activate("unknown".to_string()),
+            2,
+            &mut ctx,
+            &mut env,
+            &mut res,
+            &mut inbox,
+        )
+        .await;
+
+    assert_eq!(inbox.len(), 1);
+    let frag = inbox.pop().unwrap();
+    assert!(matches!(frag.content, machine::Content::Hitch { .. }));
+    assert_eq!(frag.role, machine::Role::System);
+    if let machine::Content::Hitch { message, .. } = &frag.content {
+        assert!(message.contains("unknown"));
+    }
+}
+
+#[tokio::test]
+async fn complete_no_active_model_returns_hitch() {
+    let mut ctx = Context::new();
+    ctx.append(Fragment::user("hello"));
+    let mut res = common::test_resources();
+    res.deactivate_model(); // remove active model
+
+    let (fragments, _usage) = machine::completion::complete(&ctx, &res).await;
+    assert_eq!(fragments.len(), 1);
+    assert_eq!(fragments[0].role, machine::Role::System);
+    assert!(matches!(
+        fragments[0].content,
+        machine::Content::Hitch { .. }
+    ));
+    if let machine::Content::Hitch { message, .. } = &fragments[0].content {
+        assert!(message.contains("no active model"));
+    }
+}

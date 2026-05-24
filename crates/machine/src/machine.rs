@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::context::Context;
 use crate::env::Environment;
 use crate::event::{content_kind, preview, role_name};
+use crate::fragment::{Fragment, Role};
 use crate::hook;
 use crate::inbox::Inbox;
 use crate::policy::Action;
@@ -40,12 +41,17 @@ impl Machine {
     ) -> bool {
         *self.counts.entry(action.name()).or_default() += 1;
         let mid = self.id.to_string();
+
         if let Action::Halt = &action {
+            let model_name = resources
+                .active_model()
+                .map(|m| m.name.as_str())
+                .unwrap_or("none");
             hook!(
                 event = "halt",
                 machine_id = mid,
                 step,
-                model = %resources.active_model().name,
+                model = %model_name,
                 messages = ctx.fragments().len(),
                 tools = resources.active_tools.len(),
             );
@@ -53,6 +59,7 @@ impl Machine {
             self.usages.push(usage);
             return false;
         }
+
         match action {
             Action::Append(frag) => {
                 let id = ctx.append(frag);
@@ -102,16 +109,27 @@ impl Machine {
                 hook!(event = "swapped", machine_id = mid, id1, id2, step);
             }
             Action::Model(name) => {
-                trace!(model = %name, "switch model");
-                resources.use_model(name);
+                if let Err(err) = resources.use_model(&name) {
+                    inbox.push(Fragment::hitch(
+                        err.to_string(),
+                        None,
+                        Role::System,
+                        None::<&str>,
+                    ));
+                }
             }
             Action::Activate(name) => {
-                trace!(tool = %name, "activate");
-                resources.enable(name);
+                if let Err(err) = resources.enable(&name) {
+                    inbox.push(Fragment::hitch(
+                        err.to_string(),
+                        None,
+                        Role::System,
+                        None::<&str>,
+                    ));
+                }
             }
             Action::Deactivate(name) => {
-                trace!(tool = %name, "deactivate");
-                resources.disable(name);
+                resources.disable(&name);
             }
             Action::Take => {
                 if let Some(frag) = inbox.pop() {

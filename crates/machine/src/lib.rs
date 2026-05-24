@@ -11,7 +11,7 @@
 //! | [`Policy`] | Owned by caller |
 //! | [`Machine`] | Pure interpreter — applies actions to the tape |
 
-pub(crate) mod completion;
+pub mod completion;
 pub mod context;
 pub mod env;
 pub mod event;
@@ -38,6 +38,6 @@ pub use machine::Machine;
 pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
 pub use policy::{Action, Phase, PhaseOutcome, Policy};
 pub use purpose::Purpose;
-pub use resources::Resources;
+pub use resources::{ModelNotRegistered, Resources, ToolNotRegistered};
 pub use tool::Tool;
 pub use usage::Usage;

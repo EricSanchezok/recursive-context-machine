@@ -283,6 +283,7 @@ impl Parser {
         let mut modalities_input = Vec::new();
         let mut modalities_output = Vec::new();
         let mut headers = std::collections::HashMap::new();
+        let mut thinking = false;
 
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
@@ -305,6 +306,12 @@ impl Parser {
                 match key.as_str() {
                     "protocol" => protocol = self.expect_string()?,
                     "endpoint" => endpoint = Some(self.expect_string()?),
+                    "thinking" => {
+                        let value = self.expect_string()?;
+                        thinking = value.parse().map_err(|_| {
+                            format!("thinking must be \"true\" or \"false\", got: {}", value)
+                        })?;
+                    }
                     other => return Err(format!("unknown model field: {}", other)),
                 }
             }
@@ -326,6 +333,7 @@ impl Parser {
             modalities_input,
             modalities_output,
             headers,
+            thinking,
         })
     }
 
