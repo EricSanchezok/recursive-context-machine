@@ -31,7 +31,8 @@ fn build_state(run: &Run) -> State {
         .map(|(k, v)| (k.to_string(), *v))
         .collect();
     State {
-        purpose: String::new(),
+        purpose: run.purpose.clone(),
+        machine_id: run.machine.id.to_string(),
         fragments: run.ctx.fragments().iter().map(fragment_to_proto).collect(),
         workdir: run.env.cwd.to_string_lossy().into_owned(),
         env_vars: run.env.vars.clone(),
@@ -397,6 +398,7 @@ impl Rcm for RcmService {
         let machine_id = utils::MachineId::new();
 
         let run = Run {
+            purpose: req.purpose,
             machine: Machine::new(machine_id.as_str(), "rcm"),
             ctx: machine::Context::new(),
             env: accelerator::state::local(),

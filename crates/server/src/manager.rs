@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use utils::MachineId;
 
 pub struct Run {
+    pub purpose: String,
     pub machine: Machine,
     pub ctx: Context,
     pub env: Environment,
