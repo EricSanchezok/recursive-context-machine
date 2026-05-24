@@ -269,3 +269,70 @@ fn parse_model_without_headers() {
     let file = rcm::parse(source).unwrap();
     assert!(file.models[0].headers.is_empty());
 }
+
+#[test]
+fn parse_model_with_thinking_true() {
+    let source = r#"
+        name = "kimi-thinking"
+        model kimi {
+            protocol = "openai"
+            credentials = { env = "KIMI_KEY" }
+            limit = { context = "262144", output = "32768" }
+            modalities = { input = ["text"], output = ["text"] }
+            thinking = "true"
+        }
+        accelerator {
+            models = ["kimi"]
+        }
+    "#;
+
+    let file = rcm::parse(source).unwrap();
+    assert!(
+        file.models[0].thinking,
+        "thinking = \"true\" must be parsed as bool true"
+    );
+}
+
+#[test]
+fn parse_model_without_thinking_defaults_to_false() {
+    let source = r#"
+        name = "basic"
+        model gpt {
+            protocol = "openai"
+            credentials = { env = "OPENAI_KEY" }
+            limit = { context = "100000", output = "4096" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            models = ["gpt"]
+        }
+    "#;
+
+    let file = rcm::parse(source).unwrap();
+    assert!(
+        !file.models[0].thinking,
+        "models without `thinking =` default to false (no reasoning_content pollution)"
+    );
+}
+
+#[test]
+fn parse_model_thinking_invalid_value_errors() {
+    let source = r#"
+        name = "bad"
+        model x {
+            protocol = "openai"
+            credentials = { env = "K" }
+            limit = { context = "1", output = "1" }
+            modalities = { input = ["text"], output = ["text"] }
+            thinking = "maybe"
+        }
+        accelerator { models = ["x"] }
+    "#;
+
+    let error = rcm::parse(source).unwrap_err();
+    assert!(
+        error.contains("thinking"),
+        "error must mention 'thinking', got: {}",
+        error
+    );
+}
