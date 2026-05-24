@@ -22,5 +22,6 @@ Usage:
 """
 
 from .client import RCMClient
+from .model import Model
 
-__all__ = ["RCMClient"]
+__all__ = ["RCMClient", "Model"]
