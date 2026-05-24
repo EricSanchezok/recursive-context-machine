@@ -6,13 +6,13 @@ use tracing_subscriber::layer::Context;
 use tracing_subscriber::registry::LookupSpan;
 
 #[derive(Debug, Clone)]
-pub(crate) struct HookEvent {
-    pub(crate) source: Option<ComponentMeta>,
-    pub(crate) kind: HookKind,
+pub struct HookEvent {
+    pub source: Option<ComponentMeta>,
+    pub kind: HookKind,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum HookKind {
+pub enum HookKind {
     Graph(GraphEvent),
     Component(ComponentEvent),
     Machine(MachineEvent),
@@ -23,7 +23,7 @@ pub(crate) enum HookKind {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum GraphEvent {
+pub enum GraphEvent {
     Start {
         graph: String,
     },
@@ -43,36 +43,36 @@ pub(crate) enum GraphEvent {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum ComponentEvent {
+pub enum ComponentEvent {
     Start(ComponentMeta),
     Done(ComponentMeta),
     Skipped(ComponentMeta),
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ComponentMeta {
-    pub(crate) graph: String,
-    pub(crate) name: String,
-    pub(crate) index: usize,
-    pub(crate) kind: String,
-    pub(crate) frontier: Option<u64>,
+pub struct ComponentMeta {
+    pub graph: String,
+    pub name: String,
+    pub index: usize,
+    pub kind: String,
+    pub frontier: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum MachineEvent {
+pub enum MachineEvent {
     Start,
     Halt { step: u64 },
     Done,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum CompletionEvent {
+pub enum CompletionEvent {
     Start,
     End { fragments: usize },
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum ToolEvent {
+pub enum ToolEvent {
     Call {
         tool: String,
         arguments: String,
@@ -90,7 +90,7 @@ pub(crate) enum ToolEvent {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum FragmentEvent {
+pub enum FragmentEvent {
     Appended(FragmentMeta),
     Taken(FragmentMeta),
     Inserted(FragmentMeta),
@@ -100,15 +100,15 @@ pub(crate) enum FragmentEvent {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FragmentMeta {
-    pub(crate) id: u64,
-    pub(crate) role: String,
-    pub(crate) kind: String,
-    pub(crate) preview: String,
+pub struct FragmentMeta {
+    pub id: u64,
+    pub role: String,
+    pub kind: String,
+    pub preview: String,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum ResourceEvent {
+pub enum ResourceEvent {
     Model { name: String },
     Activate { name: String },
     Deactivate { name: String },
