@@ -47,3 +47,6 @@ research/
 
 # Datasets (downloaded benchmarks, too large for git)
 data/
+
+# Maintainer dispatcher cache — rendered .rcm files are runtime artifacts
+.rcm-cache/
