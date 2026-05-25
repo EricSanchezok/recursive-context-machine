@@ -1,5 +1,5 @@
+use machine::Inbox;
 use machine::hook;
-use machine::{Action, Inbox};
 use machine::{Machine, Purpose};
 use std::future::Future;
 use std::pin::Pin;
