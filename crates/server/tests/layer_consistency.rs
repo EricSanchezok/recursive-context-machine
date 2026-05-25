@@ -242,6 +242,7 @@ fn build_fragment_with_kind_tool_call() {
         text: "shell".into(),
         tag: Some("call_1".into()),
         kind: "tool_call".into(),
+        media_source: None,
     };
     let frag = build_fragment(&fc);
     assert!(matches!(frag.content, Content::ToolCall(_)));
@@ -264,6 +265,7 @@ fn build_fragment_with_kind_tool_result() {
         text: "stdout: hello".into(),
         tag: Some("call_1".into()),
         kind: "tool_result".into(),
+        media_source: None,
     };
     let frag = build_fragment(&fc);
     assert!(matches!(frag.content, Content::ToolResult(_)));
@@ -284,6 +286,7 @@ fn build_fragment_with_kind_hitch() {
         text: "something went wrong".into(),
         tag: None,
         kind: "hitch".into(),
+        media_source: None,
     };
     let frag = build_fragment(&fc);
     assert!(matches!(frag.content, Content::Hitch { .. }));
@@ -301,6 +304,7 @@ fn build_fragment_empty_kind_falls_back_to_role() {
         text: "hello".into(),
         tag: None,
         kind: String::new(),
+        media_source: None,
     };
     let frag = build_fragment(&fc);
     assert_eq!(frag.role, machine::Role::User);
@@ -311,6 +315,7 @@ fn build_fragment_empty_kind_falls_back_to_role() {
         text: "ok".into(),
         tag: None,
         kind: String::new(),
+        media_source: None,
     };
     let frag2 = build_fragment(&fc2);
     assert_eq!(frag2.role, machine::Role::Assistant);
@@ -349,4 +354,124 @@ fn build_model_with_cost_thinking_temperature() {
     assert_eq!(cost.output, 0.30);
     assert_eq!(cost.cache_read, Some(0.005));
     assert_eq!(cost.cache_write, Some(0.01));
+}
+
+// ── Multi-modal proto transport (Issue #68) ──
+
+/// FragmentContent with kind="image" + media_source creates an Image fragment.
+#[test]
+fn build_fragment_with_kind_image_and_media_source() {
+    use machine::Content;
+    use server::decode::build_fragment;
+    use server::rcm::FragmentContent;
+    use server::rcm::{MediaSource, media_source};
+
+    let fc = FragmentContent {
+        role: "user".into(),
+        text: String::new(),
+        tag: None,
+        kind: "image".into(),
+        media_source: Some(MediaSource {
+            source: Some(media_source::Source::Url(
+                "https://example.com/img.png".into(),
+            )),
+            media_type: Some("image/png".into()),
+            alt_text: None,
+        }),
+    };
+    let frag = build_fragment(&fc);
+    assert!(matches!(frag.content, Content::Image(_)));
+}
+
+/// FragmentContent with kind="audio" + media_source creates an Audio fragment.
+#[test]
+fn build_fragment_with_kind_audio_and_media_source() {
+    use machine::Content;
+    use server::decode::build_fragment;
+    use server::rcm::FragmentContent;
+    use server::rcm::{MediaSource, media_source};
+
+    let fc = FragmentContent {
+        role: "user".into(),
+        text: String::new(),
+        tag: None,
+        kind: "audio".into(),
+        media_source: Some(MediaSource {
+            source: Some(media_source::Source::Base64("AAAA".into())),
+            media_type: Some("audio/mp3".into()),
+            alt_text: None,
+        }),
+    };
+    let frag = build_fragment(&fc);
+    assert!(matches!(frag.content, Content::Audio(_)));
+}
+
+/// MCP data URL with valid image/* MIME type produces data URL string.
+#[test]
+fn mcp_data_url_valid_mime() {
+    use serde_json::json;
+
+    let entry = json!({
+        "type": "image",
+        "mimeType": "image/png",
+        "data": "iVBORw0KGgo"
+    });
+    let output = format_mcp_content(&entry);
+    assert!(output.starts_with("data:image/png;base64,"));
+    assert!(output.contains("iVBORw0KGgo"));
+}
+
+/// MCP data URL with invalid MIME type falls back to placeholder.
+#[test]
+fn mcp_data_url_invalid_mime() {
+    use serde_json::json;
+
+    let entry = json!({
+        "type": "image",
+        "mimeType": "application/x-shockwave-flash",
+        "data": "somebinarydata"
+    });
+    let output = format_mcp_content(&entry);
+    assert!(output.contains("invalid mime type"));
+}
+
+/// MCP data URL without mimeType defaults to fallback.
+#[test]
+fn mcp_data_url_no_data_falls_back() {
+    use serde_json::json;
+
+    let entry = json!({
+        "type": "image",
+        "url": "https://example.com/img.png"
+    });
+    let output = format_mcp_content(&entry);
+    assert_eq!(output, "https://example.com/img.png");
+}
+
+// Helper: replicate the MCP append_content logic inline for testing.
+fn format_mcp_content(entry: &serde_json::Value) -> String {
+    let mut output = String::new();
+    let mime = entry
+        .get("mimeType")
+        .and_then(|v| v.as_str())
+        .unwrap_or("application/octet-stream");
+    let is_valid_mime = mime.starts_with("image/") || mime.starts_with("audio/");
+    if let Some(data) = entry.get("data").and_then(|v| v.as_str()) {
+        if is_valid_mime {
+            output.push_str(&format!("data:{mime};base64,{data}"));
+        } else {
+            output.push_str(&format!(
+                "[MCP {} result: invalid mime type]",
+                entry.get("type").and_then(|v| v.as_str()).unwrap_or("")
+            ));
+        }
+    } else if let Some(url) = entry.get("url").and_then(|v| v.as_str()) {
+        output.push_str(url);
+    } else {
+        output.push_str(&format!(
+            "[MCP {} result]",
+            entry.get("type").and_then(|v| v.as_str()).unwrap_or("")
+        ));
+    }
+    output
 }

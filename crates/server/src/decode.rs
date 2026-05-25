@@ -30,6 +30,37 @@ pub fn build_fragment(content: &FragmentContent) -> Fragment {
     if let Some(tag) = &content.tag {
         fragment.tag = tag.clone();
     }
+    if let Some(media_source) = &content.media_source {
+        if let Some(source) = &media_source.source {
+            let data_source = match source {
+                crate::rcm::media_source::Source::Url(url) => {
+                    machine::fragment::DataSource::Url(url.clone())
+                }
+                crate::rcm::media_source::Source::Base64(data) => {
+                    machine::fragment::DataSource::Base64(data.clone())
+                }
+            };
+            match content.kind.as_str() {
+                "image" => {
+                    fragment =
+                        machine::Fragment::image(data_source, media_source.media_type.clone())
+                }
+                "audio" => {
+                    fragment =
+                        machine::Fragment::audio(data_source, media_source.media_type.clone())
+                }
+                "video" => {
+                    fragment =
+                        machine::Fragment::video(data_source, media_source.media_type.clone())
+                }
+                "document" => {
+                    fragment =
+                        machine::Fragment::document(data_source, media_source.media_type.clone())
+                }
+                _ => {}
+            }
+        }
+    }
     fragment
 }
 
