@@ -27,7 +27,44 @@ pub fn build_state(run: &Run) -> rcm::State {
         inbox_peek: run.inbox.peek().map(fragment_to_proto),
         counts,
         usages: run.machine.usages.iter().map(usage_to_proto).collect(),
+        tool_profiles: build_tool_profiles(run),
+        model_profiles: build_model_profiles(run),
+        platform: run.env.platform.clone(),
+        root: run
+            .env
+            .root
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned()),
     }
+}
+
+fn build_tool_profiles(run: &Run) -> Vec<rcm::ToolProfile> {
+    run.resources
+        .tools
+        .iter()
+        .map(|(name, tool)| rcm::ToolProfile {
+            name: name.clone(),
+            description: tool.description().to_string(),
+            active: run.resources.active_tools.contains(name),
+        })
+        .collect()
+}
+
+fn build_model_profiles(run: &Run) -> Vec<rcm::ModelProfile> {
+    run.resources
+        .models
+        .iter()
+        .map(|(name, model)| rcm::ModelProfile {
+            name: name.clone(),
+            protocol: format!("{:?}", model.protocol),
+            limit: model.limit.as_ref().map(|limit| rcm::LimitSpec {
+                context: limit.context as u64,
+                input: limit.input.map(|i| i as u64),
+                output: limit.output as u64,
+            }),
+            active: run.resources.active_model == *name,
+        })
+        .collect()
 }
 
 fn usage_to_proto(usage: &Usage) -> rcm::Usage {
@@ -58,6 +95,7 @@ fn fragment_to_proto(fragment: &Fragment) -> rcm::Fragment {
         kind: kind.into(),
         text_preview: clip(fragment),
         tag: Some(fragment.tag.clone()),
+        content_text: Some(fragment.content_as_text()),
     }
 }
 
