@@ -2,6 +2,7 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use rig::OneOrMany;
 use rig::client::CompletionClient;
 use rig::completion::message::Reasoning;
+use rig::completion::message::UserContent;
 use rig::completion::{
     AssistantContent, CompletionError, CompletionModel, Message, ToolDefinition,
 };
@@ -191,6 +192,7 @@ async fn send(
 }
 
 fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
+    use rig::completion::message::MimeType;
     let mut fragments = Vec::new();
     for content in choice {
         match content {
@@ -204,7 +206,28 @@ fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragmen
                     tc.function.arguments.clone(),
                 ));
             }
-            _ => {}
+            AssistantContent::Image(content_image) => {
+                let source = match &content_image.data {
+                    rig::completion::message::DocumentSourceKind::Url(url) => {
+                        crate::fragment::DataSource::Url(url.clone())
+                    }
+                    rig::completion::message::DocumentSourceKind::Base64(data) => {
+                        crate::fragment::DataSource::Base64(data.clone())
+                    }
+                    _ => {
+                        warn!(
+                            "unrecognized DocumentSourceKind in Image, falling back to empty data"
+                        );
+                        crate::fragment::DataSource::String(String::new())
+                    }
+                };
+                let media_type = content_image
+                    .media_type
+                    .as_ref()
+                    .map(|m| m.to_mime_type().to_string());
+                fragments.push(Fragment::image(source, media_type));
+            }
+            _ => {} // non-exhaustive: other AssistantContent variants
         }
     }
     fragments
@@ -234,14 +257,82 @@ where
     builder
 }
 
+/// Resolve a `fragment::DataSource` into a rig `UserContent`, converting
+/// `Raw` bytes to Base64.
+fn encode_user_content(
+    kind: &str,
+    source: &crate::fragment::DataSource,
+    media_type: &Option<String>,
+) -> UserContent {
+    use crate::fragment::DataSource;
+    use base64::Engine as _;
+    use rig::completion::message::MimeType;
+    use rig::completion::message::{AudioMediaType, DocumentMediaType, ImageMediaType};
+
+    let image_mime = media_type
+        .as_deref()
+        .and_then(ImageMediaType::from_mime_type);
+    let audio_mime = media_type
+        .as_deref()
+        .and_then(AudioMediaType::from_mime_type);
+    let doc_mime = media_type
+        .as_deref()
+        .and_then(DocumentMediaType::from_mime_type);
+
+    match source {
+        DataSource::Url(url) => UserContent::image_url(url.clone(), image_mime, None),
+        DataSource::Base64(data) | DataSource::String(data) => match kind {
+            "audio" => UserContent::audio(data.clone(), audio_mime),
+            "document" => UserContent::document(data.clone(), doc_mime),
+            _ => UserContent::image_base64(data.clone(), image_mime, None),
+        },
+        DataSource::Raw(bytes) => {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+            match kind {
+                "audio" => UserContent::audio(b64, audio_mime),
+                _ => UserContent::image_base64(b64, image_mime, None),
+            }
+        }
+    }
+}
+
 /// Encode a context fragment into a rig message.
 pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
     match frag.role {
-        Role::System => match &frag.content {
-            Content::Hitch { message, .. } => Some(Message::system(message)),
-            _ => frag.as_text().map(Message::system),
+        Role::System => {
+            if let Content::Hitch { message, .. } = &frag.content {
+                Some(Message::system(message))
+            } else {
+                frag.as_text().map(Message::system)
+            }
+        }
+        Role::User => match &frag.content {
+            Content::Image(img) => Some(Message::User {
+                content: OneOrMany::one(encode_user_content("image", &img.source, &img.media_type)),
+            }),
+            Content::Audio(audio) => Some(Message::User {
+                content: OneOrMany::one(encode_user_content(
+                    "audio",
+                    &audio.source,
+                    &audio.media_type,
+                )),
+            }),
+            Content::Video(video) => Some(Message::User {
+                content: OneOrMany::one(encode_user_content(
+                    "video",
+                    &video.source,
+                    &video.media_type,
+                )),
+            }),
+            Content::Document(document) => Some(Message::User {
+                content: OneOrMany::one(encode_user_content(
+                    "document",
+                    &document.source,
+                    &document.media_type,
+                )),
+            }),
+            _ => frag.as_text().map(Message::user),
         },
-        Role::User => frag.as_text().map(Message::user),
         Role::Assistant => {
             if let Content::ToolCall(tc) = &frag.content {
                 let mut content = OneOrMany::one(AssistantContent::tool_call(
@@ -253,12 +344,10 @@ pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
                     content.push(AssistantContent::Reasoning(Reasoning::new(".")));
                 }
                 Some(Message::Assistant { id: None, content })
+            } else if let Content::Hitch { message, .. } = &frag.content {
+                Some(Message::assistant(message))
             } else {
-                match &frag.content {
-                    Content::Hitch { message, .. } => Some(Message::assistant(message)),
-                    Content::Text(t) => Some(Message::assistant(&t.text)),
-                    _ => None,
-                }
+                frag.as_text().map(Message::assistant)
             }
         }
         Role::Tool => {

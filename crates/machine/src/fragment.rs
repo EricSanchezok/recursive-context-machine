@@ -198,6 +198,44 @@ impl Fragment {
         }
     }
 
+    // ── Multi-modal constructors (P2) ──
+
+    pub fn image(source: DataSource, media_type: Option<String>) -> Self {
+        Self {
+            id: 0,
+            role: Role::User,
+            tag: "image".into(),
+            content: Content::Image(Image { source, media_type }),
+        }
+    }
+
+    pub fn audio(source: DataSource, media_type: Option<String>) -> Self {
+        Self {
+            id: 0,
+            role: Role::User,
+            tag: "audio".into(),
+            content: Content::Audio(Audio { source, media_type }),
+        }
+    }
+
+    pub fn video(source: DataSource, media_type: Option<String>) -> Self {
+        Self {
+            id: 0,
+            role: Role::User,
+            tag: "video".into(),
+            content: Content::Video(Video { source, media_type }),
+        }
+    }
+
+    pub fn document(source: DataSource, media_type: Option<String>) -> Self {
+        Self {
+            id: 0,
+            role: Role::User,
+            tag: "document".into(),
+            content: Content::Document(Document { source, media_type }),
+        }
+    }
+
     /// Assign a custom tag.
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.tag = tag.into();
