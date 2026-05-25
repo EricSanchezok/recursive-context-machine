@@ -97,8 +97,32 @@ fn append_content(output: &mut String, entry: &Value) {
                 .and_then(|value| value.as_str())
                 .unwrap_or(""),
         ),
-        Some("image") => output.push_str("[MCP image result]"),
-        Some("audio") => output.push_str("[MCP audio result]"),
+        Some("image") | Some("audio") => {
+            // Emit as data URL when base64 data is available.
+            let mime = entry
+                .get("mimeType")
+                .and_then(|v| v.as_str())
+                .unwrap_or("application/octet-stream");
+            // Only allow image/* and audio/* MIME types to prevent injection.
+            let is_valid_mime = mime.starts_with("image/") || mime.starts_with("audio/");
+            if let Some(data) = entry.get("data").and_then(|v| v.as_str()) {
+                if is_valid_mime {
+                    output.push_str(&format!("data:{mime};base64,{data}"));
+                } else {
+                    output.push_str(&format!(
+                        "[MCP {} result: invalid mime type]",
+                        entry.get("type").and_then(|v| v.as_str()).unwrap_or("")
+                    ));
+                }
+            } else if let Some(url) = entry.get("url").and_then(|v| v.as_str()) {
+                output.push_str(url);
+            } else {
+                output.push_str(&format!(
+                    "[MCP {} result]",
+                    entry.get("type").and_then(|v| v.as_str()).unwrap_or("")
+                ));
+            }
+        }
         Some("resource_link") => {
             let uri = entry
                 .get("uri")
