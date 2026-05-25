@@ -78,6 +78,27 @@ fn usage_to_proto(usage: &Usage) -> rcm::Usage {
     }
 }
 
+fn media_source_from_content(content: &machine::Content) -> Option<rcm::MediaSource> {
+    use machine::fragment::DataSource;
+    let source = match content {
+        Content::Image(img) => &img.source,
+        Content::Audio(a) => &a.source,
+        Content::Video(v) => &v.source,
+        Content::Document(d) => &d.source,
+        _ => return None,
+    };
+    let source = match source {
+        DataSource::Url(url) => rcm::media_source::Source::Url(url.clone()),
+        DataSource::Base64(data) => rcm::media_source::Source::Base64(data.clone()),
+        _ => return None,
+    };
+    Some(rcm::MediaSource {
+        source: Some(source),
+        media_type: None,
+        alt_text: None,
+    })
+}
+
 fn fragment_to_proto(fragment: &Fragment) -> rcm::Fragment {
     let kind = match &fragment.content {
         Content::Text(_) => "text",
@@ -96,6 +117,7 @@ fn fragment_to_proto(fragment: &Fragment) -> rcm::Fragment {
         text_preview: clip(fragment),
         tag: Some(fragment.tag.clone()),
         content_text: Some(fragment.content_as_text()),
+        media_source: media_source_from_content(&fragment.content),
     }
 }
 
