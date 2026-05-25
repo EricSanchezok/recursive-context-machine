@@ -220,14 +220,13 @@ impl Policy for Captain {
                 return Action::Take;
             }
 
-            if !self
-                .first_call
-                .swap(true, std::sync::atomic::Ordering::Relaxed)
-            {
-                // First real Halt — inject env and go
+            if !self.first_call.load(std::sync::atomic::Ordering::Relaxed) {
+                // First real call — inject env and then Halt.
                 if let Some(action) = self.env_action(ctx, env) {
                     return action;
                 }
+                self.first_call
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 trace!("decide: first call, halting");
                 return Action::Halt;
             }
