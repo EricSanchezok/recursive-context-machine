@@ -74,52 +74,11 @@ pub const ACTION_VERBS: &[&str] = &[
     "Done",
 ];
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum PhaseOutcome {
-    Action(Action),
-    Done,
-}
-
-pub trait Phase: Send + Sync {
-    fn clone_box(&self) -> Box<dyn Phase>;
-    fn name(&self) -> &str;
-
-    fn decide(
-        &self,
-        purpose: &Purpose,
-        ctx: &Context,
-        env: &Environment,
-        resources: &Resources,
-    ) -> PhaseOutcome;
-}
-
-impl Clone for Box<dyn Phase> {
-    fn clone(&self) -> Self {
-        self.clone_box()
-    }
-}
-
 pub trait Policy: Send + Sync {
     fn clone_box(&self) -> Box<dyn Policy>;
 
     fn name(&self) -> &str {
         "policy"
-    }
-
-    fn pre(&self) -> Vec<Box<dyn Phase>> {
-        Vec::new()
-    }
-
-    fn post(&self) -> Vec<Box<dyn Phase>> {
-        Vec::new()
-    }
-
-    fn pre_halt(&self) -> Vec<Box<dyn Phase>> {
-        Vec::new()
-    }
-
-    fn post_halt(&self) -> Vec<Box<dyn Phase>> {
-        Vec::new()
     }
 
     fn decide<'a>(
