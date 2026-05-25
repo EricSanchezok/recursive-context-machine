@@ -12,6 +12,7 @@ serde_json = { workspace = true }
 rig = { workspace = true }
 http = "1"
 tracing = { workspace = true }
+base64 = "0.22"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
