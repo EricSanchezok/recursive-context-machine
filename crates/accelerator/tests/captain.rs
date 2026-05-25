@@ -1,39 +1,13 @@
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use accelerator::{Accelerator, Captain, State};
 use machine::{
-    Action, Context, Environment, Inbox, Model, Phase, Policy, Purpose, Resources, Tool, ToolResult,
+    Action, Context, Environment, Inbox, Model, Policy, Purpose, Resources, Tool, ToolResult,
 };
 use serde_json::json;
 
-#[derive(Clone)]
-struct CaptainSetupOnly;
-
 struct NamedTool {
     name: &'static str,
-}
-
-impl Policy for CaptainSetupOnly {
-    fn clone_box(&self) -> Box<dyn Policy> {
-        Box::new(self.clone())
-    }
-
-    fn pre(&self) -> Vec<Box<dyn Phase>> {
-        Captain::new().pre()
-    }
-
-    fn decide<'a>(
-        &'a self,
-        _purpose: &'a Purpose,
-        _ctx: &'a Context,
-        _env: &'a Environment,
-        _resources: &'a Resources,
-        _inbox: &'a Inbox,
-    ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
-        Box::pin(async { Action::Done })
-    }
 }
 
 impl Tool for NamedTool {
@@ -53,7 +27,8 @@ impl Tool for NamedTool {
         &'a self,
         _args: serde_json::Value,
         _env: &'a Environment,
-    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ToolResult, String>> + Send + 'a>>
+    {
         Box::pin(async {
             Ok(ToolResult {
                 call_id: String::new(),
@@ -92,10 +67,17 @@ async fn captain_prepares_prompt_first_model_and_all_tools() {
         res: resources,
         ..State::default()
     };
-    let accelerator = Accelerator::primitive(state, Box::new(CaptainSetupOnly), "captain-test");
+
+    // Run through the full Captain policy — setup steps run inline inside
+    // decide(). The policy emits Done when the context has no pending items.
+    let accelerator = Accelerator::primitive(state, Box::new(Captain::new()), "captain-test");
 
     let output = accelerator.run_with(State::default()).await;
 
+    // After setup completes and decide emits Done:
+    // - The first available model should be activated
+    // - All tools should be activated
+    // - The captain prompt should be in context
     assert_eq!(output.res.active_model, "fast");
     assert_eq!(output.res.active_tools.len(), 2);
     assert!(output.res.active_tools.contains("read"));
