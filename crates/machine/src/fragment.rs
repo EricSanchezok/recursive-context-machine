@@ -211,4 +211,27 @@ impl Fragment {
             _ => None,
         }
     }
+
+    /// Full text content suitable for external consumption (embedding, logging).
+    ///
+    /// Returns the complete text content for all Fragment types:
+    /// - Text/ToolResult/Hitch: the actual text content
+    /// - ToolCall: `tool_call: name(arguments)`
+    /// - Multi-modal (Image, Audio, Video, Document): placeholder tags like
+    ///   `"<image>"`, `"<audio>"`. These are **not** suitable for direct
+    ///   embedding — downstream consumers (RL observations, prompt builders)
+    ///   should replace placeholders with actual content or metadata from
+    ///   the Content variant as needed.
+    pub fn content_as_text(&self) -> String {
+        match &self.content {
+            Content::Text(t) => t.text.clone(),
+            Content::ToolCall(tc) => format!("tool_call: {}({})", tc.name, tc.arguments),
+            Content::ToolResult(tr) => tr.content.clone(),
+            Content::Hitch { message, .. } => message.clone(),
+            Content::Image(_) => "<image>".into(),
+            Content::Audio(_) => "<audio>".into(),
+            Content::Video(_) => "<video>".into(),
+            Content::Document(_) => "<document>".into(),
+        }
+    }
 }

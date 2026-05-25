@@ -6834,6 +6834,7 @@ dependencies = [
  "accelerator",
  "machine",
  "prost",
+ "serde_json",
  "tokio",
  "tonic",
  "tonic-build",

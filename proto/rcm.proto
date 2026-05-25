@@ -29,6 +29,16 @@ message ModelSpec {
   repeated string modalities_output = 7;
   map<string, string> headers = 8;
   optional uint64 timeout = 9;
+  optional CostSpec cost = 10;
+  bool thinking = 11;
+  optional double temperature = 12;
+}
+
+message CostSpec {
+  double input = 1;
+  double output = 2;
+  optional double cache_read = 3;
+  optional double cache_write = 4;
 }
 
 message CredentialSpec {
@@ -120,6 +130,7 @@ message FragmentContent {
   string role = 1;
   string text = 2;
   optional string tag = 3;
+  string kind = 4;
 }
 
 // ── ActionSpace ─────────────────────────────────────────
@@ -151,6 +162,10 @@ message State {
   optional Fragment inbox_peek = 12;
   map<string, uint64> counts = 13;
   repeated Usage usages = 14;
+  repeated ToolProfile tool_profiles = 15;
+  repeated ModelProfile model_profiles = 16;
+  string platform = 17;
+  optional string root = 18;
 }
 
 message Usage {
@@ -168,4 +183,18 @@ message Fragment {
   string kind = 3;
   string text_preview = 4;
   optional string tag = 5;
+  optional string content_text = 6;
+}
+
+message ToolProfile {
+  string name = 1;
+  string description = 2;
+  bool active = 3;
+}
+
+message ModelProfile {
+  string name = 1;
+  string protocol = 2;
+  optional LimitSpec limit = 3;
+  bool active = 4;
 }

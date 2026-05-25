@@ -36,7 +36,7 @@ pub use fragment::{
 pub use inbox::Inbox;
 pub use machine::Machine;
 pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
-pub use policy::{Action, Phase, PhaseOutcome, Policy};
+pub use policy::{ACTION_VERBS, Action, Phase, PhaseOutcome, Policy};
 pub use purpose::Purpose;
 pub use resources::{ModelNotRegistered, Resources, ToolNotRegistered};
 pub use tool::Tool;
