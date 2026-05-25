@@ -68,9 +68,7 @@ impl Captain {
         resources: &Resources,
     ) -> Option<Action> {
         loop {
-            let step = self
-                .setup
-                .fetch_add(0, std::sync::atomic::Ordering::Relaxed);
+            let step = self.setup.load(std::sync::atomic::Ordering::Relaxed);
             match step {
                 // Step 0: Bootstrap — inject/capture system prompt (tag="agent")
                 0 => {

@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use accelerator::{Accelerator, Captain, State};
-use machine::{
-    Action, Context, Environment, Inbox, Model, Policy, Purpose, Resources, Tool, ToolResult,
-};
+use machine::{Environment, Model, Resources, Tool, ToolResult};
 use serde_json::json;
 
 struct NamedTool {
