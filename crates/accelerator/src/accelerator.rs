@@ -13,7 +13,6 @@ pub struct Accelerator {
     id: AcceleratorId,
     pub name: Name,
     body: AcceleratorBody,
-    purpose_override: Option<String>,
 }
 
 impl Accelerator {
@@ -26,7 +25,6 @@ impl Accelerator {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
             body: AcceleratorBody::Primitive(PrimitiveAccelerator { state, policy }),
-            purpose_override: None,
         }
     }
 
@@ -40,7 +38,6 @@ impl Accelerator {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
             body: AcceleratorBody::Composite(graph),
-            purpose_override: None,
         }
     }
 
@@ -48,14 +45,9 @@ impl Accelerator {
         &self.id
     }
 
-    pub fn set_purpose_override(&mut self, purpose: String) {
-        self.purpose_override = Some(purpose);
-    }
-
-    pub fn run_with(mut self, input: State) -> Pin<Box<dyn Future<Output = State> + Send>> {
-        let purpose_override = self.purpose_override.take();
+    pub fn run_with(self, input: State) -> Pin<Box<dyn Future<Output = State> + Send>> {
         Box::pin(async move {
-            let input = self.merge_input(input, purpose_override);
+            let input = self.merge_input(input);
             match self.body {
                 AcceleratorBody::Primitive(primitive) => primitive.fire(input).await,
                 AcceleratorBody::Composite(graph) => graph.run(input).await,
@@ -70,7 +62,7 @@ impl Accelerator {
         }
     }
 
-    fn merge_input(&self, input: State, purpose_override: Option<String>) -> State {
+    fn merge_input(&self, input: State) -> State {
         let mut state = input;
         if let AcceleratorBody::Primitive(primitive) = &self.body {
             let base = &primitive.state;
@@ -89,9 +81,6 @@ impl Accelerator {
             state.res.prompts.clone_from(&base.res.prompts);
             state.res.active_model.clone_from(&base.res.active_model);
             state.res.active_tools.clone_from(&base.res.active_tools);
-        }
-        if let Some(purpose) = purpose_override {
-            state.purpose = purpose;
         }
         state
     }

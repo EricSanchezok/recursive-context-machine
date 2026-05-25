@@ -130,16 +130,10 @@ impl Compiler {
                         build_state(catalog, models, mcp_scope, primitive, &self.root).await?;
                     Accelerator::primitive(state, policy, accelerator_def.id.as_str())
                 }
-                AcceleratorSourceDef::Import { alias, overrides } => {
-                    let mut accelerator = imports
-                        .get(alias)
-                        .ok_or_else(|| format!("unknown accelerator import: {}", alias))?
-                        .clone();
-                    if let Some(purpose) = &overrides.purpose {
-                        accelerator.set_purpose_override(purpose.clone());
-                    }
-                    accelerator
-                }
+                AcceleratorSourceDef::Import { alias, .. } => imports
+                    .get(alias)
+                    .ok_or_else(|| format!("unknown accelerator import: {}", alias))?
+                    .clone(),
             };
             let component = graph.add_accelerator(accelerator_def.id.as_str(), accelerator);
             insert_symbol(&mut symbols, accelerator_def.id.as_str(), component)?;
