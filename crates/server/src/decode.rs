@@ -4,10 +4,28 @@ use tonic::Status;
 
 use crate::rcm::{ActionCommand, FragmentContent, ModelSpec};
 
+/// Build a [`Fragment`] from a protobuf [`FragmentContent`].
+///
+/// The `kind` field determines the Fragment variant. When empty (backward
+/// compatible with clients that don't set it), falls through to role-based
+/// mapping: `user` → Fragment::user, anything else → Fragment::system.
 pub fn build_fragment(content: &FragmentContent) -> Fragment {
-    let mut fragment = match content.role.as_str() {
-        "user" => Fragment::user(&content.text),
-        _ => Fragment::system(&content.text),
+    let kind = content.kind.as_str();
+    let mut fragment = match kind {
+        "tool_call" => Fragment::tool_call(
+            content.tag.as_deref().unwrap_or(""),
+            &content.text,
+            serde_json::json!({}),
+        ),
+        "tool_result" => {
+            Fragment::tool_result(content.tag.as_deref().unwrap_or(""), &content.text, None)
+        }
+        "hitch" => Fragment::hitch(&content.text, None, machine::Role::System, None::<&str>),
+        _ => match content.role.as_str() {
+            "user" => Fragment::user(&content.text),
+            "assistant" => Fragment::assistant(&content.text),
+            _ => Fragment::system(&content.text),
+        },
     };
     if let Some(tag) = &content.tag {
         fragment.tag = tag.clone();
@@ -139,6 +157,14 @@ pub fn build_model(spec: &ModelSpec) -> Result<machine::Model, Status> {
         limit,
         modalities,
         timeout: spec.timeout.unwrap_or(180),
+        temperature: spec.temperature,
+        thinking: spec.thinking,
+        cost: spec.cost.as_ref().map(|c| machine::Cost {
+            input: c.input,
+            output: c.output,
+            cache_read: c.cache_read,
+            cache_write: c.cache_write,
+        }),
         headers: if spec.headers.is_empty() {
             None
         } else {
