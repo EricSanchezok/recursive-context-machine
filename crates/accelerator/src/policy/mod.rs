@@ -1,5 +1,4 @@
 mod captain;
-pub mod phases;
 pub mod retry;
 
 pub use captain::Captain;

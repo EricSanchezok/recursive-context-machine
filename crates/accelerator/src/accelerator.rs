@@ -1,9 +1,8 @@
+use machine::Inbox;
 use machine::hook;
-use machine::{Action, Inbox, Phase, PhaseOutcome};
 use machine::{Machine, Purpose};
 use std::future::Future;
 use std::pin::Pin;
-use tracing::warn;
 use utils::{AcceleratorId, Name};
 
 use crate::graph::Graph;
@@ -120,46 +119,12 @@ impl PrimitiveAccelerator {
 
         hook!(event = "machine_start", purpose = %purpose.text);
 
-        for phase in policy.pre() {
-            if run_phase(
-                &*phase,
-                &purpose,
-                &mut state.ctx,
-                &mut state.env,
-                &mut state.res,
-                &mut inbox,
-                &mut step,
-                &mut machine,
-            )
-            .await
-            {
-                return state;
-            }
-        }
-
         loop {
+            step += 1;
             let action = policy
                 .decide(&purpose, &state.ctx, &state.env, &state.res, &inbox)
                 .await;
-            let is_halt = matches!(action, Action::Halt);
 
-            if is_halt {
-                for phase in policy.pre_halt() {
-                    run_phase(
-                        &*phase,
-                        &purpose,
-                        &mut state.ctx,
-                        &mut state.env,
-                        &mut state.res,
-                        &mut inbox,
-                        &mut step,
-                        &mut machine,
-                    )
-                    .await;
-                }
-            }
-
-            step += 1;
             if machine
                 .apply(
                     action,
@@ -173,67 +138,8 @@ impl PrimitiveAccelerator {
             {
                 break;
             }
-
-            if is_halt {
-                for phase in policy.post_halt() {
-                    run_phase(
-                        &*phase,
-                        &purpose,
-                        &mut state.ctx,
-                        &mut state.env,
-                        &mut state.res,
-                        &mut inbox,
-                        &mut step,
-                        &mut machine,
-                    )
-                    .await;
-                }
-            }
-        }
-
-        for phase in policy.post() {
-            run_phase(
-                &*phase,
-                &purpose,
-                &mut state.ctx,
-                &mut state.env,
-                &mut state.res,
-                &mut inbox,
-                &mut step,
-                &mut machine,
-            )
-            .await;
         }
 
         state
-    }
-}
-
-async fn run_phase(
-    phase: &dyn Phase,
-    purpose: &Purpose,
-    ctx: &mut machine::Context,
-    env: &mut machine::Environment,
-    resources: &mut machine::Resources,
-    inbox: &mut Inbox,
-    step: &mut u64,
-    machine: &mut Machine,
-) -> bool {
-    loop {
-        match phase.decide(purpose, ctx, env, resources) {
-            PhaseOutcome::Action(Action::Halt) => {
-                warn!(phase = phase.name(), "phase produced Halt, ignoring");
-            }
-            PhaseOutcome::Action(action) => {
-                *step += 1;
-                if machine
-                    .apply(action, *step, ctx, env, resources, inbox)
-                    .await
-                {
-                    return true;
-                }
-            }
-            PhaseOutcome::Done => return false,
-        }
     }
 }
