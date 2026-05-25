@@ -40,7 +40,39 @@ impl Action {
             Action::Done => "done",
         }
     }
+
+    /// gRPC verb for this action (PascalCase, matches `ActionCommand.verb`).
+    pub fn verb(&self) -> &'static str {
+        match self {
+            Action::Append(_) => "Append",
+            Action::Insert { .. } => "Insert",
+            Action::Replace { .. } => "Replace",
+            Action::Remove(_) => "Remove",
+            Action::Swap(..) => "Swap",
+            Action::Model(_) => "Model",
+            Action::Activate(_) => "Activate",
+            Action::Deactivate(_) => "Deactivate",
+            Action::Take => "Take",
+            Action::Halt => "Halt",
+            Action::Done => "Done",
+        }
+    }
 }
+
+/// All gRPC verb strings, kept in sync with [`Action`] variants (same order).
+pub const ACTION_VERBS: &[&str] = &[
+    "Append",
+    "Insert",
+    "Replace",
+    "Remove",
+    "Swap",
+    "Model",
+    "Activate",
+    "Deactivate",
+    "Take",
+    "Halt",
+    "Done",
+];
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PhaseOutcome {
