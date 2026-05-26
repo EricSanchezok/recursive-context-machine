@@ -13,6 +13,7 @@ rig = { workspace = true }
 http = "1"
 tracing = { workspace = true }
 base64 = "0.22"
+futures-util = "0.3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
