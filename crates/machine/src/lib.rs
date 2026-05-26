@@ -28,7 +28,7 @@ pub mod tool;
 
 pub mod usage;
 
-pub use context::Context;
+pub use context::{Context, ContextIdNotFound};
 pub use env::Environment;
 pub use fragment::{
     Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, ToolResult, Video,

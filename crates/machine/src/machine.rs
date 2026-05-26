@@ -74,39 +74,72 @@ impl Machine {
                     preview = %preview(frag),
                 );
             }
-            Action::Insert { after, fragment } => {
-                let id = ctx.insert(after, fragment);
-                let frag = ctx.get(id).expect("just inserted");
-                hook!(
-                    event = "inserted",
-                    machine_id = mid,
-                    id,
-                    step,
-                    role = role_name(frag.role),
-                    kind = content_kind(frag),
-                    preview = %preview(frag),
-                );
-            }
+            Action::Insert { after, fragment } => match ctx.insert(after, fragment) {
+                Ok(id) => {
+                    let frag = ctx.get(id).expect("just inserted");
+                    hook!(
+                        event = "inserted",
+                        machine_id = mid,
+                        id,
+                        step,
+                        role = role_name(frag.role),
+                        kind = content_kind(frag),
+                        preview = %preview(frag),
+                    );
+                }
+                Err(err) => {
+                    inbox.push(Fragment::hitch(
+                        err.to_string(),
+                        None,
+                        Role::System,
+                        None::<&str>,
+                    ));
+                }
+            },
             Action::Replace { id, fragment } => {
-                ctx.replace(id, fragment);
-                let frag = ctx.get(id).expect("just replaced");
-                hook!(
-                    event = "replaced",
-                    machine_id = mid,
-                    id,
-                    step,
-                    role = role_name(frag.role),
-                    kind = content_kind(frag),
-                    preview = %preview(frag),
-                );
+                if let Err(err) = ctx.replace(id, fragment) {
+                    inbox.push(Fragment::hitch(
+                        err.to_string(),
+                        None,
+                        Role::System,
+                        None::<&str>,
+                    ));
+                } else {
+                    let frag = ctx.get(id).expect("just replaced");
+                    hook!(
+                        event = "replaced",
+                        machine_id = mid,
+                        id,
+                        step,
+                        role = role_name(frag.role),
+                        kind = content_kind(frag),
+                        preview = %preview(frag),
+                    );
+                }
             }
             Action::Remove(id) => {
-                ctx.remove(id);
-                hook!(event = "removed", machine_id = mid, id, step);
+                if let Err(err) = ctx.remove(id) {
+                    inbox.push(Fragment::hitch(
+                        err.to_string(),
+                        None,
+                        Role::System,
+                        None::<&str>,
+                    ));
+                } else {
+                    hook!(event = "removed", machine_id = mid, id, step);
+                }
             }
             Action::Swap(id1, id2) => {
-                ctx.swap(id1, id2);
-                hook!(event = "swapped", machine_id = mid, id1, id2, step);
+                if let Err(err) = ctx.swap(id1, id2) {
+                    inbox.push(Fragment::hitch(
+                        err.to_string(),
+                        None,
+                        Role::System,
+                        None::<&str>,
+                    ));
+                } else {
+                    hook!(event = "swapped", machine_id = mid, id1, id2, step);
+                }
             }
             Action::Model(name) => {
                 if let Err(err) = resources.use_model(&name) {
