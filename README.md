@@ -26,6 +26,23 @@ accelerate run examples/research-assistant/rcm/weather.rcm --stream
 accelerate run examples/research-assistant/rcm/captain.rcm --speed 300
 ```
 
+### gRPC + Python Demo
+
+RCM exposes a gRPC server for programmatic control. The Python SDK lets you
+drive the full agent lifecycle from Python — ideal for MoEH training pipelines.
+
+```bash
+# Terminal 1: start the gRPC server
+DEEPSEEK_API_KEY="REDACTED" cargo run --release -p server --bin rcm-server
+
+# Terminal 2: run the Paper Digest demo
+pip install grpcio protobuf grpcio-tools
+cd sdks/python && bash generate.sh
+DEEPSEEK_API_KEY="REDACTED" python examples/research-assistant/grpc_demo.py
+```
+
+See `sdks/python/README.md` for SDK setup details.
+
 ---
 
 ## Desktop Frontend
@@ -132,3 +149,6 @@ cd desktop && npx tsc --noEmit
 | `rcm/arxiv_pipeline.rcm` | Graph with `use` cross-file import + wire + output |
 | `prompts/reviewer.txt` | External prompt loaded via `inventory` |
 | `rcm.toml` | Project metadata |
+| `grpc_demo.py` | gRPC full lifecycle demo (Python) |
+| `sdks/python/src/rcm/` | Python SDK with Open/Step/Destroy |
+| `sdks/python/examples/` | Python examples (arxiv, weather, system) |
