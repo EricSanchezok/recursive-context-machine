@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::completion;
@@ -87,19 +88,29 @@ pub async fn react(
             }
             Some(tool) => {
                 let deadline = Duration::from_secs(tool.timeout().as_secs());
+                let tool_arc = resources
+                    .tools
+                    .get(&tool_name)
+                    .expect("tool just confirmed by lookup")
+                    .clone();
+                let env_arc = Arc::new(env.clone());
 
                 tool_call_ids.push(call_id.clone());
                 tool_names.push(tool_name.clone());
                 tool_futures.push(Box::pin(async move {
                     let started_at = Instant::now();
-                    match timeout(deadline, tool.execute(args, env)).await {
-                        Ok(Ok(tool_result)) => {
+                    let handle = tokio::spawn(async move {
+                        timeout(deadline, tool_arc.execute(args, &env_arc)).await
+                    });
+                    let result = handle.await;
+                    let elapsed = started_at.elapsed();
+                    match result {
+                        Ok(Ok(Ok(tool_result))) => {
                             info!(
                                 tool = tool_name,
                                 result = tool_result.content,
                                 "tool executed"
                             );
-                            let elapsed = started_at.elapsed();
                             Ok((
                                 Fragment::tool_result(
                                     call_id,
@@ -109,14 +120,11 @@ pub async fn react(
                                 elapsed,
                             ))
                         }
-                        Ok(Err(msg)) => {
+                        Ok(Ok(Err(msg))) => {
                             warn!(tool = tool_name, msg, "tool failed");
-                            Err((
-                                format!("tool '{}' error: {}", tool_name, msg),
-                                started_at.elapsed(),
-                            ))
+                            Err((format!("tool '{}' error: {}", tool_name, msg), elapsed))
                         }
-                        Err(_) => {
+                        Ok(Err(_)) => {
                             warn!(
                                 tool = tool_name,
                                 timeout = deadline.as_secs(),
@@ -128,8 +136,26 @@ pub async fn react(
                                     tool_name,
                                     deadline.as_secs()
                                 ),
-                                started_at.elapsed(),
+                                elapsed,
                             ))
+                        }
+                        Err(join_err) => {
+                            let msg = if join_err.is_panic() {
+                                let payload = join_err.into_panic();
+                                payload
+                                    .downcast_ref::<&str>()
+                                    .map(|s| format!("tool '{}' panicked: {}", tool_name, s))
+                                    .or_else(|| {
+                                        payload.downcast_ref::<String>().map(|s| {
+                                            format!("tool '{}' panicked: {}", tool_name, s)
+                                        })
+                                    })
+                                    .unwrap_or_else(|| format!("tool '{}' panicked", tool_name))
+                            } else {
+                                format!("tool '{}' cancelled", tool_name)
+                            };
+                            warn!("{}", msg);
+                            Err((msg, elapsed))
                         }
                     }
                 }));
