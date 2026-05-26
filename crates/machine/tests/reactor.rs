@@ -78,7 +78,6 @@ async fn parallel_tool_execution() {
         Fragment::tool_call("c3", "c", serde_json::json!({})),
     ];
 
-    // Extract tool references and build futures
     use futures_util::future::join_all;
     let mut futures = Vec::new();
     for frag in &fragments {
@@ -155,7 +154,6 @@ async fn text_and_tools_mixed() {
         Fragment::assistant("text after"),
     ];
 
-    // Simulate the new reactor: text pushed immediately, tools joined.
     let mut inbox = Vec::new();
     let mut futures = Vec::new();
     for frag in &fragments {
@@ -237,7 +235,6 @@ async fn one_failure_does_not_block_others() {
     let results = futures_util::future::join_all(futures).await;
     let elapsed = t0.elapsed();
 
-    // 3 tools in parallel, even with one failure, should complete fast.
     assert!(
         elapsed < Duration::from_millis(150),
         "parallel with failure should take < 150ms (was {:?})",
@@ -248,4 +245,125 @@ async fn one_failure_does_not_block_others() {
     assert!(results[0].is_ok(), "first tool should succeed");
     assert!(results[1].is_err(), "failing tool should error");
     assert!(results[2].is_ok(), "third tool should succeed");
+}
+
+// ── Panic reproduction: tool panic inside async block kills all tools ──
+
+/// One panicking tool inside join_all kills ALL tools — the panic unwinds
+/// through join_all, preventing any tool from returning a result.
+///
+/// Expected: 3 tools → all complete, 1 panicked returns error.
+/// Actual:   3 tools → 0 results, process panics.
+#[test]
+#[should_panic(expected = "byte index")]
+fn one_tool_panic_kills_all_join_all_tools() {
+    // Reproduce shell.rs:160: &command[..60] when the 60th byte falls inside
+    // a multi-byte UTF-8 character. We construct a string where byte 60 is
+    // in the middle of a 3-byte Chinese character.
+    //
+    // 58 ASCII bytes + 3-byte '并' = bytes 58, 59, 60.
+    // &s[..60] tries to slice at byte 59 (inside '并'), which panics.
+    let padding = "x".repeat(58);
+    let s = format!("{padding}并");
+    let _sliced = &s[..60];
+}
+
+/// tokio::spawn isolates tool panics: one panicking tool does not kill others.
+///
+/// Uses spawn-style execution (same as the new reactor):
+/// each tool runs in its own tokio task, panic becomes JoinError.
+#[tokio::test]
+async fn spawn_isolates_tool_panic() {
+    struct SpawnPanicTool;
+
+    impl Tool for SpawnPanicTool {
+        fn name(&self) -> &str {
+            "spawn_panic"
+        }
+        fn description(&self) -> &str {
+            "panics via spawn"
+        }
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        fn execute<'a>(
+            &'a self,
+            _args: serde_json::Value,
+            _env: &'a Environment,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<ToolResult, String>> + Send + 'a>,
+        > {
+            Box::pin(async move {
+                let s = format!("{}并", "x".repeat(58));
+                let _ = &s[..60];
+                unreachable!()
+            })
+        }
+    }
+
+    let env = Arc::new(Environment::new("/tmp"));
+    let mut resources = Resources::new();
+    let (tool1, panicking_tool, tool2) = (
+        make_sleep_tool("a", 50),
+        Arc::new(SpawnPanicTool) as Arc<dyn Tool>,
+        make_sleep_tool("b", 50),
+    );
+    resources = resources
+        .with_tool(tool1)
+        .with_tool(panicking_tool)
+        .with_tool(tool2);
+    resources.enable("a").unwrap();
+    resources.enable("spawn_panic").unwrap();
+    resources.enable("b").unwrap();
+
+    let fragments = vec![
+        Fragment::tool_call("c1", "a", serde_json::json!({})),
+        Fragment::tool_call("c2", "spawn_panic", serde_json::json!({})),
+        Fragment::tool_call("c3", "b", serde_json::json!({})),
+    ];
+
+    // Collect Arc<dyn Tool> clones from the HashMap, releasing the borrow
+    // on resources, then spawn each tool in its own tokio task.
+    let mut tool_clones: Vec<Option<Arc<dyn Tool>>> = Vec::new();
+    for frag in &fragments {
+        if let Content::ToolCall(tc) = &frag.content {
+            tool_clones.push(resources.tools.get(&tc.name).cloned());
+        } else {
+            tool_clones.push(None);
+        }
+    }
+    drop(resources);
+    drop(fragments);
+
+    let mut futures = Vec::new();
+    for tool in tool_clones {
+        let Some(tool) = tool else { continue };
+        let env_arc = env.clone();
+        futures.push(async move {
+            let started_at = Instant::now();
+            match tokio::spawn(async move { tool.execute(serde_json::json!({}), &env_arc).await })
+                .await
+            {
+                Ok(Ok(tr)) => {
+                    let _elapsed = started_at.elapsed();
+                    Ok(tr.content)
+                }
+                Ok(Err(msg)) => Err(msg),
+                Err(_join_err) => Err("tool panicked".into()),
+            }
+        });
+    }
+
+    let results = futures_util::future::join_all(futures).await;
+    assert_eq!(results.len(), 3);
+
+    assert!(results[0].is_ok(), "first healthy tool should succeed");
+    assert!(results[1].is_err(), "panicking tool should return error");
+    assert!(results[2].is_ok(), "second healthy tool should succeed");
+
+    let error_msg = results[1].as_ref().unwrap_err();
+    assert!(
+        error_msg.contains("panicked"),
+        "error should mention panic: {error_msg}"
+    );
 }
