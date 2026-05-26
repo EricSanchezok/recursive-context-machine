@@ -9,6 +9,18 @@ pub struct Context {
     next_id: u64,
 }
 
+/// Returned by mutating Context methods when the targeted id does not exist.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextIdNotFound(pub u64);
+
+impl std::fmt::Display for ContextIdNotFound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fragment id {} not found in context", self.0)
+    }
+}
+
+impl std::error::Error for ContextIdNotFound {}
+
 impl Default for Context {
     fn default() -> Self {
         Self::new()
@@ -33,60 +45,42 @@ impl Context {
         id
     }
 
-    /// Insert a fragment after the cell with the given id.
+    /// Insert a fragment after the cell with the given id, assigning a fresh
+    /// id to the new fragment.
     ///
-    /// Returns the assigned id of the new fragment.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `after` is not found in the context.
-    pub fn insert(&mut self, after: u64, mut fragment: Fragment) -> u64 {
-        let pos = self
-            .position_of(after)
-            .unwrap_or_else(|| panic!("id {} not found in context", after));
+    /// Returns the assigned id, or [`ContextIdNotFound`] if `after` is stale.
+    pub fn insert(&mut self, after: u64, mut fragment: Fragment) -> Result<u64, ContextIdNotFound> {
+        let pos = self.position_of(after).ok_or(ContextIdNotFound(after))?;
         let new_id = self.assign_id(&mut fragment);
         self.cells.insert(pos + 1, fragment);
-        new_id
+        Ok(new_id)
     }
 
-    /// Replace the fragment at the given id, preserving the id.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `id` is not found in the context.
-    pub fn replace(&mut self, id: u64, mut fragment: Fragment) {
-        let pos = self
-            .position_of(id)
-            .unwrap_or_else(|| panic!("id {} not found in context", id));
+    /// Replace the fragment at the given id, preserving the id. Returns
+    /// [`ContextIdNotFound`] if the id is stale.
+    pub fn replace(&mut self, id: u64, mut fragment: Fragment) -> Result<(), ContextIdNotFound> {
+        let pos = self.position_of(id).ok_or(ContextIdNotFound(id))?;
         fragment.id = id;
         self.cells[pos] = fragment;
+        Ok(())
     }
 
-    /// Remove the fragment with the given id.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `id` is not found in the context.
-    pub fn remove(&mut self, id: u64) {
-        let pos = self
-            .position_of(id)
-            .unwrap_or_else(|| panic!("id {} not found in context", id));
+    /// Remove the fragment with the given id. Returns [`ContextIdNotFound`]
+    /// if the id is stale.
+    pub fn remove(&mut self, id: u64) -> Result<(), ContextIdNotFound> {
+        let pos = self.position_of(id).ok_or(ContextIdNotFound(id))?;
         self.cells.remove(pos);
+        Ok(())
     }
 
-    /// Swap the positions of two fragments by id.
-    ///
-    /// # Panics
-    ///
-    /// Panics if either id is not found in the context.
-    pub fn swap(&mut self, id1: u64, id2: u64) {
-        let i = self
-            .position_of(id1)
-            .unwrap_or_else(|| panic!("id {} not found in context", id1));
-        let j = self
-            .position_of(id2)
-            .unwrap_or_else(|| panic!("id {} not found in context", id2));
+    /// Swap the positions of two fragments by id. Returns
+    /// [`ContextIdNotFound`] if either id is stale; on error the context is
+    /// unchanged.
+    pub fn swap(&mut self, id1: u64, id2: u64) -> Result<(), ContextIdNotFound> {
+        let i = self.position_of(id1).ok_or(ContextIdNotFound(id1))?;
+        let j = self.position_of(id2).ok_or(ContextIdNotFound(id2))?;
         self.cells.swap(i, j);
+        Ok(())
     }
 
     /// Clear all fragments. Id allocation continues (avoids collisions with external references).

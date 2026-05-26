@@ -162,18 +162,32 @@ async fn remove_and_check_context() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "not found")]
-async fn remove_unknown_panics() {
+async fn remove_unknown_returns_hitch() {
     let mut ctx = Context::new();
+    ctx.append(Fragment::system("existing"));
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
-    run_actions(
-        &[Action::Remove(999), Action::Done],
-        &mut ctx,
-        &mut env,
-        &mut resources,
-    )
-    .await;
+
+    // Remove a non-existent id — should NOT panic.
+    // The Apply action will push a hitch.
+    let mut machine = Machine::new("test", "test-machine");
+    let mut inbox = Inbox::new();
+    let done = machine
+        .apply(
+            Action::Remove(999),
+            1,
+            &mut ctx,
+            &mut env,
+            &mut resources,
+            &mut inbox,
+        )
+        .await;
+
+    assert!(!done, "remove with stale id should not terminate");
+    assert_eq!(inbox.len(), 1);
+    let frag = inbox.pop().unwrap();
+    assert!(matches!(frag.content, machine::Content::Hitch { .. }));
+    assert!(frag.content_as_text().contains("fragment id 999 not found"));
 }
 
 #[tokio::test]
