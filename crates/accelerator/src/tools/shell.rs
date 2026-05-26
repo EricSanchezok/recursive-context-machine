@@ -5,12 +5,12 @@ use std::time::Duration;
 
 use machine::{Environment, Tool, ToolResult};
 use serde_json::Value;
-use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+use tracing::warn;
 
 const MAX_TIMEOUT_SECS: u64 = 180;
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
-const OUTPUT_CAP_BYTES: usize = 512 * 1024;
+pub const OUTPUT_CAP_BYTES: usize = 512 * 1024;
 
 static SHELL_DESC: LazyLock<String> = LazyLock::new(|| {
     include_str!("shell.txt")
@@ -110,24 +110,30 @@ impl Tool for ShellTool {
     }
 }
 
-async fn collect_output(child: &mut tokio::process::Child) -> (Vec<u8>, Vec<u8>, Option<i32>) {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+pub async fn collect_output(child: &mut tokio::process::Child) -> (Vec<u8>, Vec<u8>, Option<i32>) {
+    use tokio::io::AsyncReadExt;
+
+    let mut stdout = Vec::with_capacity(OUTPUT_CAP_BYTES);
+    let mut stderr = Vec::with_capacity(OUTPUT_CAP_BYTES);
 
     if let Some(out) = child.stdout.take() {
-        let mut r = tokio::io::BufReader::new(out);
-        let _ = r.read_to_end(&mut stdout).await;
+        let mut reader = tokio::io::BufReader::new(out).take(OUTPUT_CAP_BYTES as u64);
+        if let Err(error) = reader.read_to_end(&mut stdout).await {
+            warn!(?error, stream = "stdout", "failed to read shell output");
+        }
     }
     if let Some(err) = child.stderr.take() {
-        let mut r = tokio::io::BufReader::new(err);
-        let _ = r.read_to_end(&mut stderr).await;
+        let mut reader = tokio::io::BufReader::new(err).take(OUTPUT_CAP_BYTES as u64);
+        if let Err(error) = reader.read_to_end(&mut stderr).await {
+            warn!(?error, stream = "stderr", "failed to read shell output");
+        }
     }
 
     let exit_code = child.wait().await.ok().and_then(|s| s.code());
     (stdout, stderr, exit_code)
 }
 
-fn build_result(
+pub fn build_result(
     command: String,
     stdout: Vec<u8>,
     stderr: Vec<u8>,
