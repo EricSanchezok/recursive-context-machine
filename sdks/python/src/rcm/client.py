@@ -43,4 +43,6 @@ class RCMClient:
 
     def destroy(self, machine_id: str):
         self._stub.Destroy(DestroyRequest(machine_id=machine_id))
+
+    def close(self):
         self._channel.close()
