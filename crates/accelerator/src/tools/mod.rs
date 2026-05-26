@@ -5,7 +5,7 @@ mod find;
 mod fs;
 mod git;
 mod lsp;
-mod shell;
+pub mod shell;
 mod wait;
 
 pub use arxiv::{ArxivDownloadTool, ArxivSearchTool};
@@ -13,7 +13,7 @@ pub use find::FindTool;
 pub use fs::FsTool;
 pub use git::{GitTool, check_safety as check_git_safety, tokenize as tokenize_git};
 pub use lsp::LspTool;
-pub use shell::ShellTool;
+pub use shell::{OUTPUT_CAP_BYTES, ShellTool, build_result, collect_output};
 pub use wait::WaitTool;
 
 use std::path::{Path, PathBuf};
