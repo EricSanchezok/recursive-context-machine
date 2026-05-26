@@ -140,9 +140,15 @@ async fn send(
     messages: &[Message],
     tools: &[ToolDefinition],
 ) -> Result<(OneOrMany<AssistantContent>, Usage), Fragment> {
+    // Use the first context message as the initial prompt for rig's builder API.
+    // When messages is empty (should never happen in practice), use a system
+    // placeholder — system role messages carry no conversational intent and
+    // won't trigger spurious LLM responses like "user sent a period".
+    let (initial_prompt, remaining_messages) = split_messages(messages);
+
     let mut request = endpoint
-        .completion_request(Message::user("."))
-        .messages(messages.to_vec())
+        .completion_request(initial_prompt)
+        .messages(remaining_messages)
         .tools(tools.to_vec());
 
     if let Some(temp) = model.temperature {
@@ -233,6 +239,18 @@ fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragmen
     fragments
 }
 
+/// Split messages into (initial_prompt, remaining). The first message
+/// becomes the initial prompt; the rest are returned for `.messages()`.
+/// When the list is empty, returns (Message::system("_"), Vec::new()).
+fn split_messages(messages: &[Message]) -> (Message, Vec<Message>) {
+    let initial = messages
+        .first()
+        .cloned()
+        .unwrap_or_else(|| Message::system("_"));
+    let remaining = messages.get(1..).unwrap_or_default().to_vec();
+    (initial, remaining)
+}
+
 fn apply_headers<Ext, ApiKey, H>(
     mut builder: rig::client::ClientBuilder<Ext, ApiKey, H>,
     headers: &Option<std::collections::HashMap<String, String>>,
@@ -255,6 +273,41 @@ where
         }
     }
     builder
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_messages_uses_first_message_as_initial() {
+        let msgs = vec![
+            Message::system("you are a helper"),
+            Message::user("search for papers"),
+            Message::assistant("let me check"),
+        ];
+        let (initial, remaining) = split_messages(&msgs);
+        assert!(matches!(&initial, Message::System { content } if content == "you are a helper"));
+        assert_eq!(remaining.len(), 2);
+        assert!(matches!(&remaining[0], Message::User { .. }));
+        assert!(matches!(&remaining[1], Message::Assistant { .. }));
+    }
+
+    #[test]
+    fn split_messages_single_message_no_remaining() {
+        let msgs = vec![Message::user("hello")];
+        let (initial, remaining) = split_messages(&msgs);
+        assert!(matches!(&initial, Message::User { .. }));
+        assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn split_messages_empty_falls_back_to_system_placeholder() {
+        let msgs: Vec<Message> = vec![];
+        let (initial, remaining) = split_messages(&msgs);
+        assert!(matches!(&initial, Message::System { content } if content == "_"));
+        assert!(remaining.is_empty());
+    }
 }
 
 /// Resolve a `fragment::DataSource` into a rig `UserContent`, converting
