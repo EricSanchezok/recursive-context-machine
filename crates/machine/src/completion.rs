@@ -42,7 +42,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, U
     let messages: Vec<Message> = ctx
         .fragments()
         .iter()
-        .filter_map(|frag| encode(frag, model.thinking))
+        .filter_map(|frag| encode(frag))
         .collect();
 
     let tools: Vec<ToolDefinition> = resources
@@ -350,7 +350,12 @@ fn encode_user_content(
 }
 
 /// Encode a context fragment into a rig message.
-pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
+///
+/// Assistant tool-call messages always include a Reasoning placeholder so
+/// providers that enable thinking mode (DeepSeek V4, Kimi Coding) receive
+/// the required `reasoning_content` on tool-call turns. Providers that do
+/// not use thinking ignore the field.
+pub fn encode(frag: &Fragment) -> Option<Message> {
     match frag.role {
         Role::System => {
             if let Content::Hitch { message, .. } = &frag.content {
@@ -393,9 +398,12 @@ pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
                     &tc.name,
                     tc.arguments.clone(),
                 ));
-                if thinking {
-                    content.push(AssistantContent::Reasoning(Reasoning::new(".")));
-                }
+                // Always attach a Reasoning placeholder to assistant tool-call
+                // messages. Providers that enable thinking mode (DeepSeek V4,
+                // Kimi Coding) require reasoning_content to be present on
+                // tool-call turns; providers that don't use it will ignore the
+                // field.
+                content.push(AssistantContent::Reasoning(Reasoning::new(".")));
                 Some(Message::Assistant { id: None, content })
             } else if let Content::Hitch { message, .. } = &frag.content {
                 Some(Message::assistant(message))
