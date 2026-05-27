@@ -1,10 +1,40 @@
+//! LLM completion driver.
+//!
+//! ## Contract
+//!
+//! [`send`] constructs a [`rig::completion::CompletionRequest`] directly from
+//! the encoded fragments. The `chat_history` slot receives messages in the
+//! exact order produced by [`encode`] — no rotation, no placeholder, no
+//! "initial prompt".
+//!
+//! ### Why direct construction (vs. the builder)
+//!
+//! `rig`'s `CompletionRequestBuilder` treats one message as the "prompt" and
+//! [appends it to the END of `chat_history`][build_appends_prompt] at
+//! `build()` time. Picking which message is the prompt has been a persistent
+//! source of bugs:
+//!
+//! - **#43 family**: using `Message::user(".")` as a stub prompt caused the
+//!   LLM to interpret the bare period as a user reply, leading to
+//!   `"looks like you sent a period"` hallucination loops.
+//! - **#86 / #88**: switching the stub to `messages[0]` rotated the leading
+//!   system message to the END of the request — `[Sys, User]` became
+//!   `[User, Sys]` on the wire.
+//!
+//! `CompletionRequest` has no `prompt` field; `chat_history: OneOrMany<Message>`
+//! is literally what gets serialized. [`OneOrMany::many`] errors on an empty
+//! iterator, so the degenerate "empty context" case surfaces as a `Fragment::hitch`
+//! Result rather than a fabricated message.
+//!
+//! [build_appends_prompt]: https://docs.rs/rig-core/0.36/rig/completion/struct.CompletionRequest.html
+
 use http::{HeaderMap, HeaderName, HeaderValue};
 use rig::OneOrMany;
 use rig::client::CompletionClient;
 use rig::completion::message::Reasoning;
 use rig::completion::message::UserContent;
 use rig::completion::{
-    AssistantContent, CompletionError, CompletionModel, Message, ToolDefinition,
+    AssistantContent, CompletionError, CompletionModel, CompletionRequest, Message, ToolDefinition,
 };
 use rig::http_client;
 use tokio::time::{Duration, timeout};
@@ -140,25 +170,14 @@ async fn send(
     messages: &[Message],
     tools: &[ToolDefinition],
 ) -> Result<(OneOrMany<AssistantContent>, Usage), Fragment> {
-    // Use the first context message as the initial prompt for rig's builder API.
-    // When messages is empty (should never happen in practice), use a system
-    // placeholder — system role messages carry no conversational intent and
-    // won't trigger spurious LLM responses like "user sent a period".
-    let (initial_prompt, remaining_messages) = split_messages(messages);
+    let request = build_request(messages, tools, model)?;
 
-    let mut request = endpoint
-        .completion_request(initial_prompt)
-        .messages(remaining_messages)
-        .tools(tools.to_vec());
-
-    if let Some(temp) = model.temperature {
-        request = request.temperature(temp);
-    }
-    if let Some(limit) = &model.limit {
-        request = request.max_tokens(limit.output);
-    }
-
-    match timeout(Duration::from_secs(model.timeout), request.send()).await {
+    match timeout(
+        Duration::from_secs(model.timeout),
+        endpoint.completion(request),
+    )
+    .await
+    {
         Ok(Ok(response)) => Ok((
             response.choice,
             Usage {
@@ -197,22 +216,75 @@ async fn send(
     }
 }
 
-fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
+/// Construct a `CompletionRequest` whose `chat_history` is the encoded
+/// fragments **in their original order**.
+///
+/// Returns a `Fragment::hitch` when `messages` is empty — an empty context
+/// has no meaningful prompt to send to the LLM, and we refuse to fabricate
+/// one (see module-level contract).
+pub fn build_request(
+    messages: &[Message],
+    tools: &[ToolDefinition],
+    model: &Model,
+) -> Result<CompletionRequest, Fragment> {
+    let chat_history = OneOrMany::many(messages.iter().cloned()).map_err(|_| {
+        Fragment::hitch(
+            "completion called with empty context — no messages to send to LLM",
+            None,
+            Role::System,
+            None::<&str>,
+        )
+    })?;
+
+    Ok(CompletionRequest {
+        model: None,
+        preamble: None,
+        chat_history,
+        documents: Vec::new(),
+        tools: tools.to_vec(),
+        temperature: model.temperature,
+        max_tokens: model.limit.as_ref().map(|l| l.output),
+        tool_choice: None,
+        additional_params: None,
+        output_schema: None,
+    })
+}
+
+pub fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
     use rig::completion::message::MimeType;
     let mut fragments = Vec::new();
+    // Thinking-mode providers (DeepSeek, Kimi) emit one reasoning block per
+    // assistant turn and require it to be echoed back on every assistant
+    // message we resend from that turn. A turn may contain multiple parallel
+    // tool_calls — we replicate the same reasoning onto each of them, so the
+    // turn survives being split into one Fragment per call.
+    //
+    // Buffer accumulates Reasoning blocks (rare multi-block case) but is
+    // *not* cleared on ToolCall — only on Text or Image, which mark the
+    // start of a new logical turn.
+    let mut pending_reasoning: Vec<String> = Vec::new();
     for content in choice {
         match content {
             AssistantContent::Text(text) => {
+                pending_reasoning.clear();
                 fragments.push(Fragment::assistant(&text.text));
             }
+            AssistantContent::Reasoning(reasoning) => {
+                let text = reasoning.display_text();
+                if !text.is_empty() {
+                    pending_reasoning.push(text);
+                }
+            }
             AssistantContent::ToolCall(tc) => {
-                fragments.push(Fragment::tool_call(
-                    &tc.id,
-                    &tc.function.name,
-                    tc.function.arguments.clone(),
-                ));
+                let mut frag =
+                    Fragment::tool_call(&tc.id, &tc.function.name, tc.function.arguments.clone());
+                if !pending_reasoning.is_empty() {
+                    frag = frag.with_reasoning(pending_reasoning.join("\n"));
+                }
+                fragments.push(frag);
             }
             AssistantContent::Image(content_image) => {
+                pending_reasoning.clear();
                 let source = match &content_image.data {
                     rig::completion::message::DocumentSourceKind::Url(url) => {
                         crate::fragment::DataSource::Url(url.clone())
@@ -233,22 +305,9 @@ fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragmen
                     .map(|m| m.to_mime_type().to_string());
                 fragments.push(Fragment::image(source, media_type));
             }
-            _ => {} // non-exhaustive: other AssistantContent variants
         }
     }
     fragments
-}
-
-/// Split messages into (initial_prompt, remaining). The first message
-/// becomes the initial prompt; the rest are returned for `.messages()`.
-/// When the list is empty, returns (Message::system("_"), Vec::new()).
-fn split_messages(messages: &[Message]) -> (Message, Vec<Message>) {
-    let initial = messages
-        .first()
-        .cloned()
-        .unwrap_or_else(|| Message::system("_"));
-    let remaining = messages.get(1..).unwrap_or_default().to_vec();
-    (initial, remaining)
 }
 
 fn apply_headers<Ext, ApiKey, H>(
@@ -273,41 +332,6 @@ where
         }
     }
     builder
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn split_messages_uses_first_message_as_initial() {
-        let msgs = vec![
-            Message::system("you are a helper"),
-            Message::user("search for papers"),
-            Message::assistant("let me check"),
-        ];
-        let (initial, remaining) = split_messages(&msgs);
-        assert!(matches!(&initial, Message::System { content } if content == "you are a helper"));
-        assert_eq!(remaining.len(), 2);
-        assert!(matches!(&remaining[0], Message::User { .. }));
-        assert!(matches!(&remaining[1], Message::Assistant { .. }));
-    }
-
-    #[test]
-    fn split_messages_single_message_no_remaining() {
-        let msgs = vec![Message::user("hello")];
-        let (initial, remaining) = split_messages(&msgs);
-        assert!(matches!(&initial, Message::User { .. }));
-        assert!(remaining.is_empty());
-    }
-
-    #[test]
-    fn split_messages_empty_falls_back_to_system_placeholder() {
-        let msgs: Vec<Message> = vec![];
-        let (initial, remaining) = split_messages(&msgs);
-        assert!(matches!(&initial, Message::System { content } if content == "_"));
-        assert!(remaining.is_empty());
-    }
 }
 
 /// Resolve a `fragment::DataSource` into a rig `UserContent`, converting
@@ -393,7 +417,15 @@ pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
                     &tc.name,
                     tc.arguments.clone(),
                 ));
-                if thinking {
+                // Echo the model's original reasoning when present — thinking-mode
+                // providers (DeepSeek, Kimi) validate that assistant tool-call
+                // turns carry the same `reasoning_content` they previously emitted.
+                // Falls back to a single-dot placeholder only when `thinking=true`
+                // and no reasoning was captured (legacy Kimi path where the model
+                // accepts any non-empty reasoning).
+                if let Some(reasoning_text) = tc.reasoning.as_deref() {
+                    content.push(AssistantContent::Reasoning(Reasoning::new(reasoning_text)));
+                } else if thinking {
                     content.push(AssistantContent::Reasoning(Reasoning::new(".")));
                 }
                 Some(Message::Assistant { id: None, content })
