@@ -127,7 +127,6 @@ fn encode_assistant_text_with_thinking_does_not_synthesize_reasoning() {
     );
 }
 
-
 #[test]
 fn encode_assistant_non_tool_call_ignores_thinking_flag() {
     let frag = Fragment::assistant("plain text response");
