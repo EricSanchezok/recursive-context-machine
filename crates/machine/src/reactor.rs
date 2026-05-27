@@ -76,8 +76,9 @@ pub async fn react(
             arguments = %args,
         );
 
+        use crate::resources::LookupResult;
         match resources.lookup(&tool_name) {
-            None => {
+            LookupResult::NotFound => {
                 inbox.push(frag);
                 inbox.push(Fragment::hitch(
                     format!("tool '{}' not found", tool_name),
@@ -86,14 +87,25 @@ pub async fn react(
                     Some(call_id),
                 ));
             }
-            Some(tool) => {
-                let deadline = Duration::from_secs(tool.timeout().as_secs());
+            LookupResult::Inactive => {
+                inbox.push(frag);
+                inbox.push(Fragment::hitch(
+                    format!("tool '{}' is disabled — activate it before use", tool_name),
+                    None,
+                    Role::Tool,
+                    Some(call_id),
+                ));
+            }
+            LookupResult::Active => {
+                // Safe: lookup() returned Active, so get() is guaranteed Some.
+                let tool = resources.get(&tool_name).expect("lookup returned Active");
                 let tool_arc = resources
                     .tools
                     .get(&tool_name)
-                    .expect("tool just confirmed by lookup")
+                    .expect("lookup returned Active")
                     .clone();
                 let env_arc = Arc::new(env.clone());
+                let deadline = Duration::from_secs(tool.timeout().as_secs());
 
                 tool_call_ids.push(call_id.clone());
                 tool_names.push(tool_name.clone());

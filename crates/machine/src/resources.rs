@@ -126,9 +126,34 @@ impl Resources {
             .map(|t| t.as_ref())
             .collect()
     }
+}
 
-    /// Look up an active tool by name.
-    pub fn lookup(&self, name: &str) -> Option<&dyn Tool> {
+/// Result of looking up a tool by name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LookupResult {
+    /// Tool is registered and active.
+    Active,
+    /// Tool is registered but currently disabled.
+    Inactive,
+    /// Tool is not registered at all.
+    NotFound,
+}
+
+impl Resources {
+    /// Look up a tool by name, returning whether it's active, inactive, or
+    /// not found.
+    pub fn lookup(&self, name: &str) -> LookupResult {
+        if !self.tools.contains_key(name) {
+            LookupResult::NotFound
+        } else if self.active_tools.contains(name) {
+            LookupResult::Active
+        } else {
+            LookupResult::Inactive
+        }
+    }
+
+    /// Look up an active tool and return a reference.
+    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
         if !self.active_tools.contains(name) {
             return None;
         }
