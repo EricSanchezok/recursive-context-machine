@@ -172,7 +172,12 @@ async fn send(
 ) -> Result<(OneOrMany<AssistantContent>, Usage), Fragment> {
     let request = build_request(messages, tools, model)?;
 
-    match timeout(Duration::from_secs(model.timeout), endpoint.completion(request)).await {
+    match timeout(
+        Duration::from_secs(model.timeout),
+        endpoint.completion(request),
+    )
+    .await
+    {
         Ok(Ok(response)) => Ok((
             response.choice,
             Usage {
@@ -271,11 +276,8 @@ fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragmen
                 }
             }
             AssistantContent::ToolCall(tc) => {
-                let mut frag = Fragment::tool_call(
-                    &tc.id,
-                    &tc.function.name,
-                    tc.function.arguments.clone(),
-                );
+                let mut frag =
+                    Fragment::tool_call(&tc.id, &tc.function.name, tc.function.arguments.clone());
                 if !pending_reasoning.is_empty() {
                     frag = frag.with_reasoning(pending_reasoning.join("\n"));
                 }
@@ -376,7 +378,9 @@ mod tests {
             panic!("expected Err(hitch) for empty messages");
         };
         assert!(matches!(hitch.role, Role::System));
-        assert!(matches!(&hitch.content, Content::Hitch { message, .. } if message.contains("empty context")));
+        assert!(
+            matches!(&hitch.content, Content::Hitch { message, .. } if message.contains("empty context"))
+        );
     }
 
     #[test]
