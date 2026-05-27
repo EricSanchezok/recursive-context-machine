@@ -140,9 +140,18 @@ async fn send(
     messages: &[Message],
     tools: &[ToolDefinition],
 ) -> Result<(OneOrMany<AssistantContent>, Usage), Fragment> {
+    // Use the first context message as the initial prompt for rig's builder API.
+    // When messages is empty (should never happen in practice), use a system
+    // placeholder — system role messages carry no conversational intent and
+    // won't trigger spurious LLM responses like "user sent a period".
+    let initial_prompt = messages
+        .first()
+        .cloned()
+        .unwrap_or_else(|| Message::system("_"));
+    let remaining_messages: Vec<_> = messages.get(1..).unwrap_or_default().to_vec();
+
     let mut request = endpoint
-        .completion_request(Message::user("."))
-        .messages(messages.to_vec())
+        .completion_request(initial_prompt)
         .tools(tools.to_vec());
 
     if let Some(temp) = model.temperature {
