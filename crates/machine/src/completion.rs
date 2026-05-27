@@ -1,10 +1,40 @@
+//! LLM completion driver.
+//!
+//! ## Contract
+//!
+//! [`send`] constructs a [`rig::completion::CompletionRequest`] directly from
+//! the encoded fragments. The `chat_history` slot receives messages in the
+//! exact order produced by [`encode`] — no rotation, no placeholder, no
+//! "initial prompt".
+//!
+//! ### Why direct construction (vs. the builder)
+//!
+//! `rig`'s `CompletionRequestBuilder` treats one message as the "prompt" and
+//! [appends it to the END of `chat_history`][build_appends_prompt] at
+//! `build()` time. Picking which message is the prompt has been a persistent
+//! source of bugs:
+//!
+//! - **#43 family**: using `Message::user(".")` as a stub prompt caused the
+//!   LLM to interpret the bare period as a user reply, leading to
+//!   `"looks like you sent a period"` hallucination loops.
+//! - **#86 / #88**: switching the stub to `messages[0]` rotated the leading
+//!   system message to the END of the request — `[Sys, User]` became
+//!   `[User, Sys]` on the wire.
+//!
+//! `CompletionRequest` has no `prompt` field; `chat_history: OneOrMany<Message>`
+//! is literally what gets serialized. [`OneOrMany::many`] errors on an empty
+//! iterator, so the degenerate "empty context" case surfaces as a `Fragment::hitch`
+//! Result rather than a fabricated message.
+//!
+//! [build_appends_prompt]: https://docs.rs/rig-core/0.36/rig/completion/struct.CompletionRequest.html
+
 use http::{HeaderMap, HeaderName, HeaderValue};
 use rig::OneOrMany;
 use rig::client::CompletionClient;
 use rig::completion::message::Reasoning;
 use rig::completion::message::UserContent;
 use rig::completion::{
-    AssistantContent, CompletionError, CompletionModel, Message, ToolDefinition,
+    AssistantContent, CompletionError, CompletionModel, CompletionRequest, Message, ToolDefinition,
 };
 use rig::http_client;
 use tokio::time::{Duration, timeout};
@@ -140,25 +170,9 @@ async fn send(
     messages: &[Message],
     tools: &[ToolDefinition],
 ) -> Result<(OneOrMany<AssistantContent>, Usage), Fragment> {
-    // Use the first context message as the initial prompt for rig's builder API.
-    // When messages is empty (should never happen in practice), use a system
-    // placeholder — system role messages carry no conversational intent and
-    // won't trigger spurious LLM responses like "user sent a period".
-    let (initial_prompt, remaining_messages) = split_messages(messages);
+    let request = build_request(messages, tools, model)?;
 
-    let mut request = endpoint
-        .completion_request(initial_prompt)
-        .messages(remaining_messages)
-        .tools(tools.to_vec());
-
-    if let Some(temp) = model.temperature {
-        request = request.temperature(temp);
-    }
-    if let Some(limit) = &model.limit {
-        request = request.max_tokens(limit.output);
-    }
-
-    match timeout(Duration::from_secs(model.timeout), request.send()).await {
+    match timeout(Duration::from_secs(model.timeout), endpoint.completion(request)).await {
         Ok(Ok(response)) => Ok((
             response.choice,
             Usage {
@@ -195,6 +209,40 @@ async fn send(
             None::<&str>,
         )),
     }
+}
+
+/// Construct a `CompletionRequest` whose `chat_history` is the encoded
+/// fragments **in their original order**.
+///
+/// Returns a `Fragment::hitch` when `messages` is empty — an empty context
+/// has no meaningful prompt to send to the LLM, and we refuse to fabricate
+/// one (see module-level contract).
+fn build_request(
+    messages: &[Message],
+    tools: &[ToolDefinition],
+    model: &Model,
+) -> Result<CompletionRequest, Fragment> {
+    let chat_history = OneOrMany::many(messages.iter().cloned()).map_err(|_| {
+        Fragment::hitch(
+            "completion called with empty context — no messages to send to LLM",
+            None,
+            Role::System,
+            None::<&str>,
+        )
+    })?;
+
+    Ok(CompletionRequest {
+        model: None,
+        preamble: None,
+        chat_history,
+        documents: Vec::new(),
+        tools: tools.to_vec(),
+        temperature: model.temperature,
+        max_tokens: model.limit.as_ref().map(|l| l.output),
+        tool_choice: None,
+        additional_params: None,
+        output_schema: None,
+    })
 }
 
 fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
@@ -239,18 +287,6 @@ fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragmen
     fragments
 }
 
-/// Split messages into (initial_prompt, remaining). The first message
-/// becomes the initial prompt; the rest are returned for `.messages()`.
-/// When the list is empty, returns (Message::system("_"), Vec::new()).
-fn split_messages(messages: &[Message]) -> (Message, Vec<Message>) {
-    let initial = messages
-        .first()
-        .cloned()
-        .unwrap_or_else(|| Message::system("_"));
-    let remaining = messages.get(1..).unwrap_or_default().to_vec();
-    (initial, remaining)
-}
-
 fn apply_headers<Ext, ApiKey, H>(
     mut builder: rig::client::ClientBuilder<Ext, ApiKey, H>,
     headers: &Option<std::collections::HashMap<String, String>>,
@@ -278,35 +314,74 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Protocol;
 
+    fn dummy_model() -> Model {
+        Model {
+            name: "test".into(),
+            protocol: Protocol::OpenAI,
+            ..Default::default()
+        }
+    }
+
+    /// The whole point of building `CompletionRequest` directly: the
+    /// `chat_history` we send to the provider matches input order byte-for-byte.
+    /// Guards against the #43 / #86 regressions where a builder-managed
+    /// "initial prompt" rotated messages.
     #[test]
-    fn split_messages_uses_first_message_as_initial() {
+    fn build_request_preserves_message_order() {
         let msgs = vec![
             Message::system("you are a helper"),
             Message::user("search for papers"),
             Message::assistant("let me check"),
         ];
-        let (initial, remaining) = split_messages(&msgs);
-        assert!(matches!(&initial, Message::System { content } if content == "you are a helper"));
-        assert_eq!(remaining.len(), 2);
-        assert!(matches!(&remaining[0], Message::User { .. }));
-        assert!(matches!(&remaining[1], Message::Assistant { .. }));
+
+        let req = build_request(&msgs, &[], &dummy_model()).expect("non-empty builds");
+        let history: Vec<Message> = req.chat_history.into_iter().collect();
+
+        assert_eq!(history.len(), 3, "no message dropped or duplicated");
+        assert!(
+            matches!(&history[0], Message::System { content } if content == "you are a helper"),
+            "system message stays at the head"
+        );
+        assert!(matches!(&history[1], Message::User { .. }));
+        assert!(matches!(&history[2], Message::Assistant { .. }));
     }
 
     #[test]
-    fn split_messages_single_message_no_remaining() {
+    fn build_request_empty_messages_returns_hitch() {
+        let result = build_request(&[], &[], &dummy_model());
+        let Err(hitch) = result else {
+            panic!("expected Err(hitch) for empty messages");
+        };
+        assert!(matches!(hitch.role, Role::System));
+        assert!(matches!(&hitch.content, Content::Hitch { message, .. } if message.contains("empty context")));
+    }
+
+    #[test]
+    fn build_request_single_message_chat_history_has_one() {
         let msgs = vec![Message::user("hello")];
-        let (initial, remaining) = split_messages(&msgs);
-        assert!(matches!(&initial, Message::User { .. }));
-        assert!(remaining.is_empty());
+        let req = build_request(&msgs, &[], &dummy_model()).expect("single builds");
+        let history: Vec<Message> = req.chat_history.into_iter().collect();
+        assert_eq!(history.len(), 1);
+        assert!(matches!(&history[0], Message::User { .. }));
     }
 
     #[test]
-    fn split_messages_empty_falls_back_to_system_placeholder() {
-        let msgs: Vec<Message> = vec![];
-        let (initial, remaining) = split_messages(&msgs);
-        assert!(matches!(&initial, Message::System { content } if content == "_"));
-        assert!(remaining.is_empty());
+    fn build_request_passes_model_temperature_and_max_tokens() {
+        let mut model = dummy_model();
+        model.temperature = Some(0.42);
+        model.limit = Some(crate::model::Limit {
+            context: 100_000,
+            input: None,
+            output: 4096,
+        });
+
+        let msgs = vec![Message::user("hi")];
+        let req = build_request(&msgs, &[], &model).expect("builds");
+
+        assert_eq!(req.temperature, Some(0.42));
+        assert_eq!(req.max_tokens, Some(4096));
     }
 }
 
