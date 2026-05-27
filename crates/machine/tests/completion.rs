@@ -76,6 +76,58 @@ fn encode_tool_call_with_thinking_attaches_reasoning_placeholder() {
     );
 }
 
+/// DeepSeek thinking mode rejects requests whose assistant tool-call turn
+/// carries a placeholder reasoning. When the fragment was decoded from a real
+/// LLM response, `encode` must replay the model's original reasoning text
+/// verbatim — not the `.` stub. Regression for the 400 loop observed when
+/// running grpc_demo against `deepseek-v4-flash`.
+#[test]
+fn encode_tool_call_emits_stored_reasoning_not_placeholder() {
+    let frag = Fragment::tool_call("call_x", "shell", json!({"command": "ls"}))
+        .with_reasoning("the user asked for a directory listing");
+
+    for thinking in [true, false] {
+        let msg = encode(&frag, thinking).expect("encodes");
+        let Message::Assistant { content, .. } = msg else {
+            panic!("expected Assistant message");
+        };
+        let reasoning_texts: Vec<String> = content
+            .iter()
+            .filter_map(|item| match item {
+                AssistantContent::Reasoning(r) => Some(r.display_text()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            reasoning_texts.len(),
+            1,
+            "thinking={thinking}: exactly one reasoning block emitted",
+        );
+        assert_eq!(
+            reasoning_texts[0], "the user asked for a directory listing",
+            "thinking={thinking}: reasoning text must come from fragment, not '.'",
+        );
+    }
+}
+
+/// Symmetric: text-only assistant fragments never carry reasoning, even when
+/// `thinking=true`. The placeholder is tool-call-only.
+#[test]
+fn encode_assistant_text_with_thinking_does_not_synthesize_reasoning() {
+    let frag = Fragment::assistant("here is your answer");
+    let msg = encode(&frag, true).expect("encodes");
+    let Message::Assistant { content, .. } = msg else {
+        panic!("expected Assistant message");
+    };
+    assert!(
+        !content
+            .iter()
+            .any(|item| matches!(item, AssistantContent::Reasoning(_))),
+        "text assistant turns must not gain reasoning content",
+    );
+}
+
+
 #[test]
 fn encode_assistant_non_tool_call_ignores_thinking_flag() {
     let frag = Fragment::assistant("plain text response");

@@ -248,19 +248,41 @@ fn build_request(
 fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
     use rig::completion::message::MimeType;
     let mut fragments = Vec::new();
+    // Thinking-mode providers (DeepSeek, Kimi) emit one reasoning block per
+    // assistant turn and require it to be echoed back on every assistant
+    // message we resend from that turn. A turn may contain multiple parallel
+    // tool_calls — we replicate the same reasoning onto each of them, so the
+    // turn survives being split into one Fragment per call.
+    //
+    // Buffer accumulates Reasoning blocks (rare multi-block case) but is
+    // *not* cleared on ToolCall — only on Text or Image, which mark the
+    // start of a new logical turn.
+    let mut pending_reasoning: Vec<String> = Vec::new();
     for content in choice {
         match content {
             AssistantContent::Text(text) => {
+                pending_reasoning.clear();
                 fragments.push(Fragment::assistant(&text.text));
             }
+            AssistantContent::Reasoning(reasoning) => {
+                let text = reasoning.display_text();
+                if !text.is_empty() {
+                    pending_reasoning.push(text);
+                }
+            }
             AssistantContent::ToolCall(tc) => {
-                fragments.push(Fragment::tool_call(
+                let mut frag = Fragment::tool_call(
                     &tc.id,
                     &tc.function.name,
                     tc.function.arguments.clone(),
-                ));
+                );
+                if !pending_reasoning.is_empty() {
+                    frag = frag.with_reasoning(pending_reasoning.join("\n"));
+                }
+                fragments.push(frag);
             }
             AssistantContent::Image(content_image) => {
+                pending_reasoning.clear();
                 let source = match &content_image.data {
                     rig::completion::message::DocumentSourceKind::Url(url) => {
                         crate::fragment::DataSource::Url(url.clone())
@@ -281,7 +303,6 @@ fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragmen
                     .map(|m| m.to_mime_type().to_string());
                 fragments.push(Fragment::image(source, media_type));
             }
-            _ => {} // non-exhaustive: other AssistantContent variants
         }
     }
     fragments
@@ -383,6 +404,121 @@ mod tests {
         assert_eq!(req.temperature, Some(0.42));
         assert_eq!(req.max_tokens, Some(4096));
     }
+
+    // ── decode: reasoning preservation ──
+
+    use rig::completion::message::{Reasoning, ToolCall as RigToolCall, ToolFunction};
+    use serde_json::json;
+
+    fn assistant_reasoning(text: &str) -> AssistantContent {
+        AssistantContent::Reasoning(Reasoning::new(text))
+    }
+
+    fn assistant_tool_call(id: &str, name: &str) -> AssistantContent {
+        AssistantContent::ToolCall(RigToolCall {
+            id: id.into(),
+            call_id: None,
+            function: ToolFunction {
+                name: name.into(),
+                arguments: json!({}),
+            },
+            signature: None,
+            additional_params: None,
+        })
+    }
+
+    /// Regression for the deepseek-v4-flash 400 loop: when the model emits
+    /// reasoning followed by a tool_call in the same turn, decode must store
+    /// the reasoning on the ToolCall fragment so the next request can echo it.
+    #[test]
+    fn decode_attaches_reasoning_to_following_tool_call() {
+        let response = [
+            assistant_reasoning("I should list the files"),
+            assistant_tool_call("call_1", "shell"),
+        ];
+
+        let fragments = decode(response.iter());
+
+        assert_eq!(fragments.len(), 1, "reasoning is folded into the tool call");
+        let Content::ToolCall(tc) = &fragments[0].content else {
+            panic!("expected ToolCall content");
+        };
+        assert_eq!(tc.reasoning.as_deref(), Some("I should list the files"));
+    }
+
+    #[test]
+    fn decode_concatenates_multi_block_reasoning_before_tool_call() {
+        let response = [
+            assistant_reasoning("first thought"),
+            assistant_reasoning("refinement"),
+            assistant_tool_call("call_1", "shell"),
+        ];
+
+        let fragments = decode(response.iter());
+
+        let Content::ToolCall(tc) = &fragments[0].content else {
+            panic!("expected ToolCall");
+        };
+        assert_eq!(tc.reasoning.as_deref(), Some("first thought\nrefinement"));
+    }
+
+    #[test]
+    fn decode_discards_reasoning_before_text_turn() {
+        let response = [
+            assistant_reasoning("musing aloud"),
+            AssistantContent::Text(rig::completion::message::Text {
+                text: "here is the answer".into(),
+            }),
+        ];
+
+        let fragments = decode(response.iter());
+
+        assert_eq!(fragments.len(), 1);
+        assert!(
+            matches!(&fragments[0].content, Content::Text(t) if t.text == "here is the answer")
+        );
+    }
+
+    #[test]
+    fn decode_tool_call_without_reasoning_has_none() {
+        let response = [assistant_tool_call("call_1", "shell")];
+
+        let fragments = decode(response.iter());
+
+        let Content::ToolCall(tc) = &fragments[0].content else {
+            panic!("expected ToolCall");
+        };
+        assert!(tc.reasoning.is_none(), "no reasoning emitted, none stored");
+    }
+
+    /// When the LLM emits parallel tool_calls in one turn (one reasoning
+    /// block, multiple tool_calls), every fragment must carry the same
+    /// reasoning. Otherwise the second fragment re-encodes with a placeholder
+    /// and providers like DeepSeek reject the request with HTTP 400
+    /// "reasoning_content must be passed back". Regression for paper_digest
+    /// demo at 2026-05-27T14:10:36.
+    #[test]
+    fn decode_parallel_tool_calls_share_one_reasoning() {
+        let response = [
+            assistant_reasoning("I will run two searches in parallel"),
+            assistant_tool_call("call_1", "arxiv_search"),
+            assistant_tool_call("call_2", "arxiv_search"),
+        ];
+
+        let fragments = decode(response.iter());
+
+        assert_eq!(fragments.len(), 2);
+        for (idx, frag) in fragments.iter().enumerate() {
+            let Content::ToolCall(tc) = &frag.content else {
+                panic!("fragment {idx} is not a ToolCall");
+            };
+            assert_eq!(
+                tc.reasoning.as_deref(),
+                Some("I will run two searches in parallel"),
+                "fragment {idx}: both tool_calls in the same turn must carry the same reasoning",
+            );
+        }
+    }
 }
 
 /// Resolve a `fragment::DataSource` into a rig `UserContent`, converting
@@ -468,7 +604,15 @@ pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
                     &tc.name,
                     tc.arguments.clone(),
                 ));
-                if thinking {
+                // Echo the model's original reasoning when present — thinking-mode
+                // providers (DeepSeek, Kimi) validate that assistant tool-call
+                // turns carry the same `reasoning_content` they previously emitted.
+                // Falls back to a single-dot placeholder only when `thinking=true`
+                // and no reasoning was captured (legacy Kimi path where the model
+                // accepts any non-empty reasoning).
+                if let Some(reasoning_text) = tc.reasoning.as_deref() {
+                    content.push(AssistantContent::Reasoning(Reasoning::new(reasoning_text)));
+                } else if thinking {
                     content.push(AssistantContent::Reasoning(Reasoning::new(".")));
                 }
                 Some(Message::Assistant { id: None, content })
