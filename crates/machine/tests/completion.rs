@@ -1,5 +1,6 @@
-use machine::Fragment;
-use machine::completion::encode;
+use machine::completion::{build_request, decode, encode};
+use machine::{Content, Fragment, Limit, Model, Protocol, Role};
+use rig::completion::message::{Reasoning, Text as RigText, ToolCall as RigToolCall, ToolFunction};
 use rig::completion::{AssistantContent, Message};
 use serde_json::json;
 
@@ -213,5 +214,187 @@ fn encode_system_text_unchanged_alongside_hitch() {
     assert!(matches!(msg, Message::System { .. }));
     if let Message::System { content } = &msg {
         assert_eq!(content, "you are a helper");
+    }
+}
+
+// ── build_request: chat_history shape ──
+
+fn dummy_model() -> Model {
+    Model {
+        name: "test".into(),
+        protocol: Protocol::OpenAI,
+        ..Default::default()
+    }
+}
+
+/// The whole point of building `CompletionRequest` directly: the
+/// `chat_history` we send to the provider matches input order byte-for-byte.
+/// Guards against the #43 / #86 regressions where a builder-managed
+/// "initial prompt" rotated messages.
+#[test]
+fn build_request_preserves_message_order() {
+    let msgs = vec![
+        Message::system("you are a helper"),
+        Message::user("search for papers"),
+        Message::assistant("let me check"),
+    ];
+
+    let req = build_request(&msgs, &[], &dummy_model()).expect("non-empty builds");
+    let history: Vec<Message> = req.chat_history.into_iter().collect();
+
+    assert_eq!(history.len(), 3, "no message dropped or duplicated");
+    assert!(
+        matches!(&history[0], Message::System { content } if content == "you are a helper"),
+        "system message stays at the head"
+    );
+    assert!(matches!(&history[1], Message::User { .. }));
+    assert!(matches!(&history[2], Message::Assistant { .. }));
+}
+
+#[test]
+fn build_request_empty_messages_returns_hitch() {
+    let result = build_request(&[], &[], &dummy_model());
+    let Err(hitch) = result else {
+        panic!("expected Err(hitch) for empty messages");
+    };
+    assert!(matches!(hitch.role, Role::System));
+    assert!(
+        matches!(&hitch.content, Content::Hitch { message, .. } if message.contains("empty context"))
+    );
+}
+
+#[test]
+fn build_request_single_message_chat_history_has_one() {
+    let msgs = vec![Message::user("hello")];
+    let req = build_request(&msgs, &[], &dummy_model()).expect("single builds");
+    let history: Vec<Message> = req.chat_history.into_iter().collect();
+    assert_eq!(history.len(), 1);
+    assert!(matches!(&history[0], Message::User { .. }));
+}
+
+#[test]
+fn build_request_passes_model_temperature_and_max_tokens() {
+    let mut model = dummy_model();
+    model.temperature = Some(0.42);
+    model.limit = Some(Limit {
+        context: 100_000,
+        input: None,
+        output: 4096,
+    });
+
+    let msgs = vec![Message::user("hi")];
+    let req = build_request(&msgs, &[], &model).expect("builds");
+
+    assert_eq!(req.temperature, Some(0.42));
+    assert_eq!(req.max_tokens, Some(4096));
+}
+
+// ── decode: reasoning preservation ──
+
+fn assistant_reasoning(text: &str) -> AssistantContent {
+    AssistantContent::Reasoning(Reasoning::new(text))
+}
+
+fn assistant_tool_call(id: &str, name: &str) -> AssistantContent {
+    AssistantContent::ToolCall(RigToolCall {
+        id: id.into(),
+        call_id: None,
+        function: ToolFunction {
+            name: name.into(),
+            arguments: json!({}),
+        },
+        signature: None,
+        additional_params: None,
+    })
+}
+
+/// Regression for the deepseek-v4-flash 400 loop: when the model emits
+/// reasoning followed by a tool_call in the same turn, decode must store
+/// the reasoning on the ToolCall fragment so the next request can echo it.
+#[test]
+fn decode_attaches_reasoning_to_following_tool_call() {
+    let response = [
+        assistant_reasoning("I should list the files"),
+        assistant_tool_call("call_1", "shell"),
+    ];
+
+    let fragments = decode(response.iter());
+
+    assert_eq!(fragments.len(), 1, "reasoning is folded into the tool call");
+    let Content::ToolCall(tc) = &fragments[0].content else {
+        panic!("expected ToolCall content");
+    };
+    assert_eq!(tc.reasoning.as_deref(), Some("I should list the files"));
+}
+
+#[test]
+fn decode_concatenates_multi_block_reasoning_before_tool_call() {
+    let response = [
+        assistant_reasoning("first thought"),
+        assistant_reasoning("refinement"),
+        assistant_tool_call("call_1", "shell"),
+    ];
+
+    let fragments = decode(response.iter());
+
+    let Content::ToolCall(tc) = &fragments[0].content else {
+        panic!("expected ToolCall");
+    };
+    assert_eq!(tc.reasoning.as_deref(), Some("first thought\nrefinement"));
+}
+
+#[test]
+fn decode_discards_reasoning_before_text_turn() {
+    let response = [
+        assistant_reasoning("musing aloud"),
+        AssistantContent::Text(RigText {
+            text: "here is the answer".into(),
+        }),
+    ];
+
+    let fragments = decode(response.iter());
+
+    assert_eq!(fragments.len(), 1);
+    assert!(matches!(&fragments[0].content, Content::Text(t) if t.text == "here is the answer"));
+}
+
+#[test]
+fn decode_tool_call_without_reasoning_has_none() {
+    let response = [assistant_tool_call("call_1", "shell")];
+
+    let fragments = decode(response.iter());
+
+    let Content::ToolCall(tc) = &fragments[0].content else {
+        panic!("expected ToolCall");
+    };
+    assert!(tc.reasoning.is_none(), "no reasoning emitted, none stored");
+}
+
+/// When the LLM emits parallel tool_calls in one turn (one reasoning
+/// block, multiple tool_calls), every fragment must carry the same
+/// reasoning. Otherwise the second fragment re-encodes with a placeholder
+/// and providers like DeepSeek reject the request with HTTP 400
+/// "reasoning_content must be passed back". Regression for paper_digest
+/// demo at 2026-05-27T14:10:36.
+#[test]
+fn decode_parallel_tool_calls_share_one_reasoning() {
+    let response = [
+        assistant_reasoning("I will run two searches in parallel"),
+        assistant_tool_call("call_1", "arxiv_search"),
+        assistant_tool_call("call_2", "arxiv_search"),
+    ];
+
+    let fragments = decode(response.iter());
+
+    assert_eq!(fragments.len(), 2);
+    for (idx, frag) in fragments.iter().enumerate() {
+        let Content::ToolCall(tc) = &frag.content else {
+            panic!("fragment {idx} is not a ToolCall");
+        };
+        assert_eq!(
+            tc.reasoning.as_deref(),
+            Some("I will run two searches in parallel"),
+            "fragment {idx}: both tool_calls in the same turn must carry the same reasoning",
+        );
     }
 }
