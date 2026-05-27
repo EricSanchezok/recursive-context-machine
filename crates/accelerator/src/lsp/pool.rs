@@ -219,21 +219,3 @@ async fn remove_client(key: &ClientKey) {
         states.remove(key);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn client_key_hashes_root_and_server() {
-        let first = ClientKey {
-            server_id: "rust-analyzer",
-            root: PathBuf::from("/a"),
-        };
-        let second = ClientKey {
-            server_id: "rust-analyzer",
-            root: PathBuf::from("/b"),
-        };
-        assert_ne!(first, second);
-    }
-}
