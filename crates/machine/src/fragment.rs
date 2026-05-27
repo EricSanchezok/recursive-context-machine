@@ -65,6 +65,15 @@ pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: Value,
+    /// Reasoning text the model emitted alongside this tool call.
+    ///
+    /// Thinking-mode providers (DeepSeek, Kimi Coding, …) return reasoning
+    /// content on assistant turns and **require it to be echoed back** on
+    /// subsequent requests that include this turn as history. Captured by
+    /// `completion::decode` from `AssistantContent::Reasoning` and re-emitted
+    /// by `completion::encode`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
 }
 
 /// Outcome of a tool execution.
@@ -194,8 +203,21 @@ impl Fragment {
                 id: id.into(),
                 name: name.into(),
                 arguments,
+                reasoning: None,
             }),
         }
+    }
+
+    /// Attach reasoning text to this fragment when it carries a [`Content::ToolCall`].
+    ///
+    /// No-op on other content variants. Used by `completion::decode` to
+    /// preserve the model's `reasoning_content` so it can be echoed back on
+    /// the next request for thinking-mode providers.
+    pub fn with_reasoning(mut self, reasoning: impl Into<String>) -> Self {
+        if let Content::ToolCall(ref mut tc) = self.content {
+            tc.reasoning = Some(reasoning.into());
+        }
+        self
     }
 
     // ── Multi-modal constructors (P2) ──
