@@ -1,0 +1,46 @@
+name = "Autoresearch Survey Pipeline"
+
+use "./anchor.rcm" as Anchor
+use "./query_plan.rcm" as QueryPlan
+use "./discovery.rcm" as Discovery
+use "./expansion.rcm" as Expansion
+use "./rank_pool.rcm" as RankPool
+use "./research_map.rcm" as ResearchMap
+use "./judge_panel.rcm" as JudgePanel
+use "./survey_brief.rcm" as SurveyBrief
+
+graph {
+    accelerator anchor = Anchor
+    accelerator query_plan = QueryPlan
+    accelerator discovery = Discovery
+    accelerator expansion = Expansion
+    accelerator rank_pool = RankPool
+    accelerator research_map = ResearchMap
+    accelerator judge_panel = JudgePanel
+    accelerator survey_brief = SurveyBrief
+
+    anchor.context -> query_plan.context
+    anchor.done -> query_plan.trigger
+
+    query_plan.context -> discovery.context
+    query_plan.done -> discovery.trigger
+
+    discovery.context -> expansion.context
+    discovery.done -> expansion.trigger
+
+    expansion.context -> rank_pool.context
+    expansion.done -> rank_pool.trigger
+
+    rank_pool.context -> research_map.context
+    rank_pool.done -> research_map.trigger
+
+    research_map.context -> judge_panel.context
+    research_map.done -> judge_panel.trigger
+
+    judge_panel.context -> survey_brief.context
+    judge_panel.done -> survey_brief.trigger
+
+    survey_brief.done -> output.done
+    survey_brief.context -> output.context
+    survey_brief.purpose -> output.purpose
+}

@@ -1,0 +1,67 @@
+name = "Autoresearch Expansion"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+graph {
+    accelerator citation_seed_selector {
+        purpose = "autoresearch citation seed selector"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/citation_seed_selector.txt" }
+        tools = ["fs", "shell"]
+    }
+
+    accelerator reference_expander {
+        purpose = "autoresearch reference expander"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/reference_expander.txt" }
+        tools = ["arxiv_download", "arxiv_search", "fs", "shell"]
+    }
+
+    accelerator semantic_expander {
+        purpose = "autoresearch semantic expander"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/semantic_expander.txt" }
+        tools = ["arxiv_search", "fs", "shell"]
+    }
+
+    flux expansion_merge {
+        channel = context
+        mode = digest
+        arity = 3
+    }
+
+    accelerator expansion_merger {
+        purpose = "autoresearch expansion merger"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/expansion_merger.txt" }
+        tools = ["fs", "shell"]
+    }
+
+    input.context -> citation_seed_selector.context
+
+    citation_seed_selector.context -> reference_expander.context
+    citation_seed_selector.done -> reference_expander.trigger
+
+    citation_seed_selector.context -> semantic_expander.context
+    citation_seed_selector.done -> semantic_expander.trigger
+
+    citation_seed_selector.context -> expansion_merge.slot(0)
+    reference_expander.context -> expansion_merge.slot(1)
+    semantic_expander.context -> expansion_merge.slot(2)
+
+    expansion_merge.out -> expansion_merger.context
+
+    expansion_merger.done -> output.done
+    expansion_merger.context -> output.context
+    expansion_merger.purpose -> output.purpose
+}
