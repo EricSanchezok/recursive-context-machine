@@ -1,0 +1,73 @@
+name = "Autoresearch Judge Panel"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+graph {
+    accelerator coverage_judge {
+        purpose = "autoresearch coverage judge"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/coverage_judge.txt" }
+        tools = ["fs", "shell"]
+    }
+
+    accelerator scope_judge {
+        purpose = "autoresearch scope judge"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/scope_judge.txt" }
+        tools = ["fs", "shell"]
+    }
+
+    accelerator benchmark_judge {
+        purpose = "autoresearch benchmark judge"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/benchmark_judge.txt" }
+        tools = ["fs", "shell"]
+    }
+
+    accelerator gap_judge {
+        purpose = "autoresearch gap judge"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/gap_judge.txt" }
+        tools = ["fs", "shell"]
+    }
+
+    flux judge_merge {
+        channel = context
+        mode = digest
+        arity = 4
+    }
+
+    accelerator judge_synthesizer {
+        purpose = "autoresearch judge synthesizer"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/judge_synthesizer.txt" }
+        tools = ["fs", "shell"]
+    }
+
+    input.context -> coverage_judge.context
+    input.context -> scope_judge.context
+    input.context -> benchmark_judge.context
+    input.context -> gap_judge.context
+
+    coverage_judge.context -> judge_merge.slot(0)
+    scope_judge.context -> judge_merge.slot(1)
+    benchmark_judge.context -> judge_merge.slot(2)
+    gap_judge.context -> judge_merge.slot(3)
+
+    judge_merge.out -> judge_synthesizer.context
+
+    judge_synthesizer.done -> output.done
+    judge_synthesizer.context -> output.context
+    judge_synthesizer.purpose -> output.purpose
+}
