@@ -33,9 +33,15 @@ graph {
         tools = ["arxiv_search", "fs", "shell"]
     }
 
+    flux seed_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
     flux expansion_merge {
         channel = context
-        mode = digest
+        mode = last
         arity = 3
     }
 
@@ -49,10 +55,11 @@ graph {
 
     input.context -> citation_seed_selector.context
 
-    citation_seed_selector.context -> reference_expander.context
+    citation_seed_selector.context -> seed_handoff.slot(0)
+    seed_handoff.out -> reference_expander.context
     citation_seed_selector.done -> reference_expander.trigger
 
-    citation_seed_selector.context -> semantic_expander.context
+    seed_handoff.out -> semantic_expander.context
     citation_seed_selector.done -> semantic_expander.trigger
 
     citation_seed_selector.context -> expansion_merge.slot(0)

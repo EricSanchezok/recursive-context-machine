@@ -43,7 +43,7 @@ graph {
 
     flux scout_merge {
         channel = context
-        mode = digest
+        mode = last
         arity = 4
     }
 
