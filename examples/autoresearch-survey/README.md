@@ -38,6 +38,8 @@ cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/discovery.rcm
 
 ## Pipeline
 
+The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In short, graph context only carries handoffs; full intermediate data lives in `run_dir` artifacts.
+
 1. `anchor.rcm`  
    读取 topic，生成 `SurveySpec`，并创建 `run_dir`。
 

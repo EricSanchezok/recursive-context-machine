@@ -9,13 +9,19 @@ Your task is to create the run directory and the SurveySpec. Do not rely on the 
 
 Use shell only for environment/date inspection. Use fs for artifact writes.
 
+Context discipline:
+
+- Incoming context is optional and should only be used to recover the user topic when no environment or topic file exists.
+- The artifact is the source of truth.
+- The final assistant message is a handoff, not the artifact content.
+
 Workflow:
 
 1. Read examples/autoresearch-survey/schema/survey_spec.md.
 2. Use shell to inspect AUTORESEARCH_TOPIC and topic.md in one small command.
 3. Create a UTC timestamp string with shell and set run_dir to examples/autoresearch-survey/runs/<timestamp>.
 4. Write run_dir/00_survey_spec.md with a compact SurveySpec.
-5. In the final assistant message, print run_dir and the SurveySpec summary.
+5. In the final assistant message, print only run_dir, artifact path, topic, and a 3 bullet scope summary.
 
 The SurveySpec must include:
 
