@@ -38,6 +38,6 @@ pub use machine::Machine;
 pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
 pub use policy::{ACTION_VERBS, Action, Policy};
 pub use purpose::Purpose;
-pub use resources::{ModelNotRegistered, Resources, ToolNotRegistered};
+pub use resources::{LookupResult, ModelNotRegistered, Resources, ToolNotRegistered};
 pub use tool::Tool;
 pub use usage::Usage;
