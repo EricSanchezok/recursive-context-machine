@@ -14,7 +14,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/coverage_judge.txt" }
-        tools = ["fs", "shell"]
+        tools = ["fs"]
     }
 
     accelerator scope_judge {
@@ -22,7 +22,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/scope_judge.txt" }
-        tools = ["fs", "shell"]
+        tools = ["fs"]
     }
 
     accelerator benchmark_judge {
@@ -30,7 +30,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/benchmark_judge.txt" }
-        tools = ["fs", "shell"]
+        tools = ["fs"]
     }
 
     accelerator gap_judge {
@@ -38,7 +38,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/gap_judge.txt" }
-        tools = ["fs", "shell"]
+        tools = ["fs"]
     }
 
     flux judge_merge {
@@ -52,7 +52,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/judge_synthesizer.txt" }
-        tools = ["fs", "shell"]
+        tools = ["fs"]
     }
 
     input.context -> coverage_judge.context

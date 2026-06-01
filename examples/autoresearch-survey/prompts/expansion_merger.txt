@@ -6,15 +6,15 @@ Context discipline:
 
 - Upstream context contains only expansion handoffs.
 - Read full expansion inputs from run_dir/03a_seed_papers.md, 03b_citation_expansion.md, and 03c_semantic_expansion.md.
-- The final assistant message must be a compact handoff.
+- End with a handoff per schema/handoff.md.
 
 Workflow:
 
 1. Read examples/autoresearch-survey/schema/expansion.md.
-2. Extract run_dir from context or the newest run directory.
+2. Extract run_dir from context. If absent, fall back to the newest run directory and note it under risks.
 3. Merge seed_papers, citation_edges, resolved_references, semantic_neighbors, new_candidates, drift_risks, and next_expansion_queries.
 4. Deduplicate by arXiv ID and normalized title.
 5. Write run_dir/03_expansion.md.
-6. Final response should include only run_dir, artifact path, seed count, resolved reference count, semantic addition count, and major drift risks.
+6. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, counts (seeds, resolved refs, semantic additions), and major drift risks under risks.
 
 Keep uncertainty. Partial citation edges are useful if clearly marked.
