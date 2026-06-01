@@ -11,7 +11,7 @@ Context discipline:
 Workflow:
 
 1. Read examples/autoresearch-survey/schema/survey_brief.md.
-2. Extract run_dir, ResearchMap, RankedPool, ExpansionReport, and JudgePanel from context. If run_dir is absent, fall back to the newest run directory and note it under risks.
+2. Extract run_dir, ResearchMap, RankedPool, ExpansionReport, and JudgePanel from context. If run_dir is absent, fall back to the newest run directory by listing examples/autoresearch-survey/runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
 3. Write run_dir/07_survey_brief.md.
 4. Write run_dir/index.md as a short manifest linking all artifacts and summarizing the result. Include the forthcoming 08_survey.md (written by survey_writer) in the manifest.
 5. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md (run_dir, artifact path, status) followed by the brief.

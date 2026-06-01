@@ -11,7 +11,7 @@ Context discipline:
 Workflow:
 
 1. Read examples/autoresearch-survey/schema/judge_panel.md.
-2. Extract run_dir and all judge outputs from context. If run_dir is absent, fall back to the newest run directory and note it under risks.
+2. Extract run_dir and all judge outputs from context. If run_dir is absent, fall back to the newest run directory by listing examples/autoresearch-survey/runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
 3. Produce overall_verdict, what_is_ready, what_must_be_caveated, what_to_expand_next, allowed_final_claims, and forbidden_overclaims.
 4. Write run_dir/06_judge_panel.md.
 5. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md — run_dir, artifact path, status, verdict (overall_verdict), a one-line what_is_ready summary, and top caveats under risks.

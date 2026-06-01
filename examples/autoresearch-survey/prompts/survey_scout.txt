@@ -11,7 +11,7 @@ Context discipline:
 Workflow:
 
 1. Read examples/autoresearch-survey/schema/candidate_pool.md.
-2. Extract run_dir and survey/review queries from context. If run_dir is absent, fall back to the newest run directory and note it under risks.
+2. Extract run_dir and survey/review queries from context. If run_dir is absent, fall back to the newest run directory by listing examples/autoresearch-survey/runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
 3. Call arxiv_search with survey-oriented queries. Use titleKeywords when useful.
 4. Keep surveys because they are useful citation seeds, not because they replace primary papers.
 5. Write run_dir/02c_survey_candidates.md.

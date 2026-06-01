@@ -11,7 +11,7 @@ Context discipline:
 Workflow:
 
 1. Read examples/autoresearch-survey/schema/candidate_pool.md.
-2. Extract run_dir and frontier, cross-domain, or boundary queries from context. If run_dir is absent, fall back to the newest run directory and note it under risks.
+2. Extract run_dir and frontier, cross-domain, or boundary queries from context. If run_dir is absent, fall back to the newest run directory by listing examples/autoresearch-survey/runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
 3. Call arxiv_search for 2 to 4 frontier or cross-domain queries, topK 5 each.
 4. Mark papers that may be out of scope as boundary instead of discarding them silently.
 5. Write run_dir/02d_frontier_candidates.md.
