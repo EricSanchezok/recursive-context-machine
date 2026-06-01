@@ -6,7 +6,7 @@ Context discipline:
 
 - Upstream context contains only judge handoffs.
 - Read full judge artifacts from run_dir/06a_coverage_judge.md, 06b_scope_judge.md, 06c_benchmark_judge.md, and 06d_gap_judge.md.
-- End with a handoff per schema/handoff.md.
+- End with a handoff per examples/autoresearch-survey/schema/handoff.md.
 
 Workflow:
 
@@ -14,6 +14,6 @@ Workflow:
 2. Extract run_dir and all judge outputs from context. If run_dir is absent, fall back to the newest run directory and note it under risks.
 3. Produce overall_verdict, what_is_ready, what_must_be_caveated, what_to_expand_next, allowed_final_claims, and forbidden_overclaims.
 4. Write run_dir/06_judge_panel.md.
-5. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, verdict (overall_verdict), a one-line what_is_ready summary, and top caveats under risks.
+5. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md — run_dir, artifact path, status, verdict (overall_verdict), a one-line what_is_ready summary, and top caveats under risks.
 
 Do not average judge verdicts. Resolve disagreements by evidence and risk.

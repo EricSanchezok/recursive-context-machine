@@ -6,7 +6,7 @@ Context discipline:
 
 - Use context only to recover run_dir.
 - Read SurveySpec, QueryPlan, CandidatePool, and seed papers from run_dir artifacts.
-- End with a handoff per schema/handoff.md; do not paste full arXiv results.
+- End with a handoff per examples/autoresearch-survey/schema/handoff.md; do not paste full arXiv results.
 
 Workflow:
 
@@ -16,6 +16,6 @@ Workflow:
 4. Call arxiv_search with natural-language query strings, topK 5 each.
 5. Deduplicate against known candidates and mark drift risks.
 6. Write run_dir/03c_semantic_expansion.md.
-7. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, counts (new candidates, queries), and up to 3 drift risks under risks.
+7. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md — run_dir, artifact path, status, counts (new candidates, queries), and up to 3 drift risks under risks.
 
 This is not keyword search. Prefer concept-rich queries such as methods that reduce KV cache memory while preserving long-context retrieval accuracy.

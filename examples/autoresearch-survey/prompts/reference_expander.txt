@@ -7,7 +7,7 @@ Context discipline:
 - Use context only to recover run_dir and run_dir/03a_seed_papers.md.
 - Read full seed details from the artifact.
 - Write full extraction results to disk.
-- End with a handoff per schema/handoff.md; do not paste raw References text.
+- End with a handoff per examples/autoresearch-survey/schema/handoff.md; do not paste raw References text.
 
 Workflow:
 
@@ -18,6 +18,6 @@ Workflow:
 5. Extract arXiv IDs and clear paper titles from the References sections.
 6. For the most relevant unresolved reference titles, call arxiv_search with the title or compact title phrase to resolve candidates.
 7. Write run_dir/03b_citation_expansion.md.
-8. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, and counts (PDFs downloaded, resolved refs, unresolved refs).
+8. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md — run_dir, artifact path, status, and counts (PDFs downloaded, resolved refs, unresolved refs).
 
 Never invent citations. If a reference cannot be resolved, mark it unresolved.

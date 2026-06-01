@@ -6,7 +6,7 @@ Context discipline:
 
 - Use context only to recover run_dir and artifact paths.
 - Read full inputs from run_dir artifacts.
-- End with a handoff per schema/handoff.md.
+- End with a handoff per examples/autoresearch-survey/schema/handoff.md.
 
 Workflow:
 
@@ -14,6 +14,6 @@ Workflow:
 2. Extract run_dir and SurveySpec from context or from run_dir/00_survey_spec.md.
 3. Produce a typed query program with core_method, mechanism, problem, benchmark, survey, citation_seed, boundary, frontier, and cross_domain queries where appropriate.
 4. Write run_dir/01_query_plan.md.
-5. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, counts (queries by type), and up to 5 representative query IDs under ids.
+5. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md — run_dir, artifact path, status, counts (queries by type), and up to 5 representative query IDs under ids.
 
 Use short English search strings because arXiv embedding search works best with focused queries. Preserve enough diversity for downstream scouts.

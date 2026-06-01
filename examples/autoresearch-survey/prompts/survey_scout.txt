@@ -6,7 +6,7 @@ Context discipline:
 
 - Use context only to recover run_dir.
 - Read QueryPlan from run_dir/01_query_plan.md.
-- End with a handoff per schema/handoff.md; do not paste full arXiv results.
+- End with a handoff per examples/autoresearch-survey/schema/handoff.md; do not paste full arXiv results.
 
 Workflow:
 
@@ -15,6 +15,6 @@ Workflow:
 3. Call arxiv_search with survey-oriented queries. Use titleKeywords when useful.
 4. Keep surveys because they are useful citation seeds, not because they replace primary papers.
 5. Write run_dir/02c_survey_candidates.md.
-6. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, counts (candidate count), and up to 5 survey arXiv IDs or titles under ids.
+6. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md — run_dir, artifact path, status, counts (candidate count), and up to 5 survey arXiv IDs or titles under ids.
 
 Mark each paper as survey, review, tutorial, taxonomy, or related overview when possible.

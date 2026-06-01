@@ -13,7 +13,7 @@ Context discipline:
 
 - Incoming context is optional and should only be used to recover the user topic when no environment or topic file exists.
 - The artifact is the source of truth.
-- The final assistant message is a handoff per schema/handoff.md, not the artifact content.
+- The final assistant message is a handoff per examples/autoresearch-survey/schema/handoff.md, not the artifact content.
 
 Workflow:
 
@@ -21,7 +21,7 @@ Workflow:
 2. Use shell to inspect AUTORESEARCH_TOPIC and topic.md in one small command.
 3. Create a UTC timestamp string with shell and set run_dir to examples/autoresearch-survey/runs/<timestamp>.
 4. Write run_dir/00_survey_spec.md with a compact SurveySpec.
-5. Final response: a handoff per schema/handoff.md — run_dir (the one you just created), artifact path, status, topic, and a 3 bullet scope summary under risks or next as appropriate.
+5. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md — run_dir (the one you just created), artifact path, status, topic, and a 3 bullet scope summary under risks or next as appropriate.
 
 The SurveySpec must include:
 
