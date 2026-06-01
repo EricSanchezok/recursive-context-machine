@@ -61,11 +61,10 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 7. `judge_panel.rcm`  
    并行 coverage、scope、benchmark、gap judges，最后汇总裁决。
 
-8. `survey_brief.rcm`  
-   生成短 survey brief 和下一轮 action plan（可审计的中间产物）。
+8. `survey_writer.rcm`  
+   把 research map 和 judge panel 投影成最终的分节叙事长文 survey，并打印给用户。
 
-9. `survey_writer.rcm`  
-   把 research map、judge panel、brief 投影成最终的分节叙事长文 survey，并打印给用户。
+`survey_brief.rcm` 仍保留为一个可单跑的单元（生成凝练的可审计简报），但已不在 end-to-end 管线中；管线由 `judge_panel` 直接进入 `survey_writer`。
 
 ## Run Artifacts
 
@@ -78,8 +77,7 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 - `04_ranked_pool.md`
 - `05_research_map.md`
 - `06_judge_panel.md`
-- `07_survey_brief.md`
 - `08_survey.md`
 - `index.md`
 
-这些文件是 runtime artifacts，默认不进入 git。
+这些文件是 runtime artifacts，默认不进入 git。（单跑 `survey_brief.rcm` 时会额外产出 `07_survey_brief.md`。）
