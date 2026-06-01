@@ -14,10 +14,11 @@ Each query must include:
 
 The plan must include at least:
 
-- 3 core or mechanism queries.
-- 2 benchmark or evaluation queries.
-- 1 survey or review query.
-- 1 boundary query.
-- 1 frontier query.
+- 5 core or mechanism queries.
+- 3 benchmark or evaluation queries.
+- 2 survey or review queries.
+- 2 boundary queries.
+- 2 frontier queries.
+- 2 cross-domain queries.
 
 Queries should be short enough for arXiv search and broad enough for embedding retrieval.
