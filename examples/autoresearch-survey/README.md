@@ -1,6 +1,6 @@
 # RCM Auto Research Survey
 
-这个 example 展示如何用 RCM 把自动文献综述拆成可复用、可调试的单元级 context machines。目标不是让 LLM 直接写长文，而是先构建可审计的 research map，再由多个独立 judge 汇总成短小、凝练、可继续扩展的 survey brief。
+这个 example 展示如何用 RCM 把自动文献综述拆成可复用、可调试的单元级 context machines。核心思路不是让 LLM 一上来就写长文，而是先构建可审计的 research map、由多个独立 judge 汇总成短小凝练的 survey brief，最后再把这份地图投影成一篇有证据约束的叙事长文 survey 交给用户。
 
 ## 设计原则
 
@@ -62,7 +62,10 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
    并行 coverage、scope、benchmark、gap judges，最后汇总裁决。
 
 8. `survey_brief.rcm`  
-   生成最终短 survey brief 和下一轮 action plan。
+   生成短 survey brief 和下一轮 action plan（可审计的中间产物）。
+
+9. `survey_writer.rcm`  
+   把 research map、judge panel、brief 投影成最终的分节叙事长文 survey，并打印给用户。
 
 ## Run Artifacts
 
@@ -76,6 +79,7 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 - `05_research_map.md`
 - `06_judge_panel.md`
 - `07_survey_brief.md`
+- `08_survey.md`
 - `index.md`
 
 这些文件是 runtime artifacts，默认不进入 git。
