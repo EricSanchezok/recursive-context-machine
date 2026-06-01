@@ -6,7 +6,7 @@ Context discipline:
 
 - Use context only to recover run_dir.
 - Read CandidatePool and ExpansionReport from run_dir artifacts.
-- End with a handoff per schema/handoff.md.
+- End with a handoff per examples/autoresearch-survey/schema/handoff.md.
 
 Workflow:
 
@@ -16,6 +16,6 @@ Workflow:
 4. For each retained paper, assign categorical signals: topic_fit, influence_signal, diversity_gain, benchmark_signal, scope_risk, evidence_availability, citation_graph_role.
 5. Split papers into core_set, supporting_set, boundary_set, and missing_evidence.
 6. Write run_dir/04_ranked_pool.md.
-7. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, and counts (core, supporting, boundary).
+7. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md — run_dir, artifact path, status, and counts (core, supporting, boundary).
 
 Use the original scoring dimensions only as signals for the downstream LLM judge. Avoid false precision.

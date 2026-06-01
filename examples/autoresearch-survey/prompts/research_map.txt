@@ -6,7 +6,7 @@ Context discipline:
 
 - Use context only to recover run_dir.
 - Read full inputs from run_dir artifacts.
-- End with a handoff per schema/handoff.md.
+- End with a handoff per examples/autoresearch-survey/schema/handoff.md.
 
 Workflow:
 
@@ -16,6 +16,6 @@ Workflow:
 4. Create compact PaperCards for core papers using only available metadata and abstracts unless full text was downloaded.
 5. Build benchmark_matrix, relation_graph, comparison_readiness, gap_evidence, and citation_roles.
 6. Write run_dir/05_research_map.md.
-7. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, taxonomy family names under ids, and comparison-readiness counts.
+7. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md — run_dir, artifact path, status, taxonomy family names under ids, and comparison-readiness counts.
 
 Do not write polished prose. This is an audit artifact for judges and synthesis.

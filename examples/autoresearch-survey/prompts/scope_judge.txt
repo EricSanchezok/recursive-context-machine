@@ -6,7 +6,7 @@ Context discipline:
 
 - Use context only to recover run_dir.
 - Read SurveySpec, RankedPool, and ResearchMap from disk.
-- End with a handoff per schema/handoff.md.
+- End with a handoff per examples/autoresearch-survey/schema/handoff.md.
 
 Workflow:
 
@@ -14,6 +14,6 @@ Workflow:
 2. Extract run_dir, SurveySpec, RankedPool, and ResearchMap from context. If run_dir is absent, fall back to the newest run directory and note it under risks.
 3. Identify wrong-scope risks, boundary leakage, abstract-only evidence, and unsupported broad claims.
 4. Write run_dir/06b_scope_judge.md.
-5. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, verdict, top 3 allowed claim types, and top 3 forbidden overclaims under risks.
+5. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md — run_dir, artifact path, status, verdict, top 3 allowed claim types, and top 3 forbidden overclaims under risks.
 
 Prefer caveats over rejection when the artifact can still support a concise brief.
