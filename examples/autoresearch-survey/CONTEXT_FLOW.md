@@ -11,6 +11,10 @@ Context is only for handoff:
 
 Full data must be read from artifacts. Search results, PDF reference text, judge evidence, and merged tables should not be passed through RCM context.
 
+## Handoff Envelope
+
+Every node ends with a handoff in the shape defined by [`schema/handoff.md`](schema/handoff.md): `run_dir` first, then `artifact`, `status`, and only the small optional fields that apply (`counts`, `ids`, `verdict`, `risks`, `next`). Keep it to ~15 lines. The handoff names artifacts and signals; it never carries their contents.
+
 ## Step Contracts
 
 | Step | Incoming context | Reads from disk | Writes to disk | Outgoing handoff |
@@ -41,3 +45,5 @@ Full data must be read from artifacts. Search results, PDF reference text, judge
 - Parallel scout and judge mergers use `context last`, not `digest`, because their final handoffs are intentionally compact.
 - Long evidence is moved through files, never through graph context.
 - If a downstream unit needs more data than the handoff provides, that data belongs in a named artifact.
+- Every handoff follows [`schema/handoff.md`](schema/handoff.md): `run_dir` first, ~15 lines max.
+- `run_dir` is the chain invariant. Recover it from context; if a unit falls back to the newest `runs/*` directory, it must surface that as a `risk`, never switch silently.

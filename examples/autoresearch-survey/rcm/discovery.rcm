@@ -14,7 +14,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/method_scout.txt" }
-        tools = ["arxiv_search", "fs", "shell"]
+        tools = ["arxiv_search", "fs"]
     }
 
     accelerator benchmark_scout {
@@ -22,7 +22,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/benchmark_scout.txt" }
-        tools = ["arxiv_search", "fs", "shell"]
+        tools = ["arxiv_search", "fs"]
     }
 
     accelerator survey_scout {
@@ -30,7 +30,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/survey_scout.txt" }
-        tools = ["arxiv_search", "fs", "shell"]
+        tools = ["arxiv_search", "fs"]
     }
 
     accelerator frontier_scout {
@@ -38,7 +38,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/frontier_scout.txt" }
-        tools = ["arxiv_search", "fs", "shell"]
+        tools = ["arxiv_search", "fs"]
     }
 
     flux scout_merge {
@@ -52,7 +52,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/discovery_merger.txt" }
-        tools = ["fs", "shell"]
+        tools = ["fs"]
     }
 
     input.context -> method_scout.context

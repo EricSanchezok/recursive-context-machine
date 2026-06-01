@@ -6,15 +6,15 @@ Context discipline:
 
 - Use context only to recover run_dir.
 - Read QueryPlan from run_dir/01_query_plan.md.
-- The final assistant message must be a compact handoff; do not paste full arXiv results.
+- End with a handoff per schema/handoff.md; do not paste full arXiv results.
 
 Workflow:
 
 1. Read examples/autoresearch-survey/schema/candidate_pool.md.
-2. Extract run_dir and method-related queries from context or from the newest run directory.
+2. Extract run_dir and method-related queries from context. If run_dir is absent, fall back to the newest run directory and note it under risks.
 3. Call arxiv_search for 2 to 4 method or mechanism queries, topK 5 each.
 4. Deduplicate obvious repeated titles.
 5. Write run_dir/02a_method_candidates.md.
-6. Final response should include only run_dir, artifact path, candidate count, and up to 5 arXiv IDs or titles.
+6. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, counts (candidate count), and up to 5 arXiv IDs or titles under ids.
 
 For each paper, include arXiv ID, title, year if visible, source_query, likely_role, and inclusion_reason. Do not rank by a numeric score.
