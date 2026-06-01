@@ -38,6 +38,7 @@ Every node ends with a handoff in the shape defined by [`schema/handoff.md`](sch
 | `gap_judge` | `run_dir` | `05_research_map.md` and supporting artifacts | `06d_gap_judge.md` | `run_dir`, artifact path, verdict, strong and weak gap counts, queries |
 | `judge_synthesizer` | judge handoffs only | `06a` through `06d` artifacts | `06_judge_panel.md` | `run_dir`, judge panel path, overall verdict, ready summary, caveats |
 | `survey_brief` | judge panel handoff only | all final artifacts as needed | `07_survey_brief.md`, `index.md` | final brief plus `run_dir` |
+| `survey_writer` | brief handoff only | `00`, `05`, `06`, `07` artifacts | `08_survey.md` | `run_dir`, survey path, status, plus the full survey for the user |
 
 ## Wiring Rules
 

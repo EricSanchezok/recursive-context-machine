@@ -8,6 +8,7 @@ use "./rank_pool.rcm" as RankPool
 use "./research_map.rcm" as ResearchMap
 use "./judge_panel.rcm" as JudgePanel
 use "./survey_brief.rcm" as SurveyBrief
+use "./survey_writer.rcm" as SurveyWriter
 
 graph {
     accelerator anchor = Anchor
@@ -18,6 +19,7 @@ graph {
     accelerator research_map = ResearchMap
     accelerator judge_panel = JudgePanel
     accelerator survey_brief = SurveyBrief
+    accelerator survey_writer = SurveyWriter
 
     flux anchor_handoff {
         channel = context
@@ -61,6 +63,12 @@ graph {
         arity = 1
     }
 
+    flux brief_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
     anchor.context -> anchor_handoff.slot(0)
     anchor_handoff.out -> query_plan.context
     anchor.done -> query_plan.trigger
@@ -89,7 +97,11 @@ graph {
     judge_handoff.out -> survey_brief.context
     judge_panel.done -> survey_brief.trigger
 
-    survey_brief.done -> output.done
-    survey_brief.context -> output.context
-    survey_brief.purpose -> output.purpose
+    survey_brief.context -> brief_handoff.slot(0)
+    brief_handoff.out -> survey_writer.context
+    survey_brief.done -> survey_writer.trigger
+
+    survey_writer.done -> output.done
+    survey_writer.context -> output.context
+    survey_writer.purpose -> output.purpose
 }
