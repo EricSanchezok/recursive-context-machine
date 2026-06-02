@@ -1,6 +1,6 @@
 # City Half-Day
 
-A single-agent RCM that turns a short city outing request into a half-day micro-itinerary. It uses AnySearch and Fetch MCP for current public information, while intentionally avoiding maps and weather MCP for this first version.
+A single-agent RCM that turns a short city outing request into a half-day micro-itinerary. It uses AnySearch MCP for current public information, while intentionally avoiding maps and weather MCP for this first version.
 
 ## Run
 
@@ -22,7 +22,6 @@ cargo run --manifest-path /path/to/RCM/Cargo.toml --bin accelerate -- \
 This example uses:
 
 - AnySearch MCP for current public information
-- Fetch MCP (`uvx mcp-server-fetch`) for reading important pages
 
 Maps and weather MCP are intentionally deferred. The itinerary should be honest about route, travel-time, and weather uncertainty.
 

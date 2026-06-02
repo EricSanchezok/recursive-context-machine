@@ -1,6 +1,6 @@
 # Cook Tonight
 
-A single-agent RCM that turns one dinner sentence into a practical cooking decision. It can run from the user's short goal alone, optionally inspecting local preference notes if present, then using AnySearch and Fetch MCP for recipe grounding.
+A single-agent RCM that turns one dinner sentence into a practical cooking decision. It can run from the user's short goal alone, optionally inspecting local preference notes if present, then using AnySearch MCP for recipe discovery.
 
 ## Run
 
@@ -22,7 +22,6 @@ cargo run --manifest-path /path/to/RCM/Cargo.toml --bin accelerate -- \
 This example uses:
 
 - AnySearch MCP for recipe and technique search
-- Fetch MCP (`uvx mcp-server-fetch`) for reading selected recipe pages
 
 Maps, weather, grocery ordering, and delivery services are intentionally not part of this example.
 
