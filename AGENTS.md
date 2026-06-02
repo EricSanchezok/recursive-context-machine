@@ -82,10 +82,8 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - Do not autonomously modify code unless the user explicitly asks.
 - When the user asks you to change code, wait for their confirmation before
   starting. Do not pre-emptively implement.
-- Every batch of changes must be committed before continuing to the next
-  topic. Do not accumulate uncommitted work.
-- Commits must be atomic per logical change. Do not squash unrelated
-  refactors into a single commit.
+- Commit each logical change atomically before moving to an unrelated topic.
+  Do not squash unrelated refactors together.
 - Only commit changes you authored. Do not include, revert, or modify
   other people's work (e.g., Cargo.lock updates, dependency bumps,
   files created by other agents or users) unless explicitly instructed.
@@ -106,6 +104,29 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - Tests must be fast. No test may depend on external services (LLM APIs) or long
   timeouts. Tests that currently depend on the reactor loop use SeqPolicy without
   `Action::Halt` to avoid HTTP calls.
+- Use `cargo nextest run` for normal test execution. Run `cargo test --doc`
+  separately when doctest coverage matters, because nextest does not run doctests.
+
+## Dependency Hygiene
+
+- Use `cargo machete --with-metadata` to check for unused dependencies. The plain
+  heuristic mode can misread generated code and renamed crates.
+- Do not remove a dependency solely because `cargo machete` flagged it. Verify
+  actual usage first with source search, generated-code awareness, and `cargo tree`.
+- Confirmed machete false positives must be documented in the owning crate's
+  `[package.metadata.cargo-machete] ignored = [...]` table with the narrowest
+  possible scope.
+- Library crates must not depend on `tracing-subscriber` unless they initialize a
+  subscriber in test-only or explicitly owned runtime code. Normal libraries use
+  `tracing`; binaries initialize subscribers.
+- Workspace crates are private unless explicitly prepared for publishing. Set
+  `publish = false` in each crate manifest until release policy exists.
+- Internal path dependencies must include an explicit matching `version` as well
+  as `path`, so dependency policy tools do not treat them as wildcard requirements.
+- Use `cargo deny check` to enforce dependency policy: advisories, yanked crates,
+  license allowlists/exceptions, banned TLS stacks, duplicate-version warnings,
+  and source restrictions. Do not silence a deny finding without documenting why
+  the dependency is required and why the policy exception is safe.
 
 ## Research
 
