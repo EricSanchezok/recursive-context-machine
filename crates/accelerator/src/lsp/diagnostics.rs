@@ -75,10 +75,10 @@ impl DiagnosticStore {
         diagnostics: Vec<Diagnostic>,
         current_version: Option<i32>,
     ) -> bool {
-        if let (Some(published), Some(current)) = (version, current_version) {
-            if published != current {
-                return false;
-            }
+        if let (Some(published), Some(current)) = (version, current_version)
+            && published != current
+        {
+            return false;
         }
 
         {

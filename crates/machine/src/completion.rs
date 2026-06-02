@@ -222,6 +222,11 @@ async fn send(
 /// Returns a `Fragment::hitch` when `messages` is empty — an empty context
 /// has no meaningful prompt to send to the LLM, and we refuse to fabricate
 /// one (see module-level contract).
+///
+/// `Fragment` is the unified error type — boxing would lose the
+/// ergonomics of returning `Fragment::hitch(...)` directly. The size is
+/// accepted intentionally.
+#[allow(clippy::result_large_err)]
 pub fn build_request(
     messages: &[Message],
     tools: &[ToolDefinition],

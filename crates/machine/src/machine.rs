@@ -166,7 +166,9 @@ impl Machine {
             Action::Take => {
                 if let Some(frag) = inbox.pop() {
                     let id = ctx.append(frag);
-                    self.usages.last_mut().map(|u| u.fragment_ids.push(id));
+                    if let Some(u) = self.usages.last_mut() {
+                        u.fragment_ids.push(id)
+                    }
                     let frag = ctx.get(id).expect("just taken");
                     hook!(
                         event = "taken",

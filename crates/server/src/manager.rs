@@ -17,6 +17,12 @@ pub struct MachineManager {
     machines: HashMap<MachineId, Run>,
 }
 
+impl Default for MachineManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MachineManager {
     pub fn new() -> Self {
         Self {

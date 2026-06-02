@@ -58,9 +58,9 @@ fn build_model_profiles(run: &Run) -> Vec<rcm::ModelProfile> {
             name: name.clone(),
             protocol: format!("{:?}", model.protocol),
             limit: model.limit.as_ref().map(|limit| rcm::LimitSpec {
-                context: limit.context as u64,
-                input: limit.input.map(|i| i as u64),
-                output: limit.output as u64,
+                context: limit.context,
+                input: limit.input,
+                output: limit.output,
             }),
             active: run.resources.active_model == *name,
         })

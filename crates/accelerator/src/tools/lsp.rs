@@ -218,9 +218,9 @@ fn format_hover_contents(contents: &lsp_types::HoverContents) -> String {
         lsp_types::HoverContents::Markup(markup) => markup.value.clone(),
         lsp_types::HoverContents::Array(parts) => parts
             .iter()
-            .filter_map(|part| match part {
-                lsp_types::MarkedString::String(s) => Some(s.as_str()),
-                lsp_types::MarkedString::LanguageString(ls) => Some(ls.value.as_str()),
+            .map(|part| match part {
+                lsp_types::MarkedString::String(s) => s.as_str(),
+                lsp_types::MarkedString::LanguageString(ls) => ls.value.as_str(),
             })
             .collect::<Vec<_>>()
             .join("\n"),

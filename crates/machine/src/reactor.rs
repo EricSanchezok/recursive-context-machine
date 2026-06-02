@@ -44,6 +44,9 @@ pub async fn react(
     let mut tool_call_ids: Vec<String> = Vec::new();
     let mut tool_names: Vec<String> = Vec::new();
     let mut tool_fragments: Vec<Fragment> = Vec::new();
+    // Box<dyn Future> is inherently complex; a type alias would not add
+    // meaning beyond the inline signature. The complexity is accepted.
+    #[allow(clippy::type_complexity)]
     let mut tool_futures: Vec<
         std::pin::Pin<
             Box<

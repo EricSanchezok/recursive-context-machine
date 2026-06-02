@@ -212,9 +212,9 @@ async fn rate_limit(host: &str) {
         elapsed
     });
 
-    if let Some(d) = elapsed {
-        if d < DOMAIN_INTERVAL {
-            tokio::time::sleep(DOMAIN_INTERVAL - d).await;
-        }
+    if let Some(d) = elapsed
+        && d < DOMAIN_INTERVAL
+    {
+        tokio::time::sleep(DOMAIN_INTERVAL - d).await;
     }
 }

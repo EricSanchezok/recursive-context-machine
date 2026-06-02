@@ -157,45 +157,43 @@ impl Policy for Captain {
                 return self.respond(ctx, env);
             }
 
-            loop {
-                if inbox.peek().is_some() {
-                    return Action::Take;
+            if inbox.peek().is_some() {
+                return Action::Take;
+            }
+
+            let last = ctx.fragments().last();
+
+            if let Some(fragment) = last
+                && let Content::Hitch { code, .. } = &fragment.content
+            {
+                if let Some(status_code) = code
+                    && (*status_code == HTTP_UNAUTHORIZED || *status_code == HTTP_FORBIDDEN)
+                {
+                    warn!(code = *status_code, "decide: permanent hitch, done");
+                    return Action::Done;
                 }
 
-                let last = ctx.fragments().last();
-
-                if let Some(fragment) = last {
-                    if let Content::Hitch { code, .. } = &fragment.content {
-                        if let Some(status_code) = code {
-                            if *status_code == HTTP_UNAUTHORIZED || *status_code == HTTP_FORBIDDEN {
-                                warn!(code = *status_code, "decide: permanent hitch, done");
-                                return Action::Done;
-                            }
-                        }
-
-                        if self.retry.backoff().await {
-                            let attempts = self.retry.count();
-                            trace!(attempts, "decide: hitched, retrying");
-                            self.enter(Phase::Respond);
-                            return self.respond(ctx, env);
-                        }
-
-                        warn!("decide: retry budget exhausted, done");
-                        return Action::Done;
-                    }
-                }
-
-                self.retry.reset();
-
-                if last.is_some_and(|fragment| fragment.role == Role::Tool) {
-                    trace!("decide: last is Tool, halting");
+                if self.retry.backoff().await {
+                    let attempts = self.retry.count();
+                    trace!(attempts, "decide: hitched, retrying");
                     self.enter(Phase::Respond);
                     return self.respond(ctx, env);
                 }
 
-                trace!("decide: done");
+                warn!("decide: retry budget exhausted, done");
                 return Action::Done;
             }
+
+            self.retry.reset();
+
+            if last.is_some_and(|fragment| fragment.role == Role::Tool) {
+                trace!("decide: last is Tool, halting");
+                self.enter(Phase::Respond);
+                return self.respond(ctx, env);
+            }
+
+            trace!("decide: done");
+            Action::Done
         })
     }
 }
