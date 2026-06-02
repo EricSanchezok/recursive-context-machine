@@ -6,8 +6,7 @@ Search strategy:
 
 1. Use built-in arXiv search first for academic grounding.
 2. Use AnySearch MCP if available to find related non-arXiv material: papers, project pages, code repositories, benchmark pages, blog posts, and recent discussions.
-3. Use Fetch MCP on the most important URLs when snippets are insufficient; read primary pages before making specific claims.
-4. If AnySearch or Fetch MCP is unavailable, continue with the available sources and clearly label the scouting limitations.
+3. If AnySearch is unavailable, continue with arXiv-only results and clearly label the scouting limitations.
 
 Do not invent papers, venues, URLs, citation counts, or benchmark claims. Treat search snippets as leads, not truth. Prefer primary sources.
 

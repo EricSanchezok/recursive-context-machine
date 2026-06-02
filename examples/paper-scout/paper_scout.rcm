@@ -13,17 +13,11 @@ mcp anysearch {
     url = "https://api.anysearch.com/mcp"
 }
 
-mcp fetch {
-    transport = stdio
-    command = "uvx"
-    args = ["mcp-server-fetch"]
-}
-
 accelerator {
     purpose = "one-shot paper scouting assistant"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "./prompts/paper_scout.txt" }
     tools = ["arxiv_search", "arxiv_download", "fs", "find"]
-    mcps = ["anysearch", "fetch"]
+    mcps = ["anysearch"]
 }

@@ -1,6 +1,6 @@
 # Paper Scout
 
-A single-agent RCM that turns a one-line research topic into a compact reading route. It uses built-in arXiv search first, then AnySearch and Fetch MCP when available for broader web and primary-source grounding.
+A single-agent RCM that turns a one-line research topic into a compact reading route. It uses built-in arXiv search first, then AnySearch MCP when available for broader web search.
 
 ## Run
 
@@ -22,21 +22,13 @@ cargo run --manifest-path /path/to/RCM/Cargo.toml --bin accelerate -- \
 This example uses:
 
 - AnySearch MCP for web search: `https://api.anysearch.com/mcp`
-- Fetch MCP for reading web pages: `uvx mcp-server-fetch`
 
 AnySearch supports anonymous access with lower quota. If you have an API key, configure the MCP header in the `.rcm` file or through a future environment profile.
-
-Fetch MCP requires `uvx`:
-
-```sh
-uvx mcp-server-fetch --help
-```
 
 ## What It Collects
 
 - arXiv papers through built-in `arxiv_search`
 - Web search results through AnySearch MCP
-- Important source pages through Fetch MCP
 
 ## Output
 

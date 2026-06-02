@@ -13,17 +13,11 @@ mcp anysearch {
     url = "https://api.anysearch.com/mcp"
 }
 
-mcp fetch {
-    transport = stdio
-    command = "uvx"
-    args = ["mcp-server-fetch"]
-}
-
 accelerator {
     purpose = "one-shot city half-day planner"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "./prompts/city_halfday.txt" }
     tools = ["fs", "find"]
-    mcps = ["anysearch", "fetch"]
+    mcps = ["anysearch"]
 }
