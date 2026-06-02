@@ -21,6 +21,25 @@ const DOMAIN_INTERVAL: Duration = Duration::from_secs(2);
 
 const BROWSER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+const BINARY_PREFIXES: &[&str] = &[
+    "image/",
+    "audio/",
+    "video/",
+    "application/pdf",
+    "application/zip",
+    "application/gzip",
+    "application/x-tar",
+    "application/x-rar",
+    "application/x-7z",
+    "application/vnd.",
+];
+
+fn is_binary(content_type: &str) -> bool {
+    BINARY_PREFIXES
+        .iter()
+        .any(|prefix| content_type.starts_with(prefix))
+}
+
 const HIDDEN_TAGS: &[&str] = &["script", "style", "noscript", "iframe"];
 
 static TITLE_SELECTOR: std::sync::LazyLock<Selector> =
@@ -353,6 +372,14 @@ impl Tool for WebFetchTool {
                 .and_then(|value| value.to_str().ok())
                 .unwrap_or("")
                 .to_string();
+
+            if is_binary(&content_type) {
+                return Ok(ToolResult {
+                    call_id: String::new(),
+                    content: format!("binary content ({content_type}), not readable as text"),
+                    title: Some("binary content".into()),
+                });
+            }
 
             let mut body = Vec::new();
             let mut stream = response.bytes_stream();
