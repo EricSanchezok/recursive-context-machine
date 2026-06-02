@@ -17,6 +17,7 @@ impl HttpTransport {
     pub(crate) fn new(url: String, headers: Vec<(String, String)>) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .timeout(CALL_TIMEOUT)
+            .pool_max_idle_per_host(0)
             .build()
             .map_err(|error| format!("failed to build HTTP MCP client: {error}"))?;
         Ok(Self {
