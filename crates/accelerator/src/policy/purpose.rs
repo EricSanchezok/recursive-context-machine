@@ -9,15 +9,15 @@ pub(crate) fn append(ctx: &Context, purpose: &Purpose) -> Step {
         return Step::Ready;
     }
 
-    let text = format!("## Purpose\n{}", purpose.text);
-
     if ctx.fragments().last().is_some_and(|fragment| {
         fragment.role == Role::User
             && fragment.tag == PURPOSE_TAG
-            && fragment.as_text() == Some(&text)
+            && fragment.as_text() == Some(&purpose.text)
     }) {
         return Step::Ready;
     }
 
-    Step::Emit(Action::Append(Fragment::user(text).with_tag(PURPOSE_TAG)))
+    Step::Emit(Action::Append(
+        Fragment::user(purpose.text.clone()).with_tag(PURPOSE_TAG),
+    ))
 }

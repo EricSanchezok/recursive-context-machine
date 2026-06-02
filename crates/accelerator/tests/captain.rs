@@ -131,7 +131,7 @@ async fn captain_appends_runtime_purpose_as_user_message() {
     let mut ctx = Context::new();
     ctx.append(Fragment::system("Captain prompt").with_tag("agent"));
     ctx.append(Fragment::system("Instructions").with_tag("instruction"));
-    ctx.append(Fragment::user("## Purpose\ninitial").with_tag("purpose"));
+    ctx.append(Fragment::user("initial").with_tag("purpose"));
     ctx.append(Fragment::system("env").with_tag("env"));
     ctx.append(Fragment::assistant("first answer"));
     let mut resources = resources();
@@ -147,6 +147,6 @@ async fn captain_appends_runtime_purpose_as_user_message() {
     assert!(purposes.iter().all(|fragment| fragment.role == Role::User));
     assert_eq!(
         purposes.last().and_then(|fragment| fragment.as_text()),
-        Some("## Purpose\nsecond")
+        Some("second")
     );
 }

@@ -79,12 +79,12 @@ impl Captain {
         Phase::from_u8(self.phase.load(Ordering::Relaxed))
     }
 
-    fn set_phase(&self, phase: Phase) {
+    fn enter(&self, phase: Phase) {
         self.phase.store(phase as u8, Ordering::Relaxed);
     }
 
     fn advance(&self) {
-        self.set_phase(self.phase().next());
+        self.enter(self.phase().next());
     }
 
     fn drive(&self, step: Step) -> Option<Action> {
@@ -97,35 +97,28 @@ impl Captain {
         }
     }
 
-    fn respond(&self, ctx: &Context, env: &Environment) -> Option<Action> {
-        match self.drive(runtime_env::refresh(ctx, env)) {
-            Some(action) => Some(action),
-            None => {
-                self.set_phase(Phase::Running);
-                Some(Action::Halt)
-            }
-        }
-    }
-
-    fn prepare(
-        &self,
-        ctx: &Context,
-        env: &Environment,
-        resources: &Resources,
-        purpose: &Purpose,
-    ) -> Option<Action> {
+    fn setup(&self, ctx: &Context, resources: &Resources, purpose: &Purpose) -> Option<Action> {
         loop {
             let step = match self.phase() {
                 Phase::Agent => agent::prepare(ctx, resources, "captain"),
                 Phase::Instruction => instruction::load(ctx),
                 Phase::Purpose => runtime_purpose::append(ctx, purpose),
                 Phase::Resources => runtime_resources::activate(resources),
-                Phase::Respond => return self.respond(ctx, env),
-                Phase::Running => return None,
+                _ => return None,
             };
 
             if let Some(action) = self.drive(step) {
                 return Some(action);
+            }
+        }
+    }
+
+    fn respond(&self, ctx: &Context, env: &Environment) -> Action {
+        match runtime_env::refresh(ctx, env) {
+            Step::Emit(action) => action,
+            Step::Ready => {
+                self.enter(Phase::Running);
+                Action::Halt
             }
         }
     }
@@ -149,11 +142,15 @@ impl Policy for Captain {
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            loop {
-                if let Some(action) = self.prepare(ctx, env, resources, purpose) {
-                    return action;
-                }
+            if let Some(action) = self.setup(ctx, resources, purpose) {
+                return action;
+            }
 
+            if self.phase() == Phase::Respond {
+                return self.respond(ctx, env);
+            }
+
+            loop {
                 if inbox.peek().is_some() {
                     return Action::Take;
                 }
@@ -172,8 +169,8 @@ impl Policy for Captain {
                         if self.retry.backoff().await {
                             let attempts = self.retry.count();
                             trace!(attempts, "decide: hitched, retrying");
-                            self.set_phase(Phase::Respond);
-                            continue;
+                            self.enter(Phase::Respond);
+                            return self.respond(ctx, env);
                         }
 
                         warn!("decide: retry budget exhausted, done");
@@ -185,8 +182,8 @@ impl Policy for Captain {
 
                 if last.is_some_and(|fragment| fragment.role == Role::Tool) {
                     trace!("decide: last is Tool, halting");
-                    self.set_phase(Phase::Respond);
-                    continue;
+                    self.enter(Phase::Respond);
+                    return self.respond(ctx, env);
                 }
 
                 trace!("decide: done");
