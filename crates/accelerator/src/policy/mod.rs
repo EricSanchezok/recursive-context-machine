@@ -1,4 +1,7 @@
+pub mod agent;
 mod captain;
+pub mod instruction;
+pub mod purpose;
 pub mod retry;
 
 pub use captain::Captain;

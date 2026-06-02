@@ -1,6 +1,4 @@
-use std::collections::HashSet;
 use std::future::Future;
-use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use chrono::Local;
@@ -10,6 +8,8 @@ use machine::{
 use tracing::{trace, warn};
 
 use super::retry::{HTTP_FORBIDDEN, HTTP_UNAUTHORIZED, Retry};
+
+use super::{agent, instruction, purpose};
 
 /// Captain — a simple single-agent Policy.
 ///
@@ -59,88 +59,40 @@ impl Captain {
 }
 
 impl Captain {
-    /// Run the next setup step, returning an Action if one is needed.
-    /// Returns `None` when setup is complete.
     fn setup_step(
         &self,
         ctx: &Context,
         _env: &Environment,
         resources: &Resources,
+        purpose: &Purpose,
     ) -> Option<Action> {
         loop {
             let step = self.setup.load(std::sync::atomic::Ordering::Relaxed);
             match step {
-                // Step 0: Bootstrap — inject/capture system prompt (tag="agent")
                 0 => {
-                    let desired = resources
-                        .prompts
-                        .get("captain")
-                        .cloned()
-                        .unwrap_or_default();
-                    if let Some(existing) = ctx
-                        .fragments()
-                        .iter()
-                        .find(|f| f.role == Role::System && f.tag == "agent")
-                    {
-                        if existing.as_text() == Some(&desired) {
-                            self.setup
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            continue;
-                        }
-                        return Some(Action::Replace {
-                            id: existing.id(),
-                            fragment: Fragment::system(desired).with_tag("agent"),
-                        });
+                    if let Some(action) = agent::ensure_agent_prompt(ctx, resources, "captain") {
+                        return Some(action);
                     }
-                    self.setup
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    return Some(Action::Append(Fragment::system(desired).with_tag("agent")));
-                }
-                // Step 1: Instructions — inject instruction files (tag="instruction")
-                1 => {
-                    self.setup
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if ctx
-                        .fragments()
-                        .iter()
-                        .any(|f| f.role == Role::System && f.tag == "instruction")
-                    {
-                        continue;
-                    }
-                    let files = find_instruction_files();
-                    if files.is_empty() {
-                        continue;
-                    }
-                    let parts: Vec<String> = files
-                        .iter()
-                        .filter(|(_, content)| !content.trim().is_empty())
-                        .map(|(path, content)| {
-                            let name = path
-                                .file_name()
-                                .unwrap_or(path.as_os_str())
-                                .to_string_lossy();
-                            format!(
-                                "=== {name} (from {}) ===\n{}",
-                                path.display(),
-                                content.trim()
-                            )
-                        })
-                        .collect();
-                    if parts.is_empty() {
-                        continue;
-                    }
-                    return Some(Action::Append(
-                        Fragment::system(parts.join("\n\n")).with_tag("instruction"),
-                    ));
-                }
-                // Step 2: Skip (Purpose — already injected from outside)
-                2 => {
                     self.setup
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     continue;
                 }
-                // Step 3: ResourceSetup — activate first model and all tools
-                // Retryable: stays at step 3 until both model and tools are set up.
+                1 => {
+                    if let Some(action) = instruction::ensure_instructions(ctx) {
+                        return Some(action);
+                    }
+                    self.setup
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    continue;
+                }
+                2 => {
+                    if let Some(action) = purpose::ensure_purpose(ctx, purpose) {
+                        return Some(action);
+                    }
+                    self.setup
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    continue;
+                }
                 3 => {
                     if resources.active_model.is_empty() {
                         if let Some(model_name) = resources.model_order.first() {
@@ -154,18 +106,15 @@ impl Captain {
                     {
                         return Some(Action::Activate(tool_name.clone()));
                     }
-                    // All done — advance to running.
                     self.setup
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     continue;
                 }
-                // Step 4+: Running — setup is done
                 _ => return None,
             }
         }
     }
 
-    /// Inject or replace the env fragment (tag="env") — called before every Halt.
     fn env_action(&self, ctx: &Context, env: &Environment) -> Option<Action> {
         let now = Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
         let text = format!(
@@ -204,15 +153,14 @@ impl Policy for Captain {
 
     fn decide<'a>(
         &'a self,
-        _purpose: &'a Purpose,
+        purpose: &'a Purpose,
         ctx: &'a Context,
         env: &'a Environment,
         resources: &'a Resources,
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            // Run setup steps until one emits an action or all are done.
-            if let Some(action) = self.setup_step(ctx, env, resources) {
+            if let Some(action) = self.setup_step(ctx, env, resources, purpose) {
                 return action;
             }
 
@@ -221,7 +169,6 @@ impl Policy for Captain {
             }
 
             if !self.first_call.load(std::sync::atomic::Ordering::Relaxed) {
-                // First real call — inject env and then Halt.
                 if let Some(action) = self.env_action(ctx, env) {
                     return action;
                 }
@@ -273,52 +220,4 @@ impl Policy for Captain {
             }
         })
     }
-}
-
-// ── Instruction file scanning (moved from phases/instruct.rs) ──
-
-const FILE_NAMES: [&str; 3] = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"];
-
-fn global_paths() -> Vec<PathBuf> {
-    let Some(home) = std::env::var("HOME").ok() else {
-        return Vec::new();
-    };
-    vec![
-        Path::new(&home).join(".synergy/config/AGENTS.md"),
-        Path::new(&home).join(".claude/CLAUDE.md"),
-    ]
-}
-
-fn find_instruction_files() -> Vec<(PathBuf, String)> {
-    let mut seen = HashSet::new();
-    let mut results = Vec::new();
-
-    if let Ok(cwd) = std::env::current_dir() {
-        let mut dir = Some(cwd);
-        while let Some(d) = dir {
-            if !seen.insert(d.clone()) {
-                break;
-            }
-            for name in &FILE_NAMES {
-                let path = d.join(name);
-                if path.is_file()
-                    && let Ok(content) = std::fs::read_to_string(&path)
-                {
-                    results.push((path, content));
-                }
-            }
-            dir = d.parent().map(|p| p.to_path_buf());
-        }
-    }
-
-    for path in global_paths() {
-        if path.is_file()
-            && !results.iter().any(|(p, _)| *p == path)
-            && let Ok(content) = std::fs::read_to_string(&path)
-        {
-            results.push((path, content));
-        }
-    }
-
-    results
 }
