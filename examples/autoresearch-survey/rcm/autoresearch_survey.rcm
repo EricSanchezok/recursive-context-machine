@@ -1,0 +1,95 @@
+name = "Autoresearch Survey Pipeline"
+
+use "./anchor.rcm" as Anchor
+use "./query_plan.rcm" as QueryPlan
+use "./discovery.rcm" as Discovery
+use "./expansion.rcm" as Expansion
+use "./rank_pool.rcm" as RankPool
+use "./research_map.rcm" as ResearchMap
+use "./judge_panel.rcm" as JudgePanel
+use "./survey_writer.rcm" as SurveyWriter
+
+graph {
+    accelerator anchor = Anchor
+    accelerator query_plan = QueryPlan
+    accelerator discovery = Discovery
+    accelerator expansion = Expansion
+    accelerator rank_pool = RankPool
+    accelerator research_map = ResearchMap
+    accelerator judge_panel = JudgePanel
+    accelerator survey_writer = SurveyWriter
+
+    flux anchor_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux query_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux discovery_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux expansion_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux rank_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux map_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux judge_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    anchor.context -> anchor_handoff.slot(0)
+    anchor_handoff.out -> query_plan.context
+    anchor.done -> query_plan.trigger
+
+    query_plan.context -> query_handoff.slot(0)
+    query_handoff.out -> discovery.context
+    query_plan.done -> discovery.trigger
+
+    discovery.context -> discovery_handoff.slot(0)
+    discovery_handoff.out -> expansion.context
+    discovery.done -> expansion.trigger
+
+    expansion.context -> expansion_handoff.slot(0)
+    expansion_handoff.out -> rank_pool.context
+    expansion.done -> rank_pool.trigger
+
+    rank_pool.context -> rank_handoff.slot(0)
+    rank_handoff.out -> research_map.context
+    rank_pool.done -> research_map.trigger
+
+    research_map.context -> map_handoff.slot(0)
+    map_handoff.out -> judge_panel.context
+    research_map.done -> judge_panel.trigger
+
+    judge_panel.context -> judge_handoff.slot(0)
+    judge_handoff.out -> survey_writer.context
+    judge_panel.done -> survey_writer.trigger
+
+    survey_writer.done -> output.done
+    survey_writer.context -> output.context
+    survey_writer.purpose -> output.purpose
+}

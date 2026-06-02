@@ -127,7 +127,9 @@ impl Tool for FsTool {
                 "write" => write::execute(&args, env).await,
                 "edit" => edit::execute(&args, env).await,
                 "list" => list::execute(&args, env).await,
-                other => Err(format!("unknown action '{other}'")),
+                other => Err(format!(
+                    "unknown action '{other}'. Valid actions: read, write, edit, list"
+                )),
             }
         })
     }

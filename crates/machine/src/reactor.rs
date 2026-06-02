@@ -79,9 +79,20 @@ pub async fn react(
         use crate::resources::LookupResult;
         match resources.lookup(&tool_name) {
             LookupResult::NotFound => {
+                // Name the available tools so a model that hallucinated a tool
+                // (e.g. `write` instead of `fs` with action="write") can correct
+                // itself on retry instead of repeating the same bad call until the
+                // retry budget is exhausted.
+                let mut available: Vec<&str> =
+                    resources.active_tools.iter().map(String::as_str).collect();
+                available.sort_unstable();
                 inbox.push(frag);
                 inbox.push(Fragment::hitch(
-                    format!("tool '{}' not found", tool_name),
+                    format!(
+                        "tool '{}' not found. Available tools: {}",
+                        tool_name,
+                        available.join(", ")
+                    ),
                     None,
                     Role::Tool,
                     Some(call_id),
