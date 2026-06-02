@@ -268,10 +268,11 @@ fn extract_page_body(doc: &scraper::Html) -> String {
                     if HIDDEN_TAGS.contains(&el.name()) {
                         continue;
                     }
-                    if BLOCK_ELEMENTS.contains(&el.name()) {
-                        if !output.is_empty() && !output.ends_with('\n') {
-                            output.push('\n');
-                        }
+                    if BLOCK_ELEMENTS.contains(&el.name())
+                        && !output.is_empty()
+                        && !output.ends_with('\n')
+                    {
+                        output.push('\n');
                     }
                     if let Some(child_element) = scraper::ElementRef::wrap(child) {
                         collect(&child_element, output);
