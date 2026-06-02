@@ -1,6 +1,6 @@
 use machine::{Action, Resources};
 
-use super::Step;
+use super::super::Step;
 
 pub(crate) fn activate(resources: &Resources) -> Step {
     if resources.active_model.is_empty() {

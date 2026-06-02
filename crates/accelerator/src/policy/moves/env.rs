@@ -1,7 +1,7 @@
 use chrono::Local;
 use machine::{Action, Context, Environment, Fragment, Role};
 
-use super::Step;
+use super::super::Step;
 
 const ENV_TAG: &str = "env";
 

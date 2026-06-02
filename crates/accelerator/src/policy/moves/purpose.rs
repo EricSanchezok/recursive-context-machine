@@ -1,6 +1,6 @@
 use machine::{Action, Context, Fragment, Purpose, Role};
 
-use super::Step;
+use super::super::Step;
 
 const PURPOSE_TAG: &str = "purpose";
 

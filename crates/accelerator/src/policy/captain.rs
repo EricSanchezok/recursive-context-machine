@@ -6,10 +6,7 @@ use machine::{Action, Content, Context, Environment, Inbox, Policy, Purpose, Res
 use tracing::{trace, warn};
 
 use super::retry::{HTTP_FORBIDDEN, HTTP_UNAUTHORIZED, Retry};
-use super::{
-    Step, agent, env as runtime_env, instruction, purpose as runtime_purpose,
-    resources as runtime_resources,
-};
+use super::{Step, moves};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -100,10 +97,10 @@ impl Captain {
     fn setup(&self, ctx: &Context, resources: &Resources, purpose: &Purpose) -> Option<Action> {
         loop {
             let step = match self.phase() {
-                Phase::Agent => agent::prepare(ctx, resources, "captain"),
-                Phase::Instruction => instruction::load(ctx),
-                Phase::Purpose => runtime_purpose::append(ctx, purpose),
-                Phase::Resources => runtime_resources::activate(resources),
+                Phase::Agent => moves::agent::prepare(ctx, resources, "captain"),
+                Phase::Instruction => moves::instruction::load(ctx),
+                Phase::Purpose => moves::purpose::append(ctx, purpose),
+                Phase::Resources => moves::resources::activate(resources),
                 _ => return None,
             };
 
@@ -114,7 +111,7 @@ impl Captain {
     }
 
     fn respond(&self, ctx: &Context, env: &Environment) -> Action {
-        match runtime_env::refresh(ctx, env) {
+        match moves::env::refresh(ctx, env) {
             Step::Emit(action) => action,
             Step::Ready => {
                 self.enter(Phase::Running);

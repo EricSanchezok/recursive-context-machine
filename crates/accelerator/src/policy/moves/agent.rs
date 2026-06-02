@@ -1,6 +1,6 @@
 use machine::{Action, Context, Fragment, Resources, Role};
 
-use super::Step;
+use super::super::Step;
 
 const AGENT_TAG: &str = "agent";
 
