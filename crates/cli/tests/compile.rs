@@ -7,8 +7,9 @@ use accelerator::Accelerator;
 static FILE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn unique_path(name: &str, extension: &str) -> PathBuf {
-    let seq = FILE_SEQ.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("rcm-{}-{}.{}", name, seq, extension))
+    let process_id = std::process::id();
+    let sequence = FILE_SEQ.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("rcm-{name}-{process_id}-{sequence}.{extension}"))
 }
 
 fn write_rcm(name: &str, source: &str) -> PathBuf {
