@@ -1,16 +1,23 @@
 use machine::{Action, Context, Fragment, Purpose, Role};
 
-pub fn ensure_purpose(ctx: &Context, purpose: &Purpose) -> Option<Action> {
+use super::Step;
+
+const PURPOSE_TAG: &str = "purpose";
+
+pub(crate) fn append(ctx: &Context, purpose: &Purpose) -> Step {
     if purpose.is_empty() {
-        return None;
+        return Step::Ready;
     }
-    if ctx
-        .fragments()
-        .iter()
-        .any(|f| f.role == Role::System && f.tag == "purpose")
-    {
-        return None;
-    }
+
     let text = format!("## Purpose\n{}", purpose.text);
-    Some(Action::Append(Fragment::system(text).with_tag("purpose")))
+
+    if ctx.fragments().last().is_some_and(|fragment| {
+        fragment.role == Role::User
+            && fragment.tag == PURPOSE_TAG
+            && fragment.as_text() == Some(&text)
+    }) {
+        return Step::Ready;
+    }
+
+    Step::Emit(Action::Append(Fragment::user(text).with_tag(PURPOSE_TAG)))
 }

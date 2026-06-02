@@ -1,12 +1,21 @@
-pub mod agent;
+mod agent;
 mod captain;
-pub mod instruction;
-pub mod purpose;
+mod env;
+mod instruction;
+mod purpose;
+mod resources;
 pub mod retry;
 
 pub use captain::Captain;
 
+use machine::Action;
+
 use crate::catalog::Catalog;
+
+pub(crate) enum Step {
+    Emit(Action),
+    Ready,
+}
 
 /// Register all built-in policies in the catalog.
 pub fn register(catalog: &mut Catalog) {
