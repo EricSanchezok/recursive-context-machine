@@ -1,4 +1,4 @@
-name = "ArXiv Search"
+name = "Repo Snapshot"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,8 +9,9 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "使用 arxiv 工具搜索最近关于 'agent dataflow' 的论文，用中文总结前 3 篇论文的标题、作者、分类和关键贡献。不要修改任何文件。"
+    purpose = "one-shot repository status snapshot"
     models = ["deepseek-v4-flash"]
     policy = "captain"
-    tools = ["arxiv", "shell"]
+    prompts = { captain = file "./prompts/repo_snapshot.txt" }
+    tools = ["fs", "find", "git", "shell"]
 }

@@ -10,7 +10,6 @@ use crate::policy::Action;
 use crate::reactor;
 use crate::resources::Resources;
 use crate::usage::Usage;
-use tracing::trace;
 use utils::{MachineId, Name};
 
 pub struct Machine {

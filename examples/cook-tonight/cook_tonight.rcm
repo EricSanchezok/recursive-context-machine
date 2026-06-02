@@ -1,4 +1,4 @@
-name = "Captain Demo"
+name = "Cook Tonight"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -8,9 +8,16 @@ model deepseek-v4-flash {
     modalities = { input = ["text"], output = ["text"] }
 }
 
+mcp anysearch {
+    transport = http
+    url = "https://api.anysearch.com/mcp"
+}
+
 accelerator {
-    purpose = "介绍一下你自己，并说说你能做什么"
+    purpose = "one-shot dinner decision assistant"
     models = ["deepseek-v4-flash"]
     policy = "captain"
-    tools = ["shell", "fs", "find", "wait"]
+    prompts = { captain = file "./prompts/cook_tonight.txt" }
+    tools = ["fs", "find"]
+    mcps = ["anysearch"]
 }

@@ -3,7 +3,6 @@ members = ["crates/accelerator", "crates/machine", "crates/cli", "crates/server"
 resolver = "3"
 
 [workspace.dependencies]
-rig = "0.36"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 tracing = "0.1"
