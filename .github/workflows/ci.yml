@@ -43,10 +43,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: rcm-ci
-      # Lints surface as warnings; only hard errors fail CI. AGENTS.md does
-      # not yet specify a lint policy — when one is added, flip on -D warnings.
       - name: cargo clippy --workspace --all-targets --tests
-        run: cargo clippy --workspace --all-targets --tests --locked
+        run: cargo clippy --workspace --all-targets --tests --locked -- -D warnings
 
   test:
     name: build + test
@@ -61,5 +59,33 @@ jobs:
           shared-key: rcm-ci
       - name: cargo build --workspace --all-targets
         run: cargo build --workspace --all-targets --locked
-      - name: cargo test --workspace
-        run: cargo test --workspace --locked --no-fail-fast
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: cargo nextest run
+        run: cargo nextest run --workspace --locked
+      - name: cargo test --doc
+        run: cargo test --workspace --doc --locked
+
+  hygiene:
+    name: dependency hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rcm-ci
+      - name: Install cargo-machete
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+      - name: cargo machete --with-metadata
+        run: cargo machete --with-metadata
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: cargo deny check
+        run: cargo deny check

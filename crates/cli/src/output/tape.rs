@@ -772,7 +772,7 @@ fn draw_border(out: &mut std::io::Stdout, row: u16, width: usize, title: &str) {
         out,
         "{}{}{}{}",
         "╭".with(Color::DarkGrey),
-        "─".repeat(1).with(Color::DarkGrey),
+        "─".with(Color::DarkGrey),
         label.with(Color::DarkCyan),
         format!("{}╮", "─".repeat(right.saturating_sub(1))).with(Color::DarkGrey),
     )
@@ -790,7 +790,7 @@ fn draw_footer(out: &mut std::io::Stdout, row: u16, width: usize, view: &ViewSta
         out,
         "{}{}{}{}",
         "╰".with(Color::DarkGrey),
-        "─".repeat(1).with(Color::DarkGrey),
+        "─".with(Color::DarkGrey),
         label.with(Color::DarkCyan),
         format!("{}╯", "─".repeat(right.saturating_sub(1))).with(Color::DarkGrey),
     )

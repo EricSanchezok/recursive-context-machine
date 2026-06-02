@@ -380,10 +380,9 @@ impl LspClient {
         }
         if message.get("method").and_then(|value| value.as_str())
             == Some("textDocument/publishDiagnostics")
+            && let Some(params) = message.get("params")
         {
-            if let Some(params) = message.get("params") {
-                self.handle_diagnostics(params.clone()).await;
-            }
+            self.handle_diagnostics(params.clone()).await;
         }
     }
 
