@@ -12,10 +12,11 @@ use super::{Step, moves};
 enum Phase {
     Agent = 0,
     Instruction = 1,
-    Purpose = 2,
-    Resources = 3,
-    Respond = 4,
-    Running = 5,
+    Environment = 2,
+    Purpose = 3,
+    Resources = 4,
+    Respond = 5,
+    Running = 6,
 }
 
 impl Phase {
@@ -23,9 +24,10 @@ impl Phase {
         match value {
             0 => Self::Agent,
             1 => Self::Instruction,
-            2 => Self::Purpose,
-            3 => Self::Resources,
-            4 => Self::Respond,
+            2 => Self::Environment,
+            3 => Self::Purpose,
+            4 => Self::Resources,
+            5 => Self::Respond,
             _ => Self::Running,
         }
     }
@@ -33,7 +35,8 @@ impl Phase {
     fn next(self) -> Self {
         match self {
             Self::Agent => Self::Instruction,
-            Self::Instruction => Self::Purpose,
+            Self::Instruction => Self::Environment,
+            Self::Environment => Self::Purpose,
             Self::Purpose => Self::Resources,
             Self::Resources => Self::Respond,
             Self::Respond => Self::Running,
@@ -94,11 +97,18 @@ impl Captain {
         }
     }
 
-    fn setup(&self, ctx: &Context, resources: &Resources, purpose: &Purpose) -> Option<Action> {
+    fn setup(
+        &self,
+        ctx: &Context,
+        env: &Environment,
+        resources: &Resources,
+        purpose: &Purpose,
+    ) -> Option<Action> {
         loop {
             let step = match self.phase() {
                 Phase::Agent => moves::agent::prepare(ctx, resources, "captain"),
                 Phase::Instruction => moves::instruction::load(ctx),
+                Phase::Environment => moves::env::refresh(ctx, env),
                 Phase::Purpose => moves::purpose::append(ctx, purpose),
                 Phase::Resources => moves::resources::activate(resources),
                 _ => return None,
@@ -139,7 +149,7 @@ impl Policy for Captain {
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            if let Some(action) = self.setup(ctx, resources, purpose) {
+            if let Some(action) = self.setup(ctx, env, resources, purpose) {
                 return action;
             }
 
