@@ -1,9 +1,5 @@
-mod agent;
 mod captain;
-mod env;
-mod instruction;
-mod purpose;
-mod resources;
+pub mod moves;
 pub mod retry;
 
 pub use captain::Captain;

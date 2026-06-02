@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use machine::{Action, Context, Fragment, Role};
 
-use super::Step;
+use super::super::Step;
 
 const FILE_NAMES: [&str; 3] = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"];
 const INSTRUCTION_TAG: &str = "instruction";
