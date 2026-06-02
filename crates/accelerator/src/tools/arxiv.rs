@@ -89,6 +89,7 @@ impl Tool for ArxivSearchTool {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct Paper {
     id: String,
     title: String,
@@ -102,6 +103,7 @@ struct Paper {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SearchResponse {
     papers: Vec<Paper>,
     total: u32,

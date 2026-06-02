@@ -108,19 +108,18 @@ impl Flux {
                 // For Fold mode, also extract the fold_payload from slots.
                 if matches!(self.mode, FluxMode::Context(ContextFlux::Fold)) {
                     let mut parts: Vec<String> = Vec::new();
-                    for slot in 0..self.arity {
+                    for (slot, _) in slots.iter().enumerate().take(self.arity) {
                         if let Some(last_assistant) = slots[slot]
                             .ctx
                             .fragments()
                             .iter()
                             .rev()
                             .find(|f| f.role == Role::Assistant)
+                            && let Some(text) = last_assistant.as_text()
                         {
-                            if let Some(text) = last_assistant.as_text() {
-                                let trimmed = text.trim();
-                                if !trimmed.is_empty() {
-                                    parts.push(trimmed.to_string());
-                                }
+                            let trimmed = text.trim();
+                            if !trimmed.is_empty() {
+                                parts.push(trimmed.to_string());
                             }
                         }
                     }
