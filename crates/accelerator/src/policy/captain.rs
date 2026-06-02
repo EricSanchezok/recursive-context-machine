@@ -148,12 +148,12 @@ impl Captain {
                     if ctx
                         .fragments()
                         .iter()
-                        .any(|f| f.role == Role::User && f.tag == "purpose")
+                        .any(|f| f.role == Role::User && f.tag == "purpose_initial")
                     {
                         continue;
                     }
                     return Some(Action::Append(
-                        Fragment::user(purpose.text.clone()).with_tag("purpose"),
+                        Fragment::user(purpose.text.clone()).with_tag("purpose_initial"),
                     ));
                 }
                 // Step 3: ResourceSetup — activate first model and all tools

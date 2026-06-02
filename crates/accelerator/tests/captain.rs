@@ -109,16 +109,16 @@ async fn captain_injects_purpose_as_user_fragment() {
         .ctx
         .fragments()
         .iter()
-        .find(|f| f.role == Role::User && f.tag == "purpose")
+        .find(|f| f.role == Role::User && f.tag == "purpose_initial")
         .expect("purpose should be injected as a User fragment");
     assert_eq!(purpose_frag.as_text(), Some("review the diff"));
 
-    // Exactly one purpose fragment — the tag must guard against re-injection.
+    // Exactly one purpose_initial fragment — the tag must guard against re-injection.
     let count = output
         .ctx
         .fragments()
         .iter()
-        .filter(|f| f.role == Role::User && f.tag == "purpose")
+        .filter(|f| f.role == Role::User && f.tag == "purpose_initial")
         .count();
     assert_eq!(count, 1);
 }
@@ -146,7 +146,7 @@ async fn captain_skips_empty_purpose() {
             .ctx
             .fragments()
             .iter()
-            .any(|f| f.role == Role::User && f.tag == "purpose"),
+            .any(|f| f.role == Role::User && f.tag == "purpose_initial"),
         "empty purpose must not inject a fragment"
     );
 }
