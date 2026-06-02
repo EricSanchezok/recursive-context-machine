@@ -28,15 +28,14 @@ fn write_rcm_near(name: &str, source: &str, prompt_name: &str, prompt: &str) -> 
 }
 
 fn remove_compile_path(path: &Path) {
-    if let Some(parent) = path.parent() {
-        if parent
+    if let Some(parent) = path.parent()
+        && parent
             .file_name()
             .and_then(|name| name.to_str())
             .is_some_and(|name| name.starts_with("rcm-") && name.ends_with(".dir"))
-        {
-            let _ = fs::remove_dir_all(parent);
-            return;
-        }
+    {
+        let _ = fs::remove_dir_all(parent);
+        return;
     }
     let _ = fs::remove_file(path);
 }
