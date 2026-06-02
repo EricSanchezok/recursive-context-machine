@@ -106,6 +106,14 @@ must follow these conventions. Do not override unless explicitly instructed by t
   `Action::Halt` to avoid HTTP calls.
 - Use `cargo nextest run` for normal test execution. Run `cargo test --doc`
   separately when doctest coverage matters, because nextest does not run doctests.
+- **Tests must be process-safe.** nextest runs each test in its own process.
+  Do not assume shared static state, global counters starting from zero across
+  tests, or filesystem paths that are unique within the process but collide
+  across processes. Use `std::process::id()` or random prefixes for temp paths.
+- Every `#[allow(clippy::...)]` must have a reason comment explaining why the
+  lint is intentionally waived rather than fixed. The project enforces
+  `-D warnings` in CI, so new warnings must be fixed or annotated with
+  justification.
 
 ## Dependency Hygiene
 
