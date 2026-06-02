@@ -7,6 +7,7 @@ mod git;
 mod lsp;
 pub mod shell;
 mod wait;
+mod webfetch;
 
 pub use arxiv::{ArxivDownloadTool, ArxivSearchTool};
 pub use find::FindTool;
@@ -15,6 +16,7 @@ pub use git::{GitTool, check_safety as check_git_safety, tokenize as tokenize_gi
 pub use lsp::LspTool;
 pub use shell::{OUTPUT_CAP_BYTES, ShellTool, build_result, collect_output};
 pub use wait::WaitTool;
+pub use webfetch::WebFetchTool;
 
 use std::path::{Path, PathBuf};
 
@@ -39,6 +41,7 @@ pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
         std::sync::Arc::new(LspTool),
         std::sync::Arc::new(ShellTool),
         std::sync::Arc::new(WaitTool),
+        std::sync::Arc::new(WebFetchTool),
     ]
 }
 
