@@ -2,6 +2,7 @@
 name = "cli"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [[bin]]
 name = "accelerate"
@@ -12,8 +13,8 @@ name = "cli"
 path = "src/lib.rs"
 
 [dependencies]
-machine = { path = "../machine" }
-accelerator = { path = "../accelerator" }
+machine = { version = "0.1.0", path = "../machine" }
+accelerator = { version = "0.1.0", path = "../accelerator" }
 tokio = { workspace = true, features = ["rt", "macros"] }
 anyhow = { workspace = true }
 clap = { version = "4", features = ["derive"] }

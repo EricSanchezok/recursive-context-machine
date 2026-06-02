@@ -81,10 +81,10 @@ async fn parallel_tool_execution() {
     use futures_util::future::join_all;
     let mut futures = Vec::new();
     for frag in &fragments {
-        if let Content::ToolCall(tc) = &frag.content {
-            if let Some(tool) = resources.get(&tc.name) {
-                futures.push(tool.execute(tc.arguments.clone(), &env));
-            }
+        if let Content::ToolCall(tc) = &frag.content
+            && let Some(tool) = resources.get(&tc.name)
+        {
+            futures.push(tool.execute(tc.arguments.clone(), &env));
         }
     }
 
@@ -124,10 +124,10 @@ async fn serial_tool_execution_baseline() {
 
     let t0 = Instant::now();
     for frag in &fragments {
-        if let Content::ToolCall(tc) = &frag.content {
-            if let Some(tool) = resources.get(&tc.name) {
-                let _ = tool.execute(tc.arguments.clone(), &env).await;
-            }
+        if let Content::ToolCall(tc) = &frag.content
+            && let Some(tool) = resources.get(&tc.name)
+        {
+            let _ = tool.execute(tc.arguments.clone(), &env).await;
         }
     }
     let elapsed = t0.elapsed();
@@ -210,10 +210,10 @@ async fn one_failure_does_not_block_others() {
 
     let mut futures = Vec::new();
     for frag in &fragments {
-        if let Content::ToolCall(tc) = &frag.content {
-            if let Some(tool) = resources.get(&tc.name) {
-                futures.push(tool.execute(tc.arguments.clone(), &env));
-            }
+        if let Content::ToolCall(tc) = &frag.content
+            && let Some(tool) = resources.get(&tc.name)
+        {
+            futures.push(tool.execute(tc.arguments.clone(), &env));
         }
     }
 

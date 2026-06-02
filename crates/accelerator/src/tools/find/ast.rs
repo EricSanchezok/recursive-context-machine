@@ -33,13 +33,13 @@ fn find_sg_binary() -> Option<std::path::PathBuf> {
             continue;
         }
         // PATH lookup.
-        if let Ok(output) = std::process::Command::new("which").arg(name).output() {
-            if output.status.success() {
-                let found = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                let found_path = std::path::PathBuf::from(&found);
-                if found_path.is_file() {
-                    return Some(found_path);
-                }
+        if let Ok(output) = std::process::Command::new("which").arg(name).output()
+            && output.status.success()
+        {
+            let found = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let found_path = std::path::PathBuf::from(&found);
+            if found_path.is_file() {
+                return Some(found_path);
             }
         }
     }
@@ -120,9 +120,7 @@ pub(crate) fn execute<'a>(
         if stdout.trim().is_empty() {
             return Ok(ToolResult {
                 call_id: String::new(),
-                content: format!(
-                    "No matches found.\n\nCheck:\n  - Pattern must be a complete AST node.\n  - Python: no trailing colons (use `def foo($$$)` not `def foo($$$):`).\n  - Functions: include params and body (use `function $N($$$) {{ $$$ }}` not `function $N`)."
-                ),
+                content: "No matches found.\n\nCheck:\n  - Pattern must be a complete AST node.\n  - Python: no trailing colons (use `def foo($$$)` not `def foo($$$):`).\n  - Functions: include params and body (use `function $N($$$) { $$$ }` not `function $N`).".to_string(),
                 title: Some(format!("ast {lang}: {pattern}")),
             });
         }

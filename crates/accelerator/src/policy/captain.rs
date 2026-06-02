@@ -193,7 +193,7 @@ impl Policy for Captain {
             }
 
             trace!("decide: done");
-            return Action::Done;
+            Action::Done
         })
     }
 }

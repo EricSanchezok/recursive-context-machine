@@ -7,8 +7,9 @@ use accelerator::Accelerator;
 static FILE_SEQ: AtomicU64 = AtomicU64::new(0);
 
 fn unique_path(name: &str, extension: &str) -> PathBuf {
-    let seq = FILE_SEQ.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("rcm-{}-{}.{}", name, seq, extension))
+    let process_id = std::process::id();
+    let sequence = FILE_SEQ.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("rcm-{name}-{process_id}-{sequence}.{extension}"))
 }
 
 fn write_rcm(name: &str, source: &str) -> PathBuf {
@@ -27,15 +28,14 @@ fn write_rcm_near(name: &str, source: &str, prompt_name: &str, prompt: &str) -> 
 }
 
 fn remove_compile_path(path: &Path) {
-    if let Some(parent) = path.parent() {
-        if parent
+    if let Some(parent) = path.parent()
+        && parent
             .file_name()
             .and_then(|name| name.to_str())
             .is_some_and(|name| name.starts_with("rcm-") && name.ends_with(".dir"))
-        {
-            let _ = fs::remove_dir_all(parent);
-            return;
-        }
+    {
+        let _ = fs::remove_dir_all(parent);
+        return;
     }
     let _ = fs::remove_file(path);
 }

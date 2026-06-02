@@ -103,6 +103,10 @@ impl Accelerator {
 }
 
 #[derive(Clone)]
+// Graph is inherently larger than PrimitiveAccelerator; boxing the
+// Composite variant would add a pointer traversal at every match site
+// with no measurable performance benefit for this enum.
+#[allow(clippy::large_enum_variant)]
 enum AcceleratorBody {
     Primitive(PrimitiveAccelerator),
     Composite(Graph),
