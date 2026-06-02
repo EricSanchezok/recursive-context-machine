@@ -4,9 +4,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use accelerator::{
-    Accelerator, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph, ResFlux, State,
+    Accelerator, Captain, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph, ResFlux,
+    State,
 };
-use machine::{Environment, Fragment, Model, Policy, Purpose, Resources};
+use machine::{Environment, Fragment, Model, Policy, Purpose, Resources, Role};
 
 use std::future::Future;
 use std::pin::Pin;
@@ -402,5 +403,236 @@ fn context_thread_assembles_qa_pairs() {
     assert_eq!(
         output.ctx.fragments()[3].as_text(),
         Some("Downloaded arxiv:2401.12345.pdf")
+    );
+}
+
+// ── ContextFlux::Fold tests ──
+
+#[test]
+fn context_fold_extracts_last_assistant_into_payload() {
+    let mut state = State {
+        purpose: "search".into(),
+        ..State::default()
+    };
+    state.ctx.append(Fragment::assistant("first message"));
+    state.ctx.append(Fragment::assistant("second message"));
+
+    let mut graph = Graph::new();
+    let source = graph.add_accelerator(
+        "source",
+        Accelerator::primitive(state, Box::new(common::DonePolicy), "source"),
+    );
+    let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 1);
+
+    graph.wire(source.context(), fold.slot(0, Channel::Context));
+    graph.wire(
+        fold.flux_out(Channel::Context),
+        Graph::output(Endpoint::State(Channel::Context)),
+    );
+
+    let output = run(Accelerator::composite_named("fold-test", graph));
+
+    assert_eq!(output.ctx.fragments().len(), 0, "fold ctx should be empty");
+    assert!(
+        output.fold_payload.contains("second message"),
+        "fold_payload should contain the last assistant text"
+    );
+    assert!(
+        !output.fold_payload.contains("first message"),
+        "fold_payload should NOT contain earlier non-last texts"
+    );
+}
+
+#[test]
+fn context_fold_single_assistant() {
+    let mut state = State {
+        purpose: "search".into(),
+        ..State::default()
+    };
+    state.ctx.append(Fragment::assistant("single result"));
+
+    let mut graph = Graph::new();
+    let source = graph.add_accelerator(
+        "source",
+        Accelerator::primitive(state, Box::new(common::DonePolicy), "source"),
+    );
+    let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 1);
+
+    graph.wire(source.context(), fold.slot(0, Channel::Context));
+    graph.wire(
+        fold.flux_out(Channel::Context),
+        Graph::output(Endpoint::State(Channel::Context)),
+    );
+
+    let output = run(Accelerator::composite_named("fold-single", graph));
+    assert_eq!(output.fold_payload, "single result");
+}
+
+#[test]
+fn context_fold_ignores_system_and_tool_fragments() {
+    let mut state = State {
+        purpose: "search".into(),
+        ..State::default()
+    };
+    state
+        .ctx
+        .append(Fragment::system("You are a helpful assistant"));
+    state
+        .ctx
+        .append(Fragment::tool_result("tc1", "tool output", None));
+    state.ctx.append(Fragment::assistant("final answer"));
+
+    let mut graph = Graph::new();
+    let source = graph.add_accelerator(
+        "source",
+        Accelerator::primitive(state, Box::new(common::DonePolicy), "source"),
+    );
+    let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 1);
+
+    graph.wire(source.context(), fold.slot(0, Channel::Context));
+    graph.wire(
+        fold.flux_out(Channel::Context),
+        Graph::output(Endpoint::State(Channel::Context)),
+    );
+
+    let output = run(Accelerator::composite_named("fold-ignore-system", graph));
+    assert_eq!(
+        output.fold_payload, "final answer",
+        "only the last assistant text, not system or tool results"
+    );
+}
+
+#[test]
+fn context_fold_multi_slot_joins() {
+    let mut first = State {
+        purpose: "search".into(),
+        ..State::default()
+    };
+    first.ctx.append(Fragment::assistant("Found 3 papers"));
+
+    let mut second = State {
+        purpose: "download".into(),
+        ..State::default()
+    };
+    second
+        .ctx
+        .append(Fragment::assistant("Downloaded arxiv:2401.12345"));
+
+    let mut graph = Graph::new();
+    let first_acc = graph.add_accelerator(
+        "first",
+        Accelerator::primitive(first, Box::new(common::DonePolicy), "first"),
+    );
+    let second_acc = graph.add_accelerator(
+        "second",
+        Accelerator::primitive(second, Box::new(common::DonePolicy), "second"),
+    );
+    let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 2);
+
+    graph.wire(first_acc.context(), fold.slot(0, Channel::Context));
+    graph.wire(second_acc.context(), fold.slot(1, Channel::Context));
+    graph.wire(
+        fold.flux_out(Channel::Context),
+        Graph::output(Endpoint::State(Channel::Context)),
+    );
+
+    let output = run(Accelerator::composite_named("fold-multi", graph));
+    assert!(
+        output.fold_payload.contains("Found 3 papers"),
+        "should include first slot's last assistant"
+    );
+    assert!(
+        output.fold_payload.contains("Downloaded arxiv:2401.12345"),
+        "should include second slot's last assistant"
+    );
+}
+
+// ── fire() reordering tests ──
+
+#[derive(Clone)]
+struct HaltOnceBeforeDone {
+    halted: bool,
+}
+
+impl Policy for HaltOnceBeforeDone {
+    fn clone_box(&self) -> Box<dyn Policy> {
+        Box::new(self.clone())
+    }
+
+    fn decide<'a>(
+        &'a self,
+        _purpose: &'a Purpose,
+        _ctx: &'a machine::Context,
+        _env: &'a Environment,
+        _resources: &'a Resources,
+        _inbox: &'a machine::Inbox,
+    ) -> Pin<Box<dyn Future<Output = machine::Action> + Send + 'a>> {
+        let halted = self.halted;
+        Box::pin(async move {
+            if !halted {
+                machine::Action::Halt
+            } else {
+                machine::Action::Done
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn last_flux_reorders_upstream_content_after_scaffolding() {
+    // Set up resources with a captain prompt so Captain has something to inject.
+    let mut captain_resources = Resources::named("captain-test");
+    captain_resources
+        .prompts
+        .insert("captain".into(), "Captain prompt".into());
+    captain_resources = captain_resources.with_model(Model {
+        name: "fast".into(),
+        ..Default::default()
+    });
+
+    let state = State {
+        purpose: "调查大模型多智能体框架".into(),
+        res: captain_resources,
+        ..State::default()
+    };
+
+    let accelerator = Accelerator::primitive(state, Box::new(Captain::new()), "last-reorder-test");
+
+    // Feed upstream context through run_with: a handoff from upstream.
+    let mut input = State::default();
+    input
+        .ctx
+        .append(Fragment::assistant("handoff: run_dir=xxx, status=ok"));
+
+    let output = accelerator.run_with(input).await;
+
+    // After Captain setup + fire reordering:
+    // Expected order: [captain prompt, agenst.md, purpose_initial, env, handoff, purpose_b]
+    let frags = output.ctx.fragments();
+    assert!(
+        frags.len() >= 5,
+        "should have scaffolding + upstream + purpose_b: {}",
+        frags.len()
+    );
+
+    // Find positions.
+    let pos_env = frags
+        .iter()
+        .position(|f| f.role == Role::System && f.tag == "env");
+    let pos_handoff = frags.iter().position(|f| f.tag == "assistant");
+    let pos_purpose_b = frags.iter().position(|f| f.tag == "purpose_b");
+
+    assert!(pos_env.is_some(), "env fragment must exist");
+    assert!(pos_handoff.is_some(), "handoff fragment must exist");
+    assert!(pos_purpose_b.is_some(), "purpose_b fragment must exist");
+
+    // Check ordering: env < handoff < purpose_b
+    assert!(
+        pos_env.unwrap() < pos_handoff.unwrap(),
+        "env should come before handoff"
+    );
+    assert!(
+        pos_handoff.unwrap() < pos_purpose_b.unwrap(),
+        "handoff should come before purpose_b"
     );
 }
