@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
-use accelerator::{Accelerator, Captain, State};
-use machine::{Environment, Model, Resources, Tool, ToolResult};
+use accelerator::Captain;
+use machine::{
+    Action, Context, Environment, Fragment, Inbox, Machine, Model, Policy, Purpose, Resources,
+    Role, Tool, ToolResult,
+};
 use serde_json::json;
 
 struct NamedTool {
@@ -41,8 +44,7 @@ fn named_tool(name: &'static str) -> Arc<dyn Tool> {
     Arc::new(NamedTool { name })
 }
 
-#[tokio::test]
-async fn captain_prepares_prompt_first_model_and_all_tools() {
+fn resources() -> Resources {
     let mut resources = Resources::named("test")
         .with_model(Model {
             name: "fast".into(),
@@ -58,27 +60,93 @@ async fn captain_prepares_prompt_first_model_and_all_tools() {
         .prompts
         .insert("captain".into(), "Captain prompt".into());
     resources
-        .prompts
-        .insert("other".into(), "Other prompt".into());
+}
 
-    let state = State {
-        res: resources,
-        ..State::default()
-    };
+async fn drive_until_halt(
+    captain: &Captain,
+    ctx: &mut Context,
+    resources: &mut Resources,
+    purpose: &str,
+) {
+    let mut env = Environment::new(".");
+    let mut inbox = Inbox::new();
+    let mut machine = Machine::new("test", "test");
+    let purpose = Purpose::new(purpose);
 
-    // Run through the full Captain policy — setup steps run inline inside
-    // decide(). The policy emits Done when the context has no pending items.
-    let accelerator = Accelerator::primitive(state, Box::new(Captain::new()), "captain-test");
+    for step in 1..100 {
+        let action = captain.decide(&purpose, ctx, &env, resources, &inbox).await;
+        match action {
+            Action::Halt => return,
+            Action::Done => panic!("captain ended before first halt"),
+            action => {
+                machine
+                    .apply(action, step, ctx, &mut env, resources, &mut inbox)
+                    .await;
+            }
+        }
+    }
 
-    let output = accelerator.run_with(State::default()).await;
+    panic!("captain did not halt within step budget");
+}
 
-    // After setup completes and decide emits Done:
-    // - The first available model should be activated
-    // - All tools should be activated
-    // - The captain prompt should be in context
-    assert_eq!(output.res.active_model, "fast");
-    assert_eq!(output.res.active_tools.len(), 2);
-    assert!(output.res.active_tools.contains("read"));
-    assert!(output.res.active_tools.contains("search"));
-    assert_eq!(output.ctx.fragments()[0].as_text(), Some("Captain prompt"));
+#[tokio::test]
+async fn captain_prepares_prompt_first_model_and_all_tools() {
+    let captain = Captain::new();
+    let mut ctx = Context::new();
+    let mut resources = resources();
+
+    drive_until_halt(&captain, &mut ctx, &mut resources, "").await;
+
+    assert_eq!(resources.active_model, "fast");
+    assert_eq!(resources.active_tools.len(), 2);
+    assert!(resources.active_tools.contains("read"));
+    assert!(resources.active_tools.contains("search"));
+    assert_eq!(ctx.fragments()[0].as_text(), Some("Captain prompt"));
+}
+
+#[tokio::test]
+async fn captain_normalizes_agent_prompt_to_unique_first_fragment() {
+    let captain = Captain::new();
+    let mut ctx = Context::new();
+    ctx.append(Fragment::user("existing user content"));
+    ctx.append(Fragment::system("old prompt").with_tag("agent"));
+    ctx.append(Fragment::system("extra prompt").with_tag("agent"));
+    let mut resources = resources();
+
+    drive_until_halt(&captain, &mut ctx, &mut resources, "").await;
+
+    let agent_fragments: Vec<_> = ctx
+        .fragments()
+        .iter()
+        .filter(|fragment| fragment.role == Role::System && fragment.tag == "agent")
+        .collect();
+    assert_eq!(agent_fragments.len(), 1);
+    assert_eq!(ctx.fragments()[0].tag, "agent");
+    assert_eq!(ctx.fragments()[0].as_text(), Some("Captain prompt"));
+}
+
+#[tokio::test]
+async fn captain_appends_runtime_purpose_as_user_message() {
+    let captain = Captain::new();
+    let mut ctx = Context::new();
+    ctx.append(Fragment::system("Captain prompt").with_tag("agent"));
+    ctx.append(Fragment::system("Instructions").with_tag("instruction"));
+    ctx.append(Fragment::user("## Purpose\ninitial").with_tag("purpose"));
+    ctx.append(Fragment::system("env").with_tag("env"));
+    ctx.append(Fragment::assistant("first answer"));
+    let mut resources = resources();
+
+    drive_until_halt(&captain, &mut ctx, &mut resources, "second").await;
+
+    let purposes: Vec<_> = ctx
+        .fragments()
+        .iter()
+        .filter(|fragment| fragment.tag == "purpose")
+        .collect();
+    assert_eq!(purposes.len(), 2);
+    assert!(purposes.iter().all(|fragment| fragment.role == Role::User));
+    assert_eq!(
+        purposes.last().and_then(|fragment| fragment.as_text()),
+        Some("## Purpose\nsecond")
+    );
 }

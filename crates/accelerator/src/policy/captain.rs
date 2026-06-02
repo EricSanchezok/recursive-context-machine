@@ -1,42 +1,59 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU8, Ordering};
 
-use chrono::Local;
-use machine::{
-    Action, Content, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources, Role,
-};
+use machine::{Action, Content, Context, Environment, Inbox, Policy, Purpose, Resources, Role};
 use tracing::{trace, warn};
 
 use super::retry::{HTTP_FORBIDDEN, HTTP_UNAUTHORIZED, Retry};
+use super::{
+    Step, agent, env as runtime_env, instruction, purpose as runtime_purpose,
+    resources as runtime_resources,
+};
 
-use super::{agent, instruction, purpose};
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    Agent = 0,
+    Instruction = 1,
+    Purpose = 2,
+    Resources = 3,
+    Respond = 4,
+    Running = 5,
+}
 
-/// Captain — a simple single-agent Policy.
-///
-///   Inbox not empty             → Take
-///   Inbox empty:
-///     first call ever           → Halt
-///     last is Hitch:
-///       401/403                 → Done
-///       transient, budget > 0   → backoff, Halt (retry)
-///       budget exhausted        → Done
-///     last is Tool              → Halt
-///     last is not Tool          → Done
-///
-/// Before entering the main decide loop, Captain runs a setup state machine
-/// that injects system prompts, instructions, purpose, activates tools/models,
-/// and injects the env fragment — all via ordinary Action emissions.
+impl Phase {
+    fn from_u8(value: u8) -> Self {
+        match value {
+            0 => Self::Agent,
+            1 => Self::Instruction,
+            2 => Self::Purpose,
+            3 => Self::Resources,
+            4 => Self::Respond,
+            _ => Self::Running,
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Agent => Self::Instruction,
+            Self::Instruction => Self::Purpose,
+            Self::Purpose => Self::Resources,
+            Self::Resources => Self::Respond,
+            Self::Respond => Self::Running,
+            Self::Running => Self::Running,
+        }
+    }
+}
+
 pub struct Captain {
-    setup: std::sync::atomic::AtomicU8,
-    first_call: std::sync::atomic::AtomicBool,
+    phase: AtomicU8,
     retry: Retry,
 }
 
 impl Clone for Captain {
     fn clone(&self) -> Self {
         Self {
-            setup: std::sync::atomic::AtomicU8::new(0),
-            first_call: std::sync::atomic::AtomicBool::new(false),
+            phase: AtomicU8::new(Phase::Agent as u8),
             retry: self.retry.clone(),
         }
     }
@@ -45,8 +62,7 @@ impl Clone for Captain {
 impl Default for Captain {
     fn default() -> Self {
         Self {
-            setup: std::sync::atomic::AtomicU8::new(0),
-            first_call: std::sync::atomic::AtomicBool::new(false),
+            phase: AtomicU8::new(Phase::Agent as u8),
             retry: Retry::default(),
         }
     }
@@ -59,86 +75,59 @@ impl Captain {
 }
 
 impl Captain {
-    fn setup_step(
-        &self,
-        ctx: &Context,
-        _env: &Environment,
-        resources: &Resources,
-        purpose: &Purpose,
-    ) -> Option<Action> {
-        loop {
-            let step = self.setup.load(std::sync::atomic::Ordering::Relaxed);
-            match step {
-                0 => {
-                    if let Some(action) = agent::ensure_agent_prompt(ctx, resources, "captain") {
-                        return Some(action);
-                    }
-                    self.setup
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    continue;
-                }
-                1 => {
-                    if let Some(action) = instruction::ensure_instructions(ctx) {
-                        return Some(action);
-                    }
-                    self.setup
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    continue;
-                }
-                2 => {
-                    if let Some(action) = purpose::ensure_purpose(ctx, purpose) {
-                        return Some(action);
-                    }
-                    self.setup
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    continue;
-                }
-                3 => {
-                    if resources.active_model.is_empty() {
-                        if let Some(model_name) = resources.model_order.first() {
-                            return Some(Action::Model(model_name.clone()));
-                        }
-                    }
-                    if let Some(tool_name) = resources
-                        .tools
-                        .keys()
-                        .find(|tool_name| !resources.active_tools.contains(*tool_name))
-                    {
-                        return Some(Action::Activate(tool_name.clone()));
-                    }
-                    self.setup
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    continue;
-                }
-                _ => return None,
+    fn phase(&self) -> Phase {
+        Phase::from_u8(self.phase.load(Ordering::Relaxed))
+    }
+
+    fn set_phase(&self, phase: Phase) {
+        self.phase.store(phase as u8, Ordering::Relaxed);
+    }
+
+    fn advance(&self) {
+        self.set_phase(self.phase().next());
+    }
+
+    fn drive(&self, step: Step) -> Option<Action> {
+        match step {
+            Step::Emit(action) => Some(action),
+            Step::Ready => {
+                self.advance();
+                None
             }
         }
     }
 
-    fn env_action(&self, ctx: &Context, env: &Environment) -> Option<Action> {
-        let now = Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
-        let text = format!(
-            "cwd: {}\nplatform: {}\ntime: {}",
-            env.cwd.display(),
-            env.platform,
-            now,
-        );
-
-        if let Some(existing) = ctx
-            .fragments()
-            .iter()
-            .find(|f| f.role == Role::System && f.tag == "env")
-        {
-            if existing.as_text() == Some(&text) {
-                return None;
+    fn respond(&self, ctx: &Context, env: &Environment) -> Option<Action> {
+        match self.drive(runtime_env::refresh(ctx, env)) {
+            Some(action) => Some(action),
+            None => {
+                self.set_phase(Phase::Running);
+                Some(Action::Halt)
             }
-            return Some(Action::Replace {
-                id: existing.id(),
-                fragment: Fragment::system(text).with_tag("env"),
-            });
         }
+    }
 
-        Some(Action::Append(Fragment::system(text).with_tag("env")))
+    fn prepare(
+        &self,
+        ctx: &Context,
+        env: &Environment,
+        resources: &Resources,
+        purpose: &Purpose,
+    ) -> Option<Action> {
+        loop {
+            let step = match self.phase() {
+                Phase::Agent => agent::prepare(ctx, resources, "captain"),
+                Phase::Instruction => instruction::load(ctx),
+                Phase::Purpose => runtime_purpose::append(ctx, purpose),
+                Phase::Resources => runtime_resources::activate(resources),
+                Phase::Respond => return self.respond(ctx, env),
+                Phase::Running => return None,
+            };
+
+            if let Some(action) = self.drive(step) {
+                return Some(action);
+            }
+        }
     }
 }
 
@@ -160,63 +149,48 @@ impl Policy for Captain {
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            if let Some(action) = self.setup_step(ctx, env, resources, purpose) {
-                return action;
-            }
-
-            if inbox.peek().is_some() {
-                return Action::Take;
-            }
-
-            if !self.first_call.load(std::sync::atomic::Ordering::Relaxed) {
-                if let Some(action) = self.env_action(ctx, env) {
+            loop {
+                if let Some(action) = self.prepare(ctx, env, resources, purpose) {
                     return action;
                 }
-                self.first_call
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-                trace!("decide: first call, halting");
-                return Action::Halt;
-            }
 
-            let last = ctx.fragments().last();
-
-            if let Some(frag) = last {
-                if let Content::Hitch { code, .. } = &frag.content {
-                    if let Some(c) = code {
-                        if *c == HTTP_UNAUTHORIZED || *c == HTTP_FORBIDDEN {
-                            warn!(code = *c, "decide: permanent hitch, done");
-                            return Action::Done;
-                        }
-                    }
-
-                    if self.retry.backoff().await {
-                        let attempts = self.retry.count();
-                        trace!(attempts, "decide: hitched, retrying");
-                        if let Some(action) = self.env_action(ctx, env) {
-                            return action;
-                        }
-                        return Action::Halt;
-                    }
-                    warn!("decide: retry budget exhausted, done");
-                    return Action::Done;
+                if inbox.peek().is_some() {
+                    return Action::Take;
                 }
-            }
 
-            self.retry.reset();
+                let last = ctx.fragments().last();
 
-            if let Some(action) = self.env_action(ctx, env) {
-                return action;
-            }
+                if let Some(fragment) = last {
+                    if let Content::Hitch { code, .. } = &fragment.content {
+                        if let Some(status_code) = code {
+                            if *status_code == HTTP_UNAUTHORIZED || *status_code == HTTP_FORBIDDEN {
+                                warn!(code = *status_code, "decide: permanent hitch, done");
+                                return Action::Done;
+                            }
+                        }
 
-            match last.map(|f| f.role) {
-                Some(Role::Tool) => {
+                        if self.retry.backoff().await {
+                            let attempts = self.retry.count();
+                            trace!(attempts, "decide: hitched, retrying");
+                            self.set_phase(Phase::Respond);
+                            continue;
+                        }
+
+                        warn!("decide: retry budget exhausted, done");
+                        return Action::Done;
+                    }
+                }
+
+                self.retry.reset();
+
+                if last.is_some_and(|fragment| fragment.role == Role::Tool) {
                     trace!("decide: last is Tool, halting");
-                    Action::Halt
+                    self.set_phase(Phase::Respond);
+                    continue;
                 }
-                _ => {
-                    trace!("decide: done");
-                    Action::Done
-                }
+
+                trace!("decide: done");
+                return Action::Done;
             }
         })
     }

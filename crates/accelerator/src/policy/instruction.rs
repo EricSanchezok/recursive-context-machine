@@ -3,20 +3,23 @@ use std::path::{Path, PathBuf};
 
 use machine::{Action, Context, Fragment, Role};
 
-const FILE_NAMES: [&str; 3] = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"];
+use super::Step;
 
-pub fn ensure_instructions(ctx: &Context) -> Option<Action> {
+const FILE_NAMES: [&str; 3] = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"];
+const INSTRUCTION_TAG: &str = "instruction";
+
+pub(crate) fn load(ctx: &Context) -> Step {
     if ctx
         .fragments()
         .iter()
-        .any(|f| f.role == Role::System && f.tag == "instruction")
+        .any(|fragment| fragment.role == Role::System && fragment.tag == INSTRUCTION_TAG)
     {
-        return None;
+        return Step::Ready;
     }
 
     let files = find_instruction_files();
     if files.is_empty() {
-        return None;
+        return Step::Ready;
     }
 
     let parts: Vec<String> = files
@@ -36,11 +39,11 @@ pub fn ensure_instructions(ctx: &Context) -> Option<Action> {
         .collect();
 
     if parts.is_empty() {
-        return None;
+        return Step::Ready;
     }
 
-    Some(Action::Append(
-        Fragment::system(parts.join("\n\n")).with_tag("instruction"),
+    Step::Emit(Action::Append(
+        Fragment::system(parts.join("\n\n")).with_tag(INSTRUCTION_TAG),
     ))
 }
 
@@ -49,26 +52,26 @@ fn find_instruction_files() -> Vec<(PathBuf, String)> {
     let mut results = Vec::new();
 
     if let Ok(cwd) = std::env::current_dir() {
-        let mut dir = Some(cwd);
-        while let Some(d) = dir {
-            if !seen.insert(d.clone()) {
+        let mut directory = Some(cwd);
+        while let Some(current) = directory {
+            if !seen.insert(current.clone()) {
                 break;
             }
             for name in &FILE_NAMES {
-                let path = d.join(name);
+                let path = current.join(name);
                 if path.is_file()
                     && let Ok(content) = std::fs::read_to_string(&path)
                 {
                     results.push((path, content));
                 }
             }
-            dir = d.parent().map(|p| p.to_path_buf());
+            directory = current.parent().map(|parent| parent.to_path_buf());
         }
     }
 
     for path in global_paths() {
         if path.is_file()
-            && !results.iter().any(|(p, _)| *p == path)
+            && !results.iter().any(|(existing, _)| *existing == path)
             && let Ok(content) = std::fs::read_to_string(&path)
         {
             results.push((path, content));
