@@ -63,6 +63,7 @@ impl Captain {
     /// Returns `None` when setup is complete.
     fn setup_step(
         &self,
+        purpose: &Purpose,
         ctx: &Context,
         _env: &Environment,
         resources: &Resources,
@@ -133,11 +134,27 @@ impl Captain {
                         Fragment::system(parts.join("\n\n")).with_tag("instruction"),
                     ));
                 }
-                // Step 2: Skip (Purpose — already injected from outside)
+                // Step 2: Purpose — inject the steering task as a User fragment
+                // (tag="purpose"). This is the instruction that drives the
+                // agent; without it the agent only sees system scaffolding and
+                // falls into "ask" mode instead of executing. Runs once — the
+                // "purpose" tag guards against re-injection on re-entry.
                 2 => {
                     self.setup
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    continue;
+                    if purpose.is_empty() {
+                        continue;
+                    }
+                    if ctx
+                        .fragments()
+                        .iter()
+                        .any(|f| f.role == Role::User && f.tag == "purpose")
+                    {
+                        continue;
+                    }
+                    return Some(Action::Append(
+                        Fragment::user(purpose.text.clone()).with_tag("purpose"),
+                    ));
                 }
                 // Step 3: ResourceSetup — activate first model and all tools
                 // Retryable: stays at step 3 until both model and tools are set up.
@@ -204,7 +221,7 @@ impl Policy for Captain {
 
     fn decide<'a>(
         &'a self,
-        _purpose: &'a Purpose,
+        purpose: &'a Purpose,
         ctx: &'a Context,
         env: &'a Environment,
         resources: &'a Resources,
@@ -212,7 +229,7 @@ impl Policy for Captain {
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
             // Run setup steps until one emits an action or all are done.
-            if let Some(action) = self.setup_step(ctx, env, resources) {
+            if let Some(action) = self.setup_step(purpose, ctx, env, resources) {
                 return action;
             }
 
