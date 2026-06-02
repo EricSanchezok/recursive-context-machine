@@ -1,12 +1,69 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use machine::{Environment, Tool, ToolResult};
+use reqwest::header::{
+    ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, CACHE_CONTROL, HeaderMap, HeaderName, HeaderValue,
+    USER_AGENT,
+};
 use serde_json::Value;
 
 const TIMEOUT_SECS: u64 = 30;
 const MAX_BYTES: usize = 1_000_000;
+const DOMAIN_INTERVAL: Duration = Duration::from_secs(2);
+
+const BROWSER_UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        ACCEPT,
+        HeaderValue::from_static(
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        ),
+    );
+    headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
+    headers.insert(USER_AGENT, HeaderValue::from_static(BROWSER_UA));
+    headers.insert(
+        ACCEPT_ENCODING,
+        HeaderValue::from_static("gzip, deflate, br"),
+    );
+    headers.insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    headers.insert(
+        HeaderName::from_static("sec-fetch-dest"),
+        HeaderValue::from_static("document"),
+    );
+    headers.insert(
+        HeaderName::from_static("sec-fetch-mode"),
+        HeaderValue::from_static("navigate"),
+    );
+    headers.insert(
+        HeaderName::from_static("sec-fetch-site"),
+        HeaderValue::from_static("none"),
+    );
+    headers.insert(
+        HeaderName::from_static("sec-fetch-user"),
+        HeaderValue::from_static("?1"),
+    );
+    headers.insert(
+        HeaderName::from_static("upgrade-insecure-requests"),
+        HeaderValue::from_static("1"),
+    );
+
+    reqwest::Client::builder()
+        .default_headers(headers)
+        .timeout(Duration::from_secs(TIMEOUT_SECS))
+        .build()
+        .expect("webfetch client")
+});
+
+fn domain(url: &str) -> Option<String> {
+    url::Url::parse(url)
+        .ok()
+        .map(|u| u.host_str().unwrap_or("").to_string())
+}
 
 pub struct WebFetchTool;
 
@@ -52,7 +109,13 @@ impl Tool for WebFetchTool {
                 .ok_or("missing required parameter 'url'")?;
             let max_length = args["max_length"].as_u64().unwrap_or(5000).min(100_000) as usize;
 
-            let response = reqwest::get(url)
+            if let Some(d) = domain(url) {
+                rate_limit(&d).await;
+            }
+
+            let response = CLIENT
+                .get(url)
+                .send()
                 .await
                 .map_err(|e| format!("failed to fetch {url}: {e}"))?;
 
@@ -135,5 +198,23 @@ impl Tool for WebFetchTool {
                 title: Some(url.to_string()),
             })
         })
+    }
+}
+
+async fn rate_limit(host: &str) {
+    static LAST: std::sync::LazyLock<std::sync::Mutex<HashMap<String, Instant>>> =
+        std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+    let elapsed = LAST.lock().ok().and_then(|mut map| {
+        let now = Instant::now();
+        let elapsed = map.get(host).map(|last| now - *last);
+        map.insert(host.to_string(), now);
+        elapsed
+    });
+
+    if let Some(d) = elapsed {
+        if d < DOMAIN_INTERVAL {
+            tokio::time::sleep(DOMAIN_INTERVAL - d).await;
+        }
     }
 }
