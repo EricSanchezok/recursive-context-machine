@@ -547,37 +547,6 @@ fn context_fold_multi_slot_joins() {
     );
 }
 
-// ── fire() reordering tests ──
-
-#[derive(Clone)]
-struct HaltOnceBeforeDone {
-    halted: bool,
-}
-
-impl Policy for HaltOnceBeforeDone {
-    fn clone_box(&self) -> Box<dyn Policy> {
-        Box::new(self.clone())
-    }
-
-    fn decide<'a>(
-        &'a self,
-        _purpose: &'a Purpose,
-        _ctx: &'a machine::Context,
-        _env: &'a Environment,
-        _resources: &'a Resources,
-        _inbox: &'a machine::Inbox,
-    ) -> Pin<Box<dyn Future<Output = machine::Action> + Send + 'a>> {
-        let halted = self.halted;
-        Box::pin(async move {
-            if !halted {
-                machine::Action::Halt
-            } else {
-                machine::Action::Done
-            }
-        })
-    }
-}
-
 #[tokio::test]
 async fn last_flux_reorders_upstream_content_after_scaffolding() {
     // Set up resources with a captain prompt so Captain has something to inject.
