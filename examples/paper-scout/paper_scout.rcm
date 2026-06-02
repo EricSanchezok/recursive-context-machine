@@ -1,0 +1,29 @@
+name = "Paper Scout"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+mcp anysearch {
+    transport = http
+    url = "https://api.anysearch.com/mcp"
+}
+
+mcp fetch {
+    transport = stdio
+    command = "uvx"
+    args = ["mcp-server-fetch"]
+}
+
+accelerator {
+    purpose = "one-shot paper scouting assistant"
+    models = ["deepseek-v4-flash"]
+    policy = "captain"
+    prompts = { captain = file "./prompts/paper_scout.txt" }
+    tools = ["arxiv_search", "arxiv_download", "fs", "find"]
+    mcps = ["anysearch", "fetch"]
+}
