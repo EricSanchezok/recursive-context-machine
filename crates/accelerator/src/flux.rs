@@ -25,6 +25,12 @@ pub enum ContextFlux {
     /// answer. This creates a Q&A thread where downstream sees "question →
     /// answer, question → answer, now solve this".
     Thread,
+    /// Fold — extract the last assistant text from each slot's context and
+    /// store it in the fold_payload of the output State. The downstream
+    /// accelerator then uses this payload to construct a merged purpose
+    /// fragment (purpose_b) injected before the first Halt, folding upstream
+    /// output into the task description itself.
+    Fold,
 }
 
 #[derive(Clone)]
@@ -62,6 +68,7 @@ impl FluxMode {
             FluxMode::Context(ContextFlux::Last) => "context_last",
             FluxMode::Context(ContextFlux::Digest) => "context_digest",
             FluxMode::Context(ContextFlux::Thread) => "context_thread",
+            FluxMode::Context(ContextFlux::Fold) => "context_fold",
             FluxMode::Environment(EnvFlux::Overlay) => "environment_overlay",
             FluxMode::Resources(ResFlux::Merge) => "resources_merge",
         }
@@ -96,7 +103,29 @@ impl Flux {
             Channel::Purpose => {
                 state.purpose = apply_purpose(self, |slot| slots[slot].purpose.clone())
             }
-            Channel::Context => state.ctx = apply_ctx(self, |slot| slots[slot].ctx.clone()),
+            Channel::Context => {
+                state.ctx = apply_ctx(self, |slot| slots[slot].ctx.clone());
+                // For Fold mode, also extract the fold_payload from slots.
+                if matches!(self.mode, FluxMode::Context(ContextFlux::Fold)) {
+                    let mut parts: Vec<String> = Vec::new();
+                    for (slot, _) in slots.iter().enumerate().take(self.arity) {
+                        if let Some(last_assistant) = slots[slot]
+                            .ctx
+                            .fragments()
+                            .iter()
+                            .rev()
+                            .find(|f| f.role == Role::Assistant)
+                            && let Some(text) = last_assistant.as_text()
+                        {
+                            let trimmed = text.trim();
+                            if !trimmed.is_empty() {
+                                parts.push(trimmed.to_string());
+                            }
+                        }
+                    }
+                    state.fold_payload = parts.join("\n\n");
+                }
+            }
             Channel::Environment => state.env = apply_env(self, |slot| slots[slot].env.clone()),
             Channel::Resources => state.res = apply_res(self, |slot| slots[slot].res.clone()),
             Channel::Pulse => {}
@@ -155,6 +184,11 @@ fn apply_ctx(flux: &Flux, mut read: impl FnMut(usize) -> Context) -> Context {
                 thread_context_into(slot, &context, &mut result);
             }
             result
+        }
+        FluxMode::Context(ContextFlux::Fold) => {
+            // Fold: extract last assistant text from each slot's context.
+            // The context itself is empty — the payload travels via fold_payload.
+            Context::new()
         }
         _ => unreachable!("flux mode channel already matched"),
     }
