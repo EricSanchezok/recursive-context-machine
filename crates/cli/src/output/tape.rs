@@ -36,6 +36,8 @@ enum CellState {
     Pending,
     Written,
     Replacing,
+    Flashing,
+    Taking,
     Removing,
     Swapping,
 }
@@ -162,14 +164,31 @@ impl CellKind {
             Self::Unknown => "unknown".into(),
         }
     }
+
+    /// Scaffolding fragments (agent/instruction/env/purpose) are re-emitted every
+    /// round — most visibly the `env` timestamp tick. Their updates should flash
+    /// in place rather than drag the main pointer back across the whole tape.
+    fn is_scaffolding(&self) -> bool {
+        matches!(
+            self,
+            Self::Agent | Self::Instruction | Self::Environment | Self::Purpose
+        )
+    }
 }
 
 fn tag_color(tag: &str) -> Color {
-    const PALETTE: [Color; 8] = [
+    // 16 evenly-spread hues so distinct tags read as distinct colors. The hash is
+    // stable, so a given tag always gets the same tone across runs.
+    const PALETTE: [Color; 16] = [
         Color::Rgb {
             r: 196,
             g: 132,
             b: 93,
+        },
+        Color::Rgb {
+            r: 207,
+            g: 156,
+            b: 78,
         },
         Color::Rgb {
             r: 177,
@@ -177,9 +196,19 @@ fn tag_color(tag: &str) -> Color {
             b: 83,
         },
         Color::Rgb {
+            r: 170,
+            g: 173,
+            b: 88,
+        },
+        Color::Rgb {
             r: 143,
             g: 166,
             b: 105,
+        },
+        Color::Rgb {
+            r: 112,
+            g: 170,
+            b: 110,
         },
         Color::Rgb {
             r: 101,
@@ -187,9 +216,24 @@ fn tag_color(tag: &str) -> Color {
             b: 146,
         },
         Color::Rgb {
+            r: 96,
+            g: 168,
+            b: 173,
+        },
+        Color::Rgb {
+            r: 102,
+            g: 157,
+            b: 191,
+        },
+        Color::Rgb {
             r: 121,
             g: 151,
             b: 199,
+        },
+        Color::Rgb {
+            r: 140,
+            g: 140,
+            b: 205,
         },
         Color::Rgb {
             r: 164,
@@ -197,9 +241,19 @@ fn tag_color(tag: &str) -> Color {
             b: 198,
         },
         Color::Rgb {
+            r: 188,
+            g: 128,
+            b: 184,
+        },
+        Color::Rgb {
             r: 202,
             g: 126,
             b: 154,
+        },
+        Color::Rgb {
+            r: 204,
+            g: 124,
+            b: 124,
         },
         Color::Rgb {
             r: 189,
@@ -219,10 +273,21 @@ enum TapeOp {
         index: usize,
         id: u64,
         kind: CellKind,
+        intake: bool,
         label: String,
     },
     Replace {
         index: usize,
+        id: u64,
+        tag: String,
+        kind: CellKind,
+        label: String,
+    },
+    /// In-place update of a scaffolding cell (env/agent/instruction/purpose).
+    /// Unlike `Replace`, it never moves the main pointer — it just blinks the
+    /// target cell where it sits, so the per-round env tick stops dragging the
+    /// pointer across long tapes.
+    Flash {
         id: u64,
         tag: String,
         kind: CellKind,
@@ -255,6 +320,13 @@ impl TapeOp {
                 .iter()
                 .position(|cell| cell.id == *first)
                 .unwrap_or(0),
+            // Flash never travels; report its current cell so callers that
+            // inspect target stay consistent, but advance_tape handles it early.
+            Self::Flash { id, .. } => tape
+                .cells
+                .iter()
+                .position(|cell| cell.id == *id)
+                .unwrap_or(0),
         }
     }
 
@@ -262,6 +334,7 @@ impl TapeOp {
         match self {
             Self::Write { label, .. }
             | Self::Replace { label, .. }
+            | Self::Flash { label, .. }
             | Self::Remove { label, .. }
             | Self::Swap { label, .. } => label,
         }
@@ -307,7 +380,18 @@ struct TapeState {
     lifecycle: TapeStatus,
     frontier: Option<u64>,
     tool_calls: usize,
+    /// Transient marker for cell-less actions (model switch, tool activate /
+    /// deactivate): `(text, remaining_ticks)`. Drawn on the status row and
+    /// counted down each animation tick.
+    badge: Option<(String, u8)>,
+    /// Sticky record of the last action this tape performed, for observability /
+    /// snapshot tests. Unlike `status` (which the next op's label overwrites) and
+    /// `badge` (which counts down to None), this persists.
+    last_action: String,
 }
+
+/// How long a resource-action badge stays on screen, in animation ticks.
+const BADGE_TICKS: u8 = 4;
 
 impl TapeState {
     fn new(name: impl Into<String>, kind: impl Into<String>) -> Self {
@@ -322,7 +406,13 @@ impl TapeState {
             lifecycle: TapeStatus::Waiting,
             frontier: None,
             tool_calls: 0,
+            badge: None,
+            last_action: String::new(),
         }
+    }
+
+    fn set_badge(&mut self, text: impl Into<String>) {
+        self.badge = Some((text.into(), BADGE_TICKS));
     }
 }
 
@@ -356,6 +446,9 @@ pub struct TapeSnapshotTape {
     pub name: String,
     pub pointer: usize,
     pub status: String,
+    /// Sticky record of the last action verb (intake / refresh / overwriting /
+    /// swapping / activate … ). Survives later ops, unlike `status`.
+    pub last_action: String,
     pub cells: Vec<TapeSnapshotCell>,
 }
 
@@ -399,6 +492,7 @@ where
             name: tape.name.clone(),
             pointer: tape.pointer,
             status: tape.status.clone(),
+            last_action: tape.last_action.clone(),
             cells: tape
                 .cells
                 .iter()
@@ -574,6 +668,8 @@ fn advance_all_tapes(view: &mut ViewState) {
 }
 
 fn advance_tape(tape: &mut TapeState) {
+    tick_badge(tape);
+
     if tape.active.is_none() {
         tape.active = tape.queue.pop_front();
     }
@@ -581,6 +677,14 @@ fn advance_tape(tape: &mut TapeState) {
     let Some(op) = tape.active.as_ref() else {
         return;
     };
+
+    // Flash (scaffolding re-emit, e.g. the per-round env tick) never moves the
+    // main pointer — it blinks the target cell in place wherever it sits.
+    if matches!(op, TapeOp::Flash { .. }) {
+        tape.status = op.label().to_string();
+        advance_active_op(tape);
+        return;
+    }
 
     let target = op.target(tape).min(tape.cells.len().saturating_sub(1));
     tape.status = op.label().to_string();
@@ -595,6 +699,15 @@ fn advance_tape(tape: &mut TapeState) {
     }
 }
 
+fn tick_badge(tape: &mut TapeState) {
+    if let Some((_, remaining)) = tape.badge.as_mut() {
+        *remaining = remaining.saturating_sub(1);
+        if *remaining == 0 {
+            tape.badge = None;
+        }
+    }
+}
+
 fn travel_stride(pointer: usize, target: usize) -> usize {
     let distance = pointer.abs_diff(target);
     if distance <= LONG_JUMP_THRESHOLD {
@@ -605,6 +718,8 @@ fn travel_stride(pointer: usize, target: usize) -> usize {
 }
 
 fn advance_active_op(tape: &mut TapeState) {
+    // Intermediate-state passes: each returns after marking a transient state so
+    // the action reads as a deliberate motion rather than an instant settle.
     if let Some(TapeOp::Replace { index, id, .. }) = tape.active.as_ref() {
         let current_index = cell_index(tape, *id).unwrap_or(*index);
         if let Some(cell) = tape.cells.get_mut(current_index)
@@ -612,6 +727,35 @@ fn advance_active_op(tape: &mut TapeState) {
         {
             cell.state = CellState::Replacing;
             tape.status = "overwriting".into();
+            tape.last_action = "overwriting".into();
+            return;
+        }
+    }
+
+    if let Some(TapeOp::Flash { id, .. }) = tape.active.as_ref()
+        && let Some(index) = cell_index(tape, *id)
+        && tape.cells[index].state != CellState::Flashing
+    {
+        tape.cells[index].state = CellState::Flashing;
+        tape.status = "refresh".into();
+        tape.last_action = "refresh".into();
+        return;
+    }
+
+    if let Some(TapeOp::Write {
+        index,
+        id,
+        intake: true,
+        ..
+    }) = tape.active.as_ref()
+    {
+        let current_index = cell_index(tape, *id).unwrap_or(*index);
+        if let Some(cell) = tape.cells.get_mut(current_index)
+            && cell.state != CellState::Taking
+        {
+            cell.state = CellState::Taking;
+            tape.status = "intake".into();
+            tape.last_action = "intake".into();
             return;
         }
     }
@@ -624,6 +768,7 @@ fn advance_active_op(tape: &mut TapeState) {
         && mark_swap_cells(tape, first, second)
     {
         tape.status = "swapping".into();
+        tape.last_action = "swapping".into();
         return;
     }
 
@@ -651,6 +796,14 @@ fn advance_active_op(tape: &mut TapeState) {
         } => {
             let current_index = cell_index(tape, id).unwrap_or(index);
             if let Some(cell) = tape.cells.get_mut(current_index) {
+                cell.tag = tag;
+                cell.kind = kind;
+                cell.state = CellState::Written;
+            }
+        }
+        TapeOp::Flash { id, tag, kind, .. } => {
+            if let Some(index) = cell_index(tape, id) {
+                let cell = &mut tape.cells[index];
                 cell.tag = tag;
                 cell.kind = kind;
                 cell.state = CellState::Written;
@@ -801,7 +954,7 @@ fn apply_component_event(view: &mut ViewState, event: ComponentEvent) {
 fn apply_fragment_event(tape: &mut TapeState, event: FragmentEvent) {
     match event {
         FragmentEvent::Appended(meta) => enqueue_write(tape, meta, "write"),
-        FragmentEvent::Taken(meta) => enqueue_write(tape, meta, "take"),
+        FragmentEvent::Taken(meta) => enqueue_take(tape, meta),
         FragmentEvent::Inserted { meta, after } => enqueue_insert(tape, meta, after),
         FragmentEvent::Replaced(meta) => enqueue_replace(tape, meta),
         FragmentEvent::Removed { id } => enqueue_remove(tape, id),
@@ -867,11 +1020,20 @@ fn apply_machine_event(tape: &mut TapeState, event: MachineEvent) {
 }
 
 fn apply_resource_event(tape: &mut TapeState, event: ResourceEvent) {
-    match event {
-        ResourceEvent::Model { name } => tape.status = format!("model {name}"),
-        ResourceEvent::Activate { name } => tape.status = format!("activate {name}"),
-        ResourceEvent::Deactivate { name } => tape.status = format!("deactivate {name}"),
-    }
+    // Resource actions have no cell, so they surface as a transient badge on the
+    // status row (held for a few ticks) plus the status text.
+    let (badge, status) = match event {
+        ResourceEvent::Model { name } => (format!("⟳ model {name}"), format!("model {name}")),
+        ResourceEvent::Activate { name } => {
+            (format!("⚡ activate {name}"), format!("activate {name}"))
+        }
+        ResourceEvent::Deactivate { name } => {
+            (format!("⌁ deactivate {name}"), format!("deactivate {name}"))
+        }
+    };
+    tape.set_badge(badge);
+    tape.status = status.clone();
+    tape.last_action = status;
 }
 
 fn tape_for_source<'a>(
@@ -896,7 +1058,12 @@ fn component_key(meta: &ComponentMeta) -> String {
 
 fn enqueue_write(tape: &mut TapeState, meta: FragmentMeta, action: &str) {
     let index = tape.cells.len();
-    enqueue_cell_write(tape, meta, index, action);
+    enqueue_cell_write(tape, meta, index, action, false);
+}
+
+fn enqueue_take(tape: &mut TapeState, meta: FragmentMeta) {
+    let index = tape.cells.len();
+    enqueue_cell_write(tape, meta, index, "take", true);
 }
 
 fn enqueue_insert(tape: &mut TapeState, meta: FragmentMeta, after: u64) {
@@ -906,10 +1073,16 @@ fn enqueue_insert(tape: &mut TapeState, meta: FragmentMeta, after: u64) {
         .position(|cell| cell.id == after)
         .map(|index| index + 1)
         .unwrap_or(tape.cells.len());
-    enqueue_cell_write(tape, meta, index, "insert");
+    enqueue_cell_write(tape, meta, index, "insert", false);
 }
 
-fn enqueue_cell_write(tape: &mut TapeState, meta: FragmentMeta, index: usize, action: &str) {
+fn enqueue_cell_write(
+    tape: &mut TapeState,
+    meta: FragmentMeta,
+    index: usize,
+    action: &str,
+    intake: bool,
+) {
     let kind = CellKind::from_meta(&meta);
     let cell = TapeCell {
         id: meta.id,
@@ -926,16 +1099,33 @@ fn enqueue_cell_write(tape: &mut TapeState, meta: FragmentMeta, index: usize, ac
         index,
         id: meta.id,
         kind,
+        intake,
         label: fragment_label(action, &meta),
     });
 }
 
 fn enqueue_replace(tape: &mut TapeState, meta: FragmentMeta) {
     let kind = CellKind::from_meta(&meta);
-    let Some(index) = tape.cells.iter().position(|cell| cell.id == meta.id) else {
+    if tape.cells.iter().all(|cell| cell.id != meta.id) {
         enqueue_write(tape, meta, "write");
         return;
-    };
+    }
+    // Scaffolding (env/agent/instruction/purpose) is re-emitted every round;
+    // flash it in place so the pointer doesn't run back across the tape.
+    if kind.is_scaffolding() {
+        tape.queue.push_back(TapeOp::Flash {
+            id: meta.id,
+            tag: meta.tag.clone(),
+            kind,
+            label: fragment_label("refresh", &meta),
+        });
+        return;
+    }
+    let index = tape
+        .cells
+        .iter()
+        .position(|cell| cell.id == meta.id)
+        .expect("id presence checked above");
     tape.queue.push_back(TapeOp::Replace {
         index,
         id: meta.id,
@@ -1202,8 +1392,14 @@ fn draw_tape_status(out: &mut std::io::Stdout, row: u16, inner: usize, tape: &Ta
     let ellipsis_offset = if start > 0 { 2 } else { 0 };
     let pointer_offset = tape.pointer.saturating_sub(start) * CELL_WIDTH;
     let gear_col = (ellipsis_offset + pointer_offset).min(inner.saturating_sub(2));
+    let badge = tape
+        .badge
+        .as_ref()
+        .map(|(text, _)| format!("{text} · "))
+        .unwrap_or_default();
     let status = format!(
-        "{} · {} · {} cells · {} tools",
+        "{}{} · {} · {} cells · {} tools",
+        badge,
         one_line(&tape.status),
         position_text(tape),
         tape.cells.len(),
@@ -1269,6 +1465,8 @@ fn cell_glyph(cell: &TapeCell) -> &'static str {
     match cell.state {
         CellState::Pending | CellState::Removing => "□",
         CellState::Replacing => "◈",
+        CellState::Flashing => "◇",
+        CellState::Taking => "▼",
         CellState::Swapping => "◆",
         CellState::Written => "■",
     }
@@ -1278,6 +1476,8 @@ fn cell_color(cell: &TapeCell) -> Color {
     match cell.state {
         CellState::Removing => Color::Red,
         CellState::Replacing => Color::Yellow,
+        CellState::Flashing => Color::White,
+        CellState::Taking => Color::Green,
         CellState::Swapping => Color::Magenta,
         CellState::Pending | CellState::Written => cell.kind.color(),
     }
