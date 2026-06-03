@@ -70,6 +70,7 @@ impl Machine {
                     step,
                     role = role_name(frag.role),
                     kind = content_kind(frag),
+                    tag = frag.tag.as_str(),
                     preview = %preview(frag),
                 );
             }
@@ -80,9 +81,11 @@ impl Machine {
                         event = "inserted",
                         machine_id = mid,
                         id,
+                        after,
                         step,
                         role = role_name(frag.role),
                         kind = content_kind(frag),
+                        tag = frag.tag.as_str(),
                         preview = %preview(frag),
                     );
                 }
@@ -112,6 +115,7 @@ impl Machine {
                         step,
                         role = role_name(frag.role),
                         kind = content_kind(frag),
+                        tag = frag.tag.as_str(),
                         preview = %preview(frag),
                     );
                 }
@@ -148,6 +152,13 @@ impl Machine {
                         Role::System,
                         None::<&str>,
                     ));
+                } else {
+                    hook!(
+                        event = "model",
+                        machine_id = mid,
+                        name = name.as_str(),
+                        step
+                    );
                 }
             }
             Action::Activate(name) => {
@@ -158,10 +169,23 @@ impl Machine {
                         Role::System,
                         None::<&str>,
                     ));
+                } else {
+                    hook!(
+                        event = "activate",
+                        machine_id = mid,
+                        name = name.as_str(),
+                        step
+                    );
                 }
             }
             Action::Deactivate(name) => {
                 resources.disable(&name);
+                hook!(
+                    event = "deactivate",
+                    machine_id = mid,
+                    name = name.as_str(),
+                    step
+                );
             }
             Action::Take => {
                 if let Some(frag) = inbox.pop() {
@@ -177,6 +201,7 @@ impl Machine {
                         step,
                         role = role_name(frag.role),
                         kind = content_kind(frag),
+                        tag = frag.tag.as_str(),
                         preview = %preview(frag),
                     );
                 }
