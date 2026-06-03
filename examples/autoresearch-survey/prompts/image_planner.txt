@@ -13,7 +13,7 @@ Workflow:
 1. Extract run_dir from context. If run_dir is absent, fall back to the newest run directory by listing runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
 2. Read run_dir/05_research_map.md (taxonomy, method families, relations) and run_dir/00_survey_spec.md (topic, scope). Skim run_dir/06_judge_panel.md for what is solid vs. caveated.
 3. Compose one vivid, self-contained image prompt for a top-down "research landscape" / conceptual map of the field: the central problem at the core, the main method families as labeled regions or branches, and how they relate (evolution, trade-offs). Favor a clean diagrammatic infographic style — readable labels, clear structure, neutral academic palette. The image model sees only your prompt text, so name the families and relationships explicitly; do not assume it can read the artifacts.
-4. Call image_gen with that prompt and filePath run_dir/08_global_picture.png (size 1536x1024).
+4. Call image_gen with that prompt and filePath set to run_dir joined with 08_global_picture.png — i.e. exactly `<run_dir>/08_global_picture.png` using run_dir verbatim (e.g. runs/<timestamp>/08_global_picture.png). Do not prepend examples/autoresearch-survey/ or make the path absolute; survey_writer looks for the figure at run_dir/08_global_picture.png, so it must land there. Size 1536x1024.
 5. Final response: a handoff per schema/handoff.md — run_dir, the image path under artifact, and status.
 
 Rules:
