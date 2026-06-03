@@ -7,6 +7,19 @@ next node where to look and how the run is doing.
 
 Keep it short: at most ~15 lines, one `key: value` per line.
 
+## This must be your LAST message — and it carries run_dir downstream
+
+The graph forwards only your **last message** to the next node. If your last
+message is a tool result (e.g. a file-write receipt) or any text without
+`run_dir`, the next node receives no run_dir and has to guess it. So:
+
+- Do all your file writes and tool calls **first**.
+- Then send the handoff as a **plain text message with no tool call**, so it is
+  the final fragment in your context.
+- `run_dir` must be the **first line**, verbatim, in the exact form you received
+  it (e.g. `runs/20260603T120600Z`) — do not add a prefix, do not make it
+  absolute. The next node will use it as-is to build paths.
+
 ## Required keys
 
 - `run_dir`: the run directory, verbatim. **Must be the first line.** The whole
