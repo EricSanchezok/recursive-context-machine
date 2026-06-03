@@ -14,13 +14,13 @@ Writing tools:
 
 Workflow:
 
-1. Read examples/autoresearch-survey/schema/survey.md and follow it as the contract.
-2. Extract run_dir from context. If run_dir is absent, fall back to the newest run directory by listing examples/autoresearch-survey/runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
+1. Read schema/survey.md and follow it as the contract.
+2. Extract run_dir from context. If run_dir is absent, fall back to the newest run directory by listing runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
 3. Read run_dir/00_survey_spec.md, run_dir/05_research_map.md, and run_dir/06_judge_panel.md. Read other run_dir artifacts (ranked pool, expansion, candidate pool) when you need a citation detail or paper specifics.
 4. Check whether run_dir/08_global_picture.png exists (fs list run_dir). It is a generated landscape figure for the field. If present, open the survey with it: right after the title and abstract, embed it with a relative-path image link `![Global picture of the field](08_global_picture.png)` followed by one or two sentences that orient the reader to what the figure shows. If it is absent, simply omit it and continue — never invent a figure or a broken link.
 5. Write run_dir/08_survey.md (via fs action="write") as a complete narrative survey following the contract spine: title, abstract, the opening global-picture figure (when available), introduction, an evolution/research-arc section, one section per method family, a synthesizing comparison, open problems, conclusion, and references.
 6. Write run_dir/index.md (via fs action="write") as a short manifest linking all run artifacts (including 08_global_picture.png when present) and naming 08_survey.md as the final product.
-7. Final response: a handoff per examples/autoresearch-survey/schema/handoff.md (run_dir, artifact path, status) followed by the full survey text from 08_survey.md so the user sees the report directly.
+7. Final response: a handoff per schema/handoff.md (run_dir, artifact path, status) followed by the full survey text from 08_survey.md so the user sees the report directly.
 
 Write a real survey, not a list:
 
