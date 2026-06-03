@@ -7,6 +7,19 @@ next node where to look and how the run is doing.
 
 Keep it short: at most ~15 lines, one `key: value` per line.
 
+## This must be your LAST message — and it carries run_dir downstream
+
+The graph forwards only your **last message** to the next node. If your last
+message is a tool result (e.g. a file-write receipt) or any text without
+`run_dir`, the next node receives no run_dir and has to guess it. So:
+
+- Do all your file writes and tool calls **first**.
+- Then send the handoff as a **plain text message with no tool call**, so it is
+  the final fragment in your context.
+- `run_dir` must be the **first line**, verbatim, in the exact form you received
+  it (e.g. `runs/20260603T120600Z`) — do not add a prefix, do not make it
+  absolute. The next node will use it as-is to build paths.
+
 ## Required keys
 
 - `run_dir`: the run directory, verbatim. **Must be the first line.** The whole
@@ -29,19 +42,18 @@ Keep it short: at most ~15 lines, one `key: value` per line.
 
 1. Prefer `run_dir` from incoming context.
 2. If incoming context has no `run_dir` (e.g. running this unit standalone), you
-   may fall back to the newest run directory: `fs list` the
-   `examples/autoresearch-survey/runs` directory **directly** (listing its parent
-   hides it — `runs/` is gitignored) and pick the last entry, since the UTC
-   timestamp names sort chronologically. You **must** then add a `risks:` line
-   saying the run_dir was recovered from disk, not from context. Never switch
-   run_dir silently.
+   may fall back to the newest run directory: `fs list` the `runs` directory
+   **directly** (listing its parent hides it — `runs/` is gitignored) and pick
+   the last entry, since the UTC timestamp names sort chronologically. You
+   **must** then add a `risks:` line saying the run_dir was recovered from disk,
+   not from context. Never switch run_dir silently.
 3. `anchor` is the only node that creates a new `run_dir`.
 
 ## Example
 
 ```
-run_dir: examples/autoresearch-survey/runs/20260530T144227Z
-artifact: examples/autoresearch-survey/runs/20260530T144227Z/02a_method_candidates.md
+run_dir: runs/20260530T144227Z
+artifact: runs/20260530T144227Z/02a_method_candidates.md
 status: ok
 counts: candidates=14
 ids: 2306.14048, 2401.18079, 2404.06654, 2503.24000, 2308.14508

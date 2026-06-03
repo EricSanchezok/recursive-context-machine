@@ -1,4 +1,4 @@
-name = "Autoresearch Anchor"
+name = "Autoresearch Survey Writer (Chinese)"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,9 +9,9 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "automated literature survey agents with citation graph expansion"
+    purpose = "autoresearch survey writer zh"
     models = ["deepseek-v4-flash"]
     policy = "captain"
-    prompts = { captain = file "../prompts/anchor.txt" }
-    tools = ["fs", "shell"]
+    prompts = { captain = file "../prompts/survey_writer_zh.txt" }
+    tools = ["fs"]
 }
