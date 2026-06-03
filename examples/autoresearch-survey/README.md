@@ -74,6 +74,9 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 9. `survey_writer.rcm`  
    把 research map 和 judge panel 投影成最终的分节叙事长文 survey，开头插入全景图，并打印给用户。
 
+10. `survey_writer_zh.rcm`  
+   接在 `survey_writer` 之后，把英文成稿 `08_survey.md` 忠实翻译成中文 `08_survey.zh.md`（旁支落盘，不改变图的正式输出仍是英文版）。
+
 `survey_brief.rcm` 仍保留为一个可单跑的单元（生成凝练的可审计简报），但已不在 end-to-end 管线中；管线由 `judge_panel` 直接进入 `survey_writer`。
 
 ## Run Artifacts
@@ -89,6 +92,7 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 - `06_judge_panel.md`
 - `08_global_picture.png`（需要 `OPENAI_API_KEY`；缺失时跳过）
 - `08_survey.md`
+- `08_survey.zh.md`（中文版）
 - `index.md`
 
 这些文件是 runtime artifacts，默认不进入 git。（单跑 `survey_brief.rcm` 时会额外产出 `07_survey_brief.md`。）
