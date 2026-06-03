@@ -30,6 +30,10 @@ The article must argue, not enumerate. Required spine:
 
 - `title` and a 4-6 sentence `abstract` that states the problem, the organizing
   thesis, and what the reader will take away.
+- `global_picture` (when available): immediately after the abstract, embed the
+  generated landscape figure `08_global_picture.png` with a relative-path image
+  link and a sentence orienting the reader. Omit cleanly if the figure was not
+  produced — never leave a broken link.
 - `introduction`: define the field's central problem and why it matters; state
   the scope and intended reader; lay out the questions the survey answers and the
   organizing logic (the "story") the rest of the article follows.
