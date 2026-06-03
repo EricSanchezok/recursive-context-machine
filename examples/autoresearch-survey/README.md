@@ -12,25 +12,29 @@
 
 ## 输入 Topic
 
-入口从下面两个位置读取 topic，优先级从高到低：
+topic 就是整张图的 **purpose**。入口从下面两个位置读取，优先级从高到低：
 
-1. 环境变量 `AUTORESEARCH_TOPIC`
-2. 本地文件 `examples/autoresearch-survey/topic.md`
+1. 图的 purpose —— 用 CLI 的 `--purpose` 覆盖，或写在 `anchor.rcm` 的 `purpose` 字段里（默认是一个 smoke-test topic）。
+2. 本地文件 `examples/autoresearch-survey/topic.md`（仅在没有 purpose 时回退）。
 
-如果两者都不存在，系统会使用一个 smoke-test topic。
+不再使用 `AUTORESEARCH_TOPIC` 环境变量；topic 通过 purpose 通道注入到 anchor 节点。
 
 示例：
 
 ```sh
 export DEEPSEEK_API_KEY=sk-...
-export AUTORESEARCH_TOPIC="KV cache compression for long-context large language model inference"
-cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/autoresearch_survey.rcm --speed 0 --context
+cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/autoresearch_survey.rcm \
+  --purpose "KV cache compression for long-context large language model inference" \
+  --speed 0 --context
 ```
+
+不带 `--purpose` 时，使用 `anchor.rcm` 里声明的默认 topic。
 
 也可以单跑某个单元：
 
 ```sh
-cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/anchor.rcm --speed 0 --context
+cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/anchor.rcm \
+  --purpose "KV cache compression for long-context LLM inference" --speed 0 --context
 cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/discovery.rcm --speed 0 --context
 ```
 

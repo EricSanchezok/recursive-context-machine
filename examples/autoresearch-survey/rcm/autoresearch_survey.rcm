@@ -61,6 +61,8 @@ graph {
         arity = 1
     }
 
+    input.purpose -> anchor.purpose
+
     anchor.context -> anchor_handoff.slot(0)
     anchor_handoff.out -> query_plan.context
     anchor.done -> query_plan.trigger
