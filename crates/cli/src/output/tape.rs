@@ -388,10 +388,15 @@ struct TapeState {
     /// snapshot tests. Unlike `status` (which the next op's label overwrites) and
     /// `badge` (which counts down to None), this persists.
     last_action: String,
+    /// Ticks left to hold the in-place scaffolding flash, so it reads as a gentle
+    /// breathe rather than a one-frame blink.
+    flash_remaining: u8,
 }
 
 /// How long a resource-action badge stays on screen, in animation ticks.
 const BADGE_TICKS: u8 = 4;
+/// How long a scaffolding cell stays lit during an in-place flash.
+const FLASH_TICKS: u8 = 4;
 
 impl TapeState {
     fn new(name: impl Into<String>, kind: impl Into<String>) -> Self {
@@ -408,6 +413,7 @@ impl TapeState {
             tool_calls: 0,
             badge: None,
             last_action: String::new(),
+            flash_remaining: 0,
         }
     }
 
@@ -691,11 +697,26 @@ fn advance_tape(tape: &mut TapeState) {
     match tape.pointer.cmp(&target) {
         std::cmp::Ordering::Less => {
             tape.pointer = target.min(tape.pointer + travel_stride(tape.pointer, target));
+            fill_trail(tape);
         }
         std::cmp::Ordering::Greater => {
             tape.pointer = target.max(tape.pointer - travel_stride(tape.pointer, target));
         }
         std::cmp::Ordering::Equal => advance_active_op(tape),
+    }
+}
+
+/// The head writes everything it passes: any still-pending cell behind the
+/// current pointer is committed. Without this, a long jump (stride > 1) leaves a
+/// trail of hollow □ cells the head skipped over — the "filled/hollow/filled"
+/// patchwork. Only `Pending` is promoted; transient states (removing, swapping,
+/// …) are left for their own op to resolve.
+fn fill_trail(tape: &mut TapeState) {
+    let pointer = tape.pointer;
+    for cell in tape.cells.iter_mut().take(pointer) {
+        if cell.state == CellState::Pending {
+            cell.state = CellState::Written;
+        }
     }
 }
 
@@ -732,14 +753,23 @@ fn advance_active_op(tape: &mut TapeState) {
         }
     }
 
-    if let Some(TapeOp::Flash { id, .. }) = tape.active.as_ref()
-        && let Some(index) = cell_index(tape, *id)
-        && tape.cells[index].state != CellState::Flashing
-    {
-        tape.cells[index].state = CellState::Flashing;
-        tape.status = "refresh".into();
-        tape.last_action = "refresh".into();
-        return;
+    if let Some(TapeOp::Flash { id, .. }) = tape.active.as_ref() {
+        let id = *id;
+        if let Some(index) = cell_index(tape, id) {
+            // Light it, hold it lit for a few ticks (a gentle breathe rather than
+            // a one-frame blink), then fall through to settle.
+            if tape.cells[index].state != CellState::Flashing {
+                tape.cells[index].state = CellState::Flashing;
+                tape.flash_remaining = FLASH_TICKS;
+                tape.status = "refresh".into();
+                tape.last_action = "refresh".into();
+                return;
+            }
+            if tape.flash_remaining > 0 {
+                tape.flash_remaining -= 1;
+                return;
+            }
+        }
     }
 
     if let Some(TapeOp::Write {
@@ -1474,7 +1504,9 @@ fn cell_glyph(cell: &TapeCell) -> &'static str {
 
 fn cell_color(cell: &TapeCell) -> Color {
     match cell.state {
-        CellState::Removing => Color::Red,
+        // Red is reserved for errors (hitch). A removal is a normal action, so it
+        // fades out in dim grey rather than signalling an error.
+        CellState::Removing => Color::DarkGrey,
         CellState::Replacing => Color::Yellow,
         CellState::Flashing => Color::White,
         CellState::Taking => Color::Green,
