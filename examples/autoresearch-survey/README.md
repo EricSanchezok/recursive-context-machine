@@ -12,31 +12,33 @@
 
 ## 输入 Topic
 
-topic 就是整张图的 **purpose**。入口从下面两个位置读取，优先级从高到低：
+topic 就是整张图的 **purpose**：
 
-1. 图的 purpose —— 用 CLI 的 `--purpose` 覆盖，或写在 `anchor.rcm` 的 `purpose` 字段里（默认是一个 smoke-test topic）。
-2. 本地文件 `examples/autoresearch-survey/topic.md`（仅在没有 purpose 时回退）。
+- 用 CLI 的 `--purpose` 覆盖，或写在 `anchor.rcm` 的 `purpose` 字段里（默认是一个 smoke-test topic）。
 
-不再使用 `AUTORESEARCH_TOPIC` 环境变量；topic 通过 purpose 通道注入到 anchor 节点。
+purpose 通过 `input.purpose -> anchor.purpose` 注入到 anchor 节点。不再使用 `AUTORESEARCH_TOPIC` 环境变量或 `topic.md` 文件。
 
 示例：
 
+**从本 example 目录运行**（`cd` 进来）。prompt 里的 `schema/`、`runs/` 都是相对当前目录的路径；从这里跑还能让各节点读到本目录的 `AGENTS.md`、而不是仓库根的开发指南。
+
 ```sh
+cd examples/autoresearch-survey
 export DEEPSEEK_API_KEY=sk-...
 export OPENAI_API_KEY=sk-...   # 可选，仅 image_planner 生成全景图时需要
-cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/autoresearch_survey.rcm \
+../../target/release/accelerate run rcm/autoresearch_survey.rcm \
   --purpose "KV cache compression for long-context large language model inference" \
   --speed 0 --context
 ```
 
 不带 `--purpose` 时，使用 `anchor.rcm` 里声明的默认 topic。未设置 `OPENAI_API_KEY` 时，全景图步骤会跳过，survey 仍照常生成（无开头插图）。
 
-也可以单跑某个单元：
+也可以单跑某个单元（同样从本目录）：
 
 ```sh
-cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/anchor.rcm \
+../../target/release/accelerate run rcm/anchor.rcm \
   --purpose "KV cache compression for long-context LLM inference" --speed 0 --context
-cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/discovery.rcm --speed 0 --context
+../../target/release/accelerate run rcm/discovery.rcm --speed 0 --context
 ```
 
 单跑中游单元时，它会优先读取上游 context 中的 `run_dir`；如果没有，就尝试使用最近一次 `runs/*` 目录。
