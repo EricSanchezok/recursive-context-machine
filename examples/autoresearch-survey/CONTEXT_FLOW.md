@@ -37,7 +37,9 @@ Every node ends with a handoff in the shape defined by [`schema/handoff.md`](sch
 | `benchmark_judge` | `run_dir` | `05_research_map.md` and supporting artifacts | `06c_benchmark_judge.md` | `run_dir`, artifact path, verdict, ready and not-ready counts, queries |
 | `gap_judge` | `run_dir` | `05_research_map.md` and supporting artifacts | `06d_gap_judge.md` | `run_dir`, artifact path, verdict, strong and weak gap counts, queries |
 | `judge_synthesizer` | judge handoffs only | `06a` through `06d` artifacts | `06_judge_panel.md` | `run_dir`, judge panel path, overall verdict, ready summary, caveats |
-| `survey_writer` | judge panel handoff only | `00`, `05`, `06` artifacts (others for citation detail) | `08_survey.md`, `index.md` | `run_dir`, survey path, status, plus the full survey for the user |
+| `image_planner` | judge panel handoff only | `00`, `05`, `06` artifacts | `08_global_picture.png` | `run_dir`, image path, status |
+| `survey_writer` | image handoff only | `00`, `05`, `06` artifacts + `08_global_picture.png` if present | `08_survey.md`, `index.md` | `run_dir`, survey path, status, plus the full survey for the user |
+| `survey_writer_zh` | survey writer handoff only | `08_survey.md` | `08_survey.zh.md` | `run_dir`, zh survey path, status |
 
 `survey_brief` is no longer in the end-to-end pipeline; `judge_panel` flows straight into `survey_writer`. The brief unit (`survey_brief.rcm`, reading the judge panel and writing `07_survey_brief.md`) is kept for standalone runs that want a compact audit summary instead of the full article.
 
