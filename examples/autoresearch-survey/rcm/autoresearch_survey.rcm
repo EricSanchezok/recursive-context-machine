@@ -9,6 +9,7 @@ use "./research_map.rcm" as ResearchMap
 use "./judge_panel.rcm" as JudgePanel
 use "./image_planner.rcm" as ImagePlanner
 use "./survey_writer.rcm" as SurveyWriter
+use "./survey_writer_zh.rcm" as SurveyWriterZh
 
 graph {
     accelerator anchor = Anchor
@@ -20,6 +21,7 @@ graph {
     accelerator judge_panel = JudgePanel
     accelerator image_planner = ImagePlanner
     accelerator survey_writer = SurveyWriter
+    accelerator survey_writer_zh = SurveyWriterZh
 
     flux anchor_handoff {
         channel = context
@@ -69,6 +71,12 @@ graph {
         arity = 1
     }
 
+    flux survey_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
     input.purpose -> anchor.purpose
 
     anchor.context -> anchor_handoff.slot(0)
@@ -102,6 +110,10 @@ graph {
     image_planner.context -> image_handoff.slot(0)
     image_handoff.out -> survey_writer.context
     image_planner.done -> survey_writer.trigger
+
+    survey_writer.context -> survey_handoff.slot(0)
+    survey_handoff.out -> survey_writer_zh.context
+    survey_writer.done -> survey_writer_zh.trigger
 
     survey_writer.done -> output.done
     survey_writer.context -> output.context
