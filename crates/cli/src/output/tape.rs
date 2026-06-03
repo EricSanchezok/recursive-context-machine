@@ -8,7 +8,7 @@ use crossterm::{
     cursor::{Hide, MoveTo, Show, position},
     execute,
     style::{Color, Stylize},
-    terminal::{Clear, ClearType},
+    terminal::{Clear, ClearType, size},
 };
 
 use crate::hook::{
@@ -18,11 +18,15 @@ use crate::hook::{
 
 const IDLE_TICK: Duration = Duration::from_millis(50);
 const CELL_WIDTH: usize = 2;
-const INITIAL_VIEW_ROWS: u16 = 6;
+const MIN_VIEW_ROWS: u16 = 6;
+const MAX_VIEW_ROWS: u16 = 24;
+const LONG_JUMP_THRESHOLD: usize = 12;
+const MAX_TRAVEL_TICKS: usize = 6;
 
 #[derive(Clone)]
 struct TapeCell {
     id: u64,
+    tag: String,
     kind: CellKind,
     state: CellState,
 }
@@ -33,13 +37,18 @@ enum CellState {
     Written,
     Replacing,
     Removing,
+    Swapping,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum CellKind {
     SystemText,
     UserText,
     AssistantText,
+    Agent,
+    Instruction,
+    Environment,
+    Purpose,
     ToolCall,
     ToolResult,
     Image,
@@ -47,11 +56,25 @@ enum CellKind {
     Video,
     Document,
     Hitch,
+    Tagged(String),
     Unknown,
 }
 
 impl CellKind {
     fn from_meta(meta: &FragmentMeta) -> Self {
+        match meta.tag.as_str() {
+            "agent" => Self::Agent,
+            "instruction" => Self::Instruction,
+            "env" => Self::Environment,
+            "purpose" | "purpose_initial" | "purpose_b" => Self::Purpose,
+            "" => Self::from_role_and_kind(meta),
+            tag if tag == meta.kind || tag == meta.role => Self::from_role_and_kind(meta),
+            tag if meta.kind == "text" => Self::Tagged(tag.into()),
+            _ => Self::from_role_and_kind(meta),
+        }
+    }
+
+    fn from_role_and_kind(meta: &FragmentMeta) -> Self {
         match meta.kind.as_str() {
             "tool_call" => Self::ToolCall,
             "tool_result" => Self::ToolResult,
@@ -70,11 +93,43 @@ impl CellKind {
         }
     }
 
-    fn color(self) -> Color {
+    fn color(&self) -> Color {
         match self {
-            Self::SystemText => Color::DarkBlue,
-            Self::UserText => Color::Green,
-            Self::AssistantText => Color::White,
+            Self::SystemText => Color::Rgb {
+                r: 119,
+                g: 125,
+                b: 141,
+            },
+            Self::UserText => Color::Rgb {
+                r: 111,
+                g: 176,
+                b: 131,
+            },
+            Self::AssistantText => Color::Rgb {
+                r: 219,
+                g: 213,
+                b: 190,
+            },
+            Self::Agent => Color::Rgb {
+                r: 157,
+                g: 132,
+                b: 205,
+            },
+            Self::Instruction => Color::Rgb {
+                r: 205,
+                g: 160,
+                b: 106,
+            },
+            Self::Environment => Color::Rgb {
+                r: 104,
+                g: 166,
+                b: 157,
+            },
+            Self::Purpose => Color::Rgb {
+                r: 230,
+                g: 173,
+                b: 91,
+            },
             Self::ToolCall => Color::Yellow,
             Self::ToolResult => Color::Cyan,
             Self::Image => Color::Magenta,
@@ -82,9 +137,80 @@ impl CellKind {
             Self::Video => Color::DarkYellow,
             Self::Document => Color::DarkGreen,
             Self::Hitch => Color::Red,
+            Self::Tagged(tag) => tag_color(tag),
             Self::Unknown => Color::DarkGrey,
         }
     }
+
+    fn name(&self) -> String {
+        match self {
+            Self::SystemText => "system".into(),
+            Self::UserText => "user".into(),
+            Self::AssistantText => "assistant".into(),
+            Self::Agent => "agent".into(),
+            Self::Instruction => "instruction".into(),
+            Self::Environment => "env".into(),
+            Self::Purpose => "purpose".into(),
+            Self::ToolCall => "tool_call".into(),
+            Self::ToolResult => "tool_result".into(),
+            Self::Image => "image".into(),
+            Self::Audio => "audio".into(),
+            Self::Video => "video".into(),
+            Self::Document => "document".into(),
+            Self::Hitch => "hitch".into(),
+            Self::Tagged(tag) => format!("tag:{tag}"),
+            Self::Unknown => "unknown".into(),
+        }
+    }
+}
+
+fn tag_color(tag: &str) -> Color {
+    const PALETTE: [Color; 8] = [
+        Color::Rgb {
+            r: 196,
+            g: 132,
+            b: 93,
+        },
+        Color::Rgb {
+            r: 177,
+            g: 151,
+            b: 83,
+        },
+        Color::Rgb {
+            r: 143,
+            g: 166,
+            b: 105,
+        },
+        Color::Rgb {
+            r: 101,
+            g: 166,
+            b: 146,
+        },
+        Color::Rgb {
+            r: 121,
+            g: 151,
+            b: 199,
+        },
+        Color::Rgb {
+            r: 164,
+            g: 133,
+            b: 198,
+        },
+        Color::Rgb {
+            r: 202,
+            g: 126,
+            b: 154,
+        },
+        Color::Rgb {
+            r: 189,
+            g: 143,
+            b: 116,
+        },
+    ];
+    let hash = tag.bytes().fold(0usize, |accumulator, byte| {
+        accumulator.wrapping_mul(33) ^ byte as usize
+    });
+    PALETTE[hash % PALETTE.len()]
 }
 
 #[derive(Clone)]
@@ -97,6 +223,8 @@ enum TapeOp {
     },
     Replace {
         index: usize,
+        id: u64,
+        tag: String,
         kind: CellKind,
         label: String,
     },
@@ -106,19 +234,27 @@ enum TapeOp {
         label: String,
     },
     Swap {
-        first: usize,
-        second: usize,
+        first: u64,
+        second: u64,
         label: String,
     },
 }
 
 impl TapeOp {
-    fn target(&self) -> usize {
+    fn target(&self, tape: &TapeState) -> usize {
         match self {
-            Self::Write { index, .. }
-            | Self::Replace { index, .. }
-            | Self::Remove { index, .. } => *index,
-            Self::Swap { first, .. } => *first,
+            Self::Write { index, id, .. }
+            | Self::Replace { index, id, .. }
+            | Self::Remove { index, id, .. } => tape
+                .cells
+                .iter()
+                .position(|cell| cell.id == *id)
+                .unwrap_or(*index),
+            Self::Swap { first, .. } => tape
+                .cells
+                .iter()
+                .position(|cell| cell.id == *first)
+                .unwrap_or(0),
         }
     }
 
@@ -207,6 +343,83 @@ pub(crate) struct Summary {
     pub(crate) duration_s: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TapeSnapshot {
+    pub tapes: Vec<TapeSnapshotTape>,
+    pub hidden_tapes: usize,
+    pub fragments: usize,
+    pub tool_calls: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TapeSnapshotTape {
+    pub name: String,
+    pub pointer: usize,
+    pub status: String,
+    pub cells: Vec<TapeSnapshotCell>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TapeSnapshotCell {
+    pub id: u64,
+    pub tag: String,
+    pub tone: String,
+    pub glyph: String,
+}
+
+pub fn snapshot_events<I>(events: I, reserved_rows: u16) -> TapeSnapshot
+where
+    I: IntoIterator<Item = HookEvent>,
+{
+    let mut view = ViewState {
+        graph: None,
+        frontier: None,
+        frontier_count: 0,
+        tapes: BTreeMap::new(),
+        tape_order: Vec::new(),
+        summary: Summary {
+            fragments: 0,
+            tool_calls: 0,
+            duration_s: 0.0,
+        },
+        origin_y: 0,
+        reserved_rows: reserved_rows.max(MIN_VIEW_ROWS),
+    };
+
+    for event in events {
+        apply_event(&mut view, event);
+    }
+    drain_animation_queues(&mut view);
+    view.summary.fragments = view.tapes.values().map(|tape| tape.cells.len()).sum();
+
+    let visible_tapes = ordered_visible_tapes(&view);
+    let tapes = visible_tapes
+        .iter()
+        .map(|tape| TapeSnapshotTape {
+            name: tape.name.clone(),
+            pointer: tape.pointer,
+            status: tape.status.clone(),
+            cells: tape
+                .cells
+                .iter()
+                .map(|cell| TapeSnapshotCell {
+                    id: cell.id,
+                    tag: cell.tag.clone(),
+                    tone: cell.kind.name(),
+                    glyph: cell_glyph(cell).into(),
+                })
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+
+    TapeSnapshot {
+        hidden_tapes: ordered_tapes(&view).len().saturating_sub(tapes.len()),
+        fragments: view.summary.fragments,
+        tool_calls: view.summary.tool_calls,
+        tapes,
+    }
+}
+
 pub(crate) fn run_animation(
     rx: mpsc::Receiver<HookEvent>,
     delay_ms: u64,
@@ -217,7 +430,8 @@ pub(crate) fn run_animation(
     }
 
     let step = Duration::from_millis(delay_ms);
-    let origin_y = reserve_animation_rows(INITIAL_VIEW_ROWS);
+    let reserved_rows = initial_view_rows();
+    let origin_y = reserve_animation_rows(reserved_rows);
     let mut view = ViewState {
         graph: None,
         frontier: None,
@@ -230,7 +444,7 @@ pub(crate) fn run_animation(
             duration_s: 0.0,
         },
         origin_y,
-        reserved_rows: INITIAL_VIEW_ROWS,
+        reserved_rows,
     };
 
     execute!(std::io::stdout(), Hide).ok();
@@ -277,7 +491,7 @@ fn run_silent(rx: mpsc::Receiver<HookEvent>, start: std::time::Instant) -> Summa
             HookKind::Machine(MachineEvent::Done) if !graph_seen => break,
             HookKind::Fragment(FragmentEvent::Appended(_))
             | HookKind::Fragment(FragmentEvent::Taken(_))
-            | HookKind::Fragment(FragmentEvent::Inserted(_)) => summary.fragments += 1,
+            | HookKind::Fragment(FragmentEvent::Inserted { .. }) => summary.fragments += 1,
             HookKind::Fragment(FragmentEvent::Removed { .. }) => {
                 summary.fragments = summary.fragments.saturating_sub(1);
             }
@@ -288,6 +502,13 @@ fn run_silent(rx: mpsc::Receiver<HookEvent>, start: std::time::Instant) -> Summa
 
     summary.duration_s = start.elapsed().as_secs_f64();
     summary
+}
+
+fn initial_view_rows() -> u16 {
+    let (_, cursor_y) = position().unwrap_or((0, 0));
+    let (_, height) = size().unwrap_or((80, MAX_VIEW_ROWS));
+    let remaining = height.saturating_sub(cursor_y.saturating_add(1));
+    remaining.clamp(MIN_VIEW_ROWS, MAX_VIEW_ROWS)
 }
 
 fn reserve_animation_rows(rows: u16) -> u16 {
@@ -308,11 +529,7 @@ fn is_finish_event(view: &ViewState, event: &HookEvent) -> bool {
 }
 
 fn finish_animation(view: &mut ViewState, step: Duration, start: std::time::Instant) -> Summary {
-    while view
-        .tapes
-        .values()
-        .any(|tape| tape.active.is_some() || !tape.queue.is_empty())
-    {
+    while has_pending_animation(view) {
         tick(view, step);
     }
     view.summary.duration_s = start.elapsed().as_secs_f64();
@@ -332,12 +549,28 @@ fn finish_animation(view: &mut ViewState, step: Duration, start: std::time::Inst
 }
 
 fn tick(view: &mut ViewState, step: Duration) {
+    advance_all_tapes(view);
+    render_frame(view);
+    thread::sleep(step.max(IDLE_TICK));
+}
+
+fn drain_animation_queues(view: &mut ViewState) {
+    while has_pending_animation(view) {
+        advance_all_tapes(view);
+    }
+}
+
+fn has_pending_animation(view: &ViewState) -> bool {
+    view.tapes
+        .values()
+        .any(|tape| tape.active.is_some() || !tape.queue.is_empty())
+}
+
+fn advance_all_tapes(view: &mut ViewState) {
     for tape in view.tapes.values_mut() {
         advance_tape(tape);
     }
     view.summary.fragments = view.tapes.values().map(|tape| tape.cells.len()).sum();
-    render_frame(view);
-    thread::sleep(step.max(IDLE_TICK));
 }
 
 fn advance_tape(tape: &mut TapeState) {
@@ -349,22 +582,48 @@ fn advance_tape(tape: &mut TapeState) {
         return;
     };
 
-    let target = op.target().min(tape.cells.len().saturating_sub(1));
+    let target = op.target(tape).min(tape.cells.len().saturating_sub(1));
     tape.status = op.label().to_string();
     match tape.pointer.cmp(&target) {
-        std::cmp::Ordering::Less => tape.pointer += 1,
-        std::cmp::Ordering::Greater => tape.pointer -= 1,
+        std::cmp::Ordering::Less => {
+            tape.pointer = target.min(tape.pointer + travel_stride(tape.pointer, target));
+        }
+        std::cmp::Ordering::Greater => {
+            tape.pointer = target.max(tape.pointer - travel_stride(tape.pointer, target));
+        }
         std::cmp::Ordering::Equal => advance_active_op(tape),
     }
 }
 
+fn travel_stride(pointer: usize, target: usize) -> usize {
+    let distance = pointer.abs_diff(target);
+    if distance <= LONG_JUMP_THRESHOLD {
+        1
+    } else {
+        distance.div_ceil(MAX_TRAVEL_TICKS).max(1)
+    }
+}
+
 fn advance_active_op(tape: &mut TapeState) {
-    if let Some(TapeOp::Replace { index, .. }) = tape.active.as_ref()
-        && let Some(cell) = tape.cells.get_mut(*index)
-        && cell.state != CellState::Replacing
+    if let Some(TapeOp::Replace { index, id, .. }) = tape.active.as_ref() {
+        let current_index = cell_index(tape, *id).unwrap_or(*index);
+        if let Some(cell) = tape.cells.get_mut(current_index)
+            && cell.state != CellState::Replacing
+        {
+            cell.state = CellState::Replacing;
+            tape.status = "overwriting".into();
+            return;
+        }
+    }
+
+    let swap_ids = match tape.active.as_ref() {
+        Some(TapeOp::Swap { first, second, .. }) => Some((*first, *second)),
+        _ => None,
+    };
+    if let Some((first, second)) = swap_ids
+        && mark_swap_cells(tape, first, second)
     {
-        cell.state = CellState::Replacing;
-        tape.status = "overwriting".into();
+        tape.status = "swapping".into();
         return;
     }
 
@@ -376,21 +635,35 @@ fn advance_active_op(tape: &mut TapeState) {
         TapeOp::Write {
             index, id, kind, ..
         } => {
-            if let Some(cell) = tape.cells.get_mut(index) {
+            let current_index = cell_index(tape, id).unwrap_or(index);
+            if let Some(cell) = tape.cells.get_mut(current_index) {
                 cell.id = id;
                 cell.kind = kind;
                 cell.state = CellState::Written;
             }
         }
-        TapeOp::Replace { index, kind, .. } => {
-            if let Some(cell) = tape.cells.get_mut(index) {
+        TapeOp::Replace {
+            index,
+            id,
+            tag,
+            kind,
+            ..
+        } => {
+            let current_index = cell_index(tape, id).unwrap_or(index);
+            if let Some(cell) = tape.cells.get_mut(current_index) {
+                cell.tag = tag;
                 cell.kind = kind;
                 cell.state = CellState::Written;
             }
         }
         TapeOp::Remove { index, id, .. } => {
-            if tape.cells.get(index).is_some_and(|cell| cell.id == id) {
-                tape.cells.remove(index);
+            let current_index = cell_index(tape, id).unwrap_or(index);
+            if tape
+                .cells
+                .get(current_index)
+                .is_some_and(|cell| cell.id == id)
+            {
+                tape.cells.remove(current_index);
                 if !tape.cells.is_empty() {
                     tape.pointer = tape.pointer.min(tape.cells.len() - 1);
                 } else {
@@ -399,11 +672,39 @@ fn advance_active_op(tape: &mut TapeState) {
             }
         }
         TapeOp::Swap { first, second, .. } => {
-            if first < tape.cells.len() && second < tape.cells.len() {
-                tape.cells.swap(first, second);
+            if let (Some(first_index), Some(second_index)) =
+                (cell_index(tape, first), cell_index(tape, second))
+            {
+                tape.cells.swap(first_index, second_index);
+                if let Some(cell) = tape.cells.get_mut(first_index) {
+                    cell.state = CellState::Written;
+                }
+                if let Some(cell) = tape.cells.get_mut(second_index) {
+                    cell.state = CellState::Written;
+                }
             }
         }
     }
+}
+
+fn mark_swap_cells(tape: &mut TapeState, first: u64, second: u64) -> bool {
+    let (Some(first_index), Some(second_index)) =
+        (cell_index(tape, first), cell_index(tape, second))
+    else {
+        return false;
+    };
+    if tape.cells[first_index].state == CellState::Swapping
+        && tape.cells[second_index].state == CellState::Swapping
+    {
+        return false;
+    }
+    tape.cells[first_index].state = CellState::Swapping;
+    tape.cells[second_index].state = CellState::Swapping;
+    true
+}
+
+fn cell_index(tape: &TapeState, id: u64) -> Option<usize> {
+    tape.cells.iter().position(|cell| cell.id == id)
 }
 
 fn apply_event(view: &mut ViewState, event: HookEvent) {
@@ -499,10 +800,9 @@ fn apply_component_event(view: &mut ViewState, event: ComponentEvent) {
 
 fn apply_fragment_event(tape: &mut TapeState, event: FragmentEvent) {
     match event {
-        FragmentEvent::Appended(meta) | FragmentEvent::Taken(meta) => {
-            enqueue_write(tape, meta, "write")
-        }
-        FragmentEvent::Inserted(meta) => enqueue_write(tape, meta, "insert"),
+        FragmentEvent::Appended(meta) => enqueue_write(tape, meta, "write"),
+        FragmentEvent::Taken(meta) => enqueue_write(tape, meta, "take"),
+        FragmentEvent::Inserted { meta, after } => enqueue_insert(tape, meta, after),
         FragmentEvent::Replaced(meta) => enqueue_replace(tape, meta),
         FragmentEvent::Removed { id } => enqueue_remove(tape, id),
         FragmentEvent::Swapped { first, second } => enqueue_swap(tape, first, second),
@@ -596,20 +896,37 @@ fn component_key(meta: &ComponentMeta) -> String {
 
 fn enqueue_write(tape: &mut TapeState, meta: FragmentMeta, action: &str) {
     let index = tape.cells.len();
+    enqueue_cell_write(tape, meta, index, action);
+}
+
+fn enqueue_insert(tape: &mut TapeState, meta: FragmentMeta, after: u64) {
+    let index = tape
+        .cells
+        .iter()
+        .position(|cell| cell.id == after)
+        .map(|index| index + 1)
+        .unwrap_or(tape.cells.len());
+    enqueue_cell_write(tape, meta, index, "insert");
+}
+
+fn enqueue_cell_write(tape: &mut TapeState, meta: FragmentMeta, index: usize, action: &str) {
     let kind = CellKind::from_meta(&meta);
-    tape.cells.push(TapeCell {
+    let cell = TapeCell {
         id: meta.id,
-        kind,
+        tag: meta.tag.clone(),
+        kind: kind.clone(),
         state: CellState::Pending,
-    });
+    };
+    if index >= tape.cells.len() {
+        tape.cells.push(cell);
+    } else {
+        tape.cells.insert(index, cell);
+    }
     tape.queue.push_back(TapeOp::Write {
         index,
         id: meta.id,
         kind,
-        label: format!(
-            "{action} {}/{} #{} {}",
-            meta.role, meta.kind, meta.id, meta.preview
-        ),
+        label: fragment_label(action, &meta),
     });
 }
 
@@ -621,12 +938,23 @@ fn enqueue_replace(tape: &mut TapeState, meta: FragmentMeta) {
     };
     tape.queue.push_back(TapeOp::Replace {
         index,
+        id: meta.id,
+        tag: meta.tag.clone(),
         kind,
-        label: format!(
-            "replace {}/{} #{} {}",
-            meta.role, meta.kind, meta.id, meta.preview
-        ),
+        label: fragment_label("replace", &meta),
     });
+}
+
+fn fragment_label(action: &str, meta: &FragmentMeta) -> String {
+    let tag = if meta.tag.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", meta.tag)
+    };
+    format!(
+        "{action} {}/{}{} #{} {}",
+        meta.role, meta.kind, tag, meta.id, meta.preview
+    )
 }
 
 fn enqueue_remove(tape: &mut TapeState, id: u64) {
@@ -641,38 +969,16 @@ fn enqueue_remove(tape: &mut TapeState, id: u64) {
 }
 
 fn enqueue_swap(tape: &mut TapeState, first: u64, second: u64) {
-    let first_index = tape.cells.iter().position(|cell| cell.id == first);
-    let second_index = tape.cells.iter().position(|cell| cell.id == second);
-    if let (Some(first_index), Some(second_index)) = (first_index, second_index) {
+    if cell_index(tape, first).is_some() && cell_index(tape, second).is_some() {
         tape.queue.push_back(TapeOp::Swap {
-            first: first_index,
-            second: second_index,
+            first,
+            second,
             label: format!("swap #{first} ↔ #{second}"),
         });
     }
 }
 
-fn ensure_reserved_rows(view: &mut ViewState) {
-    let required = required_rows(view);
-    if required <= view.reserved_rows {
-        return;
-    }
-
-    let mut out = std::io::stdout();
-    execute!(out, MoveTo(0, view.origin_y + view.reserved_rows)).ok();
-    for _ in view.reserved_rows..required {
-        writeln!(out).ok();
-    }
-    view.reserved_rows = required;
-}
-
-fn required_rows(view: &ViewState) -> u16 {
-    let tape_count = ordered_tapes(view).len().max(1) as u16;
-    3 + tape_count * 3
-}
-
 fn render_frame(view: &mut ViewState) {
-    ensure_reserved_rows(view);
     let width = crossterm::terminal::size()
         .map(|(width, _)| width as usize)
         .unwrap_or(80);
@@ -688,12 +994,17 @@ fn render_frame(view: &mut ViewState) {
         .ok();
     }
 
+    let visible_tapes = ordered_visible_tapes(view);
+    let hidden_tapes = ordered_tapes(view)
+        .len()
+        .saturating_sub(visible_tapes.len());
+
     draw_border(&mut out, view.origin_y, width, &view_title(view));
-    draw_graph_status(&mut out, view.origin_y + 1, inner, view);
+    draw_graph_status(&mut out, view.origin_y + 1, inner, view, hidden_tapes);
 
     let mut row = view.origin_y + 2;
     let last_body_row = view.origin_y + view.reserved_rows - 2;
-    for tape in ordered_tapes(view) {
+    for tape in visible_tapes {
         if row + 2 > last_body_row {
             break;
         }
@@ -717,7 +1028,13 @@ fn view_title(view: &ViewState) -> String {
     }
 }
 
-fn draw_graph_status(out: &mut std::io::Stdout, row: u16, inner: usize, view: &ViewState) {
+fn draw_graph_status(
+    out: &mut std::io::Stdout,
+    row: u16,
+    inner: usize,
+    view: &ViewState,
+    hidden_tapes: usize,
+) {
     execute!(out, MoveTo(0, row), Clear(ClearType::CurrentLine)).ok();
     let running = view
         .tapes
@@ -738,8 +1055,13 @@ fn draw_graph_status(out: &mut std::io::Stdout, row: u16, inner: usize, view: &V
         .frontier
         .map(|frontier| format!("frontier #{frontier}"))
         .unwrap_or_else(|| "booting".into());
+    let hidden = if hidden_tapes == 0 {
+        String::new()
+    } else {
+        format!(" · +{hidden_tapes} hidden")
+    };
     let line = format!(
-        "{frontier} · running {running}/{} · done {done} · skipped {skipped}",
+        "{frontier} · running {running}/{} · done {done} · skipped {skipped}{hidden}",
         view.frontier_count
     );
     draw_inside(out, row, inner, &line, Color::DarkCyan);
@@ -754,6 +1076,42 @@ fn draw_tape_card(out: &mut std::io::Stdout, row: u16, inner: usize, tape: &Tape
     draw_inside(out, row, inner, &title, tape.lifecycle.color());
     draw_tape(out, row + 1, tape, inner);
     draw_tape_status(out, row + 2, inner, tape);
+}
+
+fn ordered_visible_tapes(view: &ViewState) -> Vec<&TapeState> {
+    let tapes = ordered_tapes(view);
+    let capacity = visible_tape_capacity(view);
+    if tapes.len() <= capacity {
+        return tapes;
+    }
+
+    let mut visible = Vec::new();
+    for tape in tapes
+        .iter()
+        .copied()
+        .filter(|tape| tape.lifecycle == TapeStatus::Running)
+    {
+        if visible.len() == capacity {
+            return visible;
+        }
+        visible.push(tape);
+    }
+    for tape in tapes {
+        if visible.len() == capacity {
+            break;
+        }
+        if !visible
+            .iter()
+            .any(|visible_tape| std::ptr::eq(*visible_tape, tape))
+        {
+            visible.push(tape);
+        }
+    }
+    visible
+}
+
+fn visible_tape_capacity(view: &ViewState) -> usize {
+    ((view.reserved_rows.saturating_sub(3)) / 3).max(1) as usize
 }
 
 fn ordered_tapes(view: &ViewState) -> Vec<&TapeState> {
@@ -911,6 +1269,7 @@ fn cell_glyph(cell: &TapeCell) -> &'static str {
     match cell.state {
         CellState::Pending | CellState::Removing => "□",
         CellState::Replacing => "◈",
+        CellState::Swapping => "◆",
         CellState::Written => "■",
     }
 }
@@ -919,6 +1278,7 @@ fn cell_color(cell: &TapeCell) -> Color {
     match cell.state {
         CellState::Removing => Color::Red,
         CellState::Replacing => Color::Yellow,
+        CellState::Swapping => Color::Magenta,
         CellState::Pending | CellState::Written => cell.kind.color(),
     }
 }
