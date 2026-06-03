@@ -1,0 +1,15 @@
+[package]
+name = "storage"
+version = "0.1.0"
+edition = "2024"
+description = "RCM storage — WAL-backed session persistence"
+publish = false
+
+[dependencies]
+memmap2 = "0.9"
+crc32c = "0.6"
+thiserror = "2"
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
