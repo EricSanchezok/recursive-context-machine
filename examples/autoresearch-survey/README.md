@@ -23,12 +23,13 @@ topic 就是整张图的 **purpose**。入口从下面两个位置读取，优�
 
 ```sh
 export DEEPSEEK_API_KEY=sk-...
+export OPENAI_API_KEY=sk-...   # 可选，仅 image_planner 生成全景图时需要
 cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/autoresearch_survey.rcm \
   --purpose "KV cache compression for long-context large language model inference" \
   --speed 0 --context
 ```
 
-不带 `--purpose` 时，使用 `anchor.rcm` 里声明的默认 topic。
+不带 `--purpose` 时，使用 `anchor.rcm` 里声明的默认 topic。未设置 `OPENAI_API_KEY` 时，全景图步骤会跳过，survey 仍照常生成（无开头插图）。
 
 也可以单跑某个单元：
 
@@ -65,8 +66,11 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 7. `judge_panel.rcm`  
    并行 coverage、scope、benchmark、gap judges，最后汇总裁决。
 
-8. `survey_writer.rcm`  
-   把 research map 和 judge panel 投影成最终的分节叙事长文 survey，并打印给用户。
+8. `image_planner.rcm`  
+   读 research map，调用 `image_gen` 工具（gpt-image-2）生成领域全景图 `08_global_picture.png`。需要 `OPENAI_API_KEY`；缺失时报 blocked，writer 会跳过插图继续。
+
+9. `survey_writer.rcm`  
+   把 research map 和 judge panel 投影成最终的分节叙事长文 survey，开头插入全景图，并打印给用户。
 
 `survey_brief.rcm` 仍保留为一个可单跑的单元（生成凝练的可审计简报），但已不在 end-to-end 管线中；管线由 `judge_panel` 直接进入 `survey_writer`。
 
@@ -81,6 +85,7 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 - `04_ranked_pool.md`
 - `05_research_map.md`
 - `06_judge_panel.md`
+- `08_global_picture.png`（需要 `OPENAI_API_KEY`；缺失时跳过）
 - `08_survey.md`
 - `index.md`
 
