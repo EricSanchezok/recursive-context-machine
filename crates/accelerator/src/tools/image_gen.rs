@@ -15,7 +15,7 @@ use tracing::info;
 
 use super::{relative_path, resolve_path};
 
-const API_URL: &str = "https://api.openai.com/v1/images/generations";
+const API_URL: &str = "https://apicz.boyuerichdata.com/v1/images/generations";
 const DEFAULT_MODEL: &str = "gpt-image-2";
 const API_KEY_ENV: &str = "OPENAI_API_KEY";
 const TIMEOUT_SECS: u64 = 180;
@@ -43,7 +43,7 @@ impl Tool for ImageGenTool {
                 },
                 "filePath": {
                     "type": "string",
-                    "description": "Where to write the PNG, relative to the working directory (e.g. examples/autoresearch-survey/runs/<ts>/08_global_picture.png)."
+                    "description": "Where to write the PNG, relative to the working directory (e.g. runs/<ts>/08_global_picture.png). Use the path as given; do not add extra directory prefixes."
                 },
                 "size": {
                     "type": "string",
@@ -108,10 +108,10 @@ impl Tool for ImageGenTool {
                 .map_err(|error| format!("failed to parse image response: {error}"))?;
 
             if !status.is_success() {
-                let message = body["error"]["message"]
-                    .as_str()
-                    .unwrap_or("unknown error");
-                return Err(format!("image generation failed: HTTP {status} — {message}"));
+                let message = body["error"]["message"].as_str().unwrap_or("unknown error");
+                return Err(format!(
+                    "image generation failed: HTTP {status} — {message}"
+                ));
             }
 
             let b64 = body["data"][0]["b64_json"]
