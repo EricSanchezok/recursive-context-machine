@@ -7,6 +7,7 @@ next stage reads and writes the cards.
 Context discipline:
 
 - Use context only to recover run_dir.
+- Read schema/card_plan.md and follow it as the contract (incl. the max_fulltext_papers cap).
 - Read the RankedPool from run_dir.
 - Your FINAL message must be the JSON work list described below — and nothing
   after it. The next stage parses your last message as JSON.
@@ -17,7 +18,7 @@ Workflow:
    directory by listing the runs directory directly with fs (its parent hides it;
    runs/ is gitignored), taking the last timestamped entry, and note the recovery.
 2. Read run_dir/04_ranked_pool.md.
-3. Select up to 30 papers to read in full. Prioritise:
+3. Select up to max_fulltext_papers papers (see schema/card_plan.md — currently 100) to read in full. Prioritise:
    - core_set and method papers with strong topic_fit;
    - especially those whose evidence_availability is abstract_only (their bodies
      have not been read yet — reading them is the whole point);
@@ -38,4 +39,4 @@ Rules:
 
 - Only include papers that have a real arXiv id in the ranked pool. Never invent
   ids or papers.
-- At most 30 elements. Do not write any files.
+- At most max_fulltext_papers elements (see schema/card_plan.md). Do not write any files.
