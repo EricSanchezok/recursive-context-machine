@@ -1,57 +1,57 @@
-"""Default reactive policy for Python RCM controllers.
+"""Small ReAct controller for external Python RCM loops."""
 
-Mirrors the Rust Captain's decision logic:
-  - Inbox not empty         → Take
-  - First call ever         → Halt
-  - Last was tool_result    → Halt (LLM needs to read the tool output)
-  - Inbox empty + idle      → Done (natural termination)
-
-Setup (system prompt, purpose, tool activation) is the
-controller's responsibility.
-"""
-
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
 class ReactPolicy:
-    first: bool = True
+    max_hitch_retries: int = 3
+    hitch_retries: int = 0
 
     def __call__(self, state, action_space):
-        actions = action_space.actions
-        verbs = {action.command.verb for action in actions}
+        actions = list(action_space.actions)
 
-        if state.inbox_pending and "Take" in verbs:
+        if state.inbox_pending:
             return self._pick(actions, "Take")
 
-        if self.first:
-            self.first = False
-            if "Halt" in verbs:
-                return self._pick(actions, "Halt")
-            if "Done" in verbs:
-                return self._pick(actions, "Done")
-            raise ValueError("no Halt or Done action available")
+        last_fragment = state.fragments[-1] if state.fragments else None
 
-        if self._last_was_tool_result(state):
-            if "Halt" in verbs:
+        if last_fragment is not None and last_fragment.kind == "hitch":
+            if self.hitch_retries < self.max_hitch_retries:
+                self.hitch_retries += 1
                 return self._pick(actions, "Halt")
-            raise ValueError("no Halt action available after tool result")
-
-        if "Done" in verbs:
             return self._pick(actions, "Done")
 
-        if "Halt" in verbs:
+        self.hitch_retries = 0
+
+        if self._should_call_model(last_fragment):
             return self._pick(actions, "Halt")
-        return actions[-1].command, actions[-1].label
+
+        if last_fragment is not None and self._last_was_tool_result(last_fragment):
+            return self._pick(actions, "Halt")
+
+        if self._has(actions, "Done"):
+            return self._pick(actions, "Done")
+
+        return self._pick(actions, "Halt")
 
     @staticmethod
-    def _last_was_tool_result(state) -> bool:
-        fragments = state.fragments
-        return len(fragments) > 0 and fragments[-1].role == "tool"
+    def _should_call_model(fragment) -> bool:
+        if fragment is None:
+            return False
+        return fragment.role in {"user", "system"} and fragment.kind == "text"
 
     @staticmethod
-    def _pick(actions, verb):
+    def _last_was_tool_result(fragment) -> bool:
+        return fragment.role == "tool" or fragment.kind == "tool_result"
+
+    @staticmethod
+    def _has(actions, verb: str) -> bool:
+        return any(action.command and action.command.verb == verb for action in actions)
+
+    @staticmethod
+    def _pick(actions, verb: str):
         for action in actions:
-            if action.command.verb == verb:
+            if action.command and action.command.verb == verb:
                 return action.command, action.label
         raise ValueError(f"no {verb} action available")
