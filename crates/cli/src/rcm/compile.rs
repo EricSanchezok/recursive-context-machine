@@ -489,11 +489,17 @@ fn flux_mode_from_def(def: &ast::FluxDef) -> Result<FluxMode, String> {
                 .ok_or_else(|| "bridge flux requires 'to'".to_string())?;
             let from = parse_channel(from_str)?;
             let to = parse_channel(to_str)?;
-            Ok(FluxMode::Bridge {
-                from,
-                to,
-                kind: BridgeKind::ContextToPurpose,
-            })
+            match (from, to) {
+                (Channel::Context, Channel::Purpose) => Ok(FluxMode::Bridge {
+                    from,
+                    to,
+                    kind: BridgeKind::ContextToPurpose,
+                }),
+                _ => Err(format!(
+                    "unsupported bridge direction: {} → {} (only context → purpose is implemented)",
+                    from_str, to_str
+                )),
+            }
         }
         _ => Err(format!("unknown flux mode: {} {}", def.channel, def.mode)),
     }
