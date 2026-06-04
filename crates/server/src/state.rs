@@ -44,7 +44,7 @@ fn build_tool_profiles(run: &Run) -> Vec<rcm::ToolProfile> {
         .iter()
         .map(|(name, tool)| rcm::ToolProfile {
             name: name.clone(),
-            description: tool.description().to_string(),
+            description: tool.description.clone(),
             active: run.resources.active_tools.contains(name),
         })
         .collect()

@@ -5,7 +5,6 @@ use memmap2::Mmap;
 
 use super::{HEADER_MAGIC, HEADER_SIZE, ITEM_HEADER_SIZE, TAIL_MAGIC};
 use crate::error::{CorruptSegment, IoOperation, WalError, WalResult};
-use crate::index::SparseIndex;
 
 #[derive(Debug)]
 pub struct SegmentReader {
@@ -116,34 +115,6 @@ impl SegmentReader {
             reader: self,
             position: HEADER_SIZE,
         }
-    }
-
-    pub(crate) fn find(&self, offset: u64, idx: &SparseIndex) -> WalResult<&[u8]> {
-        let first = self.offset;
-        let target_idx = offset - first;
-
-        let (mut item_idx, mut pos) = match idx.find(offset) {
-            Some((indexed_off, indexed_pos)) => (indexed_off - first, indexed_pos),
-            None => (0, HEADER_SIZE),
-        };
-
-        loop {
-            match self.read_at(pos)? {
-                None => break,
-                Some((payload, next_pos)) => {
-                    if item_idx == target_idx {
-                        return Ok(payload);
-                    }
-                    item_idx += 1;
-                    pos = next_pos;
-                }
-            }
-        }
-
-        Err(WalError::OffsetOutOfRange {
-            requested: offset,
-            next: first + item_idx,
-        })
     }
 
     pub fn id(&self) -> u64 {

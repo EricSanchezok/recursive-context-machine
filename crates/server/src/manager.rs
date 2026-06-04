@@ -1,4 +1,4 @@
-use machine::{Context, Environment, Inbox, Machine, Resources};
+use machine::{Context, Environment, Inbox, Machine, Resources, ToolRuntime};
 use std::collections::HashMap;
 use utils::MachineId;
 
@@ -8,6 +8,7 @@ pub struct Run {
     pub ctx: Context,
     pub env: Environment,
     pub resources: Resources,
+    pub tool_runtime: ToolRuntime,
     pub inbox: Inbox,
     pub step: u64,
     pub done: bool,

@@ -1,6 +1,6 @@
 mod common;
 
-use machine::{Action, Context, Environment, Fragment, Inbox, Machine};
+use machine::{Action, Context, Environment, Fragment, Inbox, Machine, ToolRuntime};
 use serde_json::json;
 
 async fn run_actions(
@@ -11,13 +11,22 @@ async fn run_actions(
 ) {
     let mut machine = Machine::new("test", "test-machine");
     let mut inbox = Inbox::new();
+    let tool_runtime = ToolRuntime::new();
     let mut step = 0u64;
     for action in actions {
         step += 1;
         let done = machine
-            .apply(action.clone(), step, ctx, env, resources, &mut inbox)
+            .apply(
+                action.clone(),
+                step,
+                ctx,
+                env,
+                resources,
+                &tool_runtime,
+                &mut inbox,
+            )
             .await;
-        if done {
+        if done.done {
             break;
         }
     }
@@ -172,6 +181,7 @@ async fn remove_unknown_returns_hitch() {
     // The Apply action will push a hitch.
     let mut machine = Machine::new("test", "test-machine");
     let mut inbox = Inbox::new();
+    let tool_runtime = ToolRuntime::new();
     let done = machine
         .apply(
             Action::Remove(999),
@@ -179,11 +189,12 @@ async fn remove_unknown_returns_hitch() {
             &mut ctx,
             &mut env,
             &mut resources,
+            &tool_runtime,
             &mut inbox,
         )
         .await;
 
-    assert!(!done, "remove with stale id should not terminate");
+    assert!(!done.done, "remove with stale id should not terminate");
     assert_eq!(inbox.len(), 1);
     let frag = inbox.pop().unwrap();
     assert!(matches!(frag.content, machine::Content::Hitch { .. }));
@@ -197,6 +208,7 @@ async fn take_drains_inbox_into_context() {
     let mut resources = common::test_resources();
     let mut inbox = Inbox::new();
     let mut machine = Machine::new("test", "test-machine");
+    let tool_runtime = ToolRuntime::new();
 
     inbox.push(Fragment::assistant("reply"));
     inbox.push(Fragment::tool_result("1", "5", None));
@@ -208,6 +220,7 @@ async fn take_drains_inbox_into_context() {
             &mut ctx,
             &mut env,
             &mut resources,
+            &tool_runtime,
             &mut inbox,
         )
         .await;
@@ -218,6 +231,7 @@ async fn take_drains_inbox_into_context() {
             &mut ctx,
             &mut env,
             &mut resources,
+            &tool_runtime,
             &mut inbox,
         )
         .await;
@@ -299,6 +313,7 @@ async fn dispatch_model_nonexistent_pushes_hitch() {
     let mut res = common::test_resources();
     let mut inbox = Inbox::new();
     let mut machine = Machine::new("test", "test");
+    let tool_runtime = ToolRuntime::new();
 
     machine
         .apply(
@@ -307,6 +322,7 @@ async fn dispatch_model_nonexistent_pushes_hitch() {
             &mut ctx,
             &mut env,
             &mut res,
+            &tool_runtime,
             &mut inbox,
         )
         .await;
@@ -327,6 +343,7 @@ async fn dispatch_activate_nonexistent_pushes_hitch() {
     let mut res = common::test_resources();
     let mut inbox = Inbox::new();
     let mut machine = Machine::new("test", "test");
+    let tool_runtime = ToolRuntime::new();
 
     machine
         .apply(
@@ -335,6 +352,7 @@ async fn dispatch_activate_nonexistent_pushes_hitch() {
             &mut ctx,
             &mut env,
             &mut res,
+            &tool_runtime,
             &mut inbox,
         )
         .await;

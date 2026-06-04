@@ -54,7 +54,7 @@ impl Rcm for RcmService {
         let environment = catalog
             .environment(environment_name)
             .map_err(Status::invalid_argument)?;
-        let resources = catalog
+        let runtime_resources = catalog
             .build_runtime_resources(ResourceSelection {
                 models: req.models,
                 tools: req.tools,
@@ -71,7 +71,8 @@ impl Rcm for RcmService {
             machine: Machine::new(machine_id.as_str(), "rcm"),
             ctx: machine::Context::new(),
             env: environment,
-            resources,
+            resources: runtime_resources.resources,
+            tool_runtime: runtime_resources.tool_runtime,
             inbox: Inbox::new(),
             step: 0,
             done: false,
@@ -106,7 +107,7 @@ impl Rcm for RcmService {
             .ok_or(Status::not_found("machine_id not found"))?;
 
         run.step += 1;
-        run.done = run
+        let result = run
             .machine
             .apply(
                 action,
@@ -114,9 +115,11 @@ impl Rcm for RcmService {
                 &mut run.ctx,
                 &mut run.env,
                 &mut run.resources,
+                &run.tool_runtime,
                 &mut run.inbox,
             )
             .await;
+        run.done = result.done;
 
         let action_space = build_action_space(run);
         let state = build_state(run);

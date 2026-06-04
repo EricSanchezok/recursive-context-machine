@@ -15,7 +15,7 @@ pub mod tools;
 pub mod wire;
 
 pub use accelerator::{Accelerator, GatherSpec, ScatterSpec};
-pub use catalog::{Catalog, ResourceSelection};
+pub use catalog::{Catalog, ResourceSelection, RuntimeResources};
 pub use condition::{
     Condition, ConditionBranch, ContextPredicate, EnvironmentPredicate, Predicate,
     PurposePredicate, ResourcesPredicate,

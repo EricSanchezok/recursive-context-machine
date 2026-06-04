@@ -34,7 +34,8 @@ use rig::client::CompletionClient;
 use rig::completion::message::Reasoning;
 use rig::completion::message::UserContent;
 use rig::completion::{
-    AssistantContent, CompletionError, CompletionModel, CompletionRequest, Message, ToolDefinition,
+    AssistantContent, CompletionError, CompletionModel, CompletionRequest, Message,
+    ToolDefinition as RigToolDefinition,
 };
 use rig::http_client;
 use tokio::time::{Duration, timeout};
@@ -75,13 +76,13 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, U
         .filter_map(|frag| encode(frag, model.thinking))
         .collect();
 
-    let tools: Vec<ToolDefinition> = resources
-        .active_tools()
+    let tools: Vec<RigToolDefinition> = resources
+        .active_tool_definitions()
         .iter()
-        .map(|t| ToolDefinition {
-            name: t.name().to_string(),
-            description: t.description().to_string(),
-            parameters: t.parameters(),
+        .map(|definition| RigToolDefinition {
+            name: definition.name.clone(),
+            description: definition.description.clone(),
+            parameters: definition.parameters.clone(),
         })
         .collect();
 
@@ -168,7 +169,7 @@ async fn send(
     endpoint: &impl CompletionModel,
     model: &Model,
     messages: &[Message],
-    tools: &[ToolDefinition],
+    tools: &[RigToolDefinition],
 ) -> Result<(OneOrMany<AssistantContent>, Usage), Fragment> {
     let request = build_request(messages, tools, model)?;
 
@@ -229,7 +230,7 @@ async fn send(
 #[allow(clippy::result_large_err)]
 pub fn build_request(
     messages: &[Message],
-    tools: &[ToolDefinition],
+    tools: &[RigToolDefinition],
     model: &Model,
 ) -> Result<CompletionRequest, Fragment> {
     let chat_history = OneOrMany::many(messages.iter().cloned()).map_err(|_| {

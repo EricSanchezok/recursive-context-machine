@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use machine::{Environment, Model, Policy, Resources, Tool};
+use machine::{Environment, Model, Policy, Resources, Tool, ToolDefinition, ToolRuntime};
 use tokio::sync::OnceCell;
 
 use crate::mcp::McpServerConfig;
@@ -36,6 +36,11 @@ pub struct ResourceSelection {
     pub tools: Vec<String>,
     pub mcp_servers: Vec<String>,
     pub prompt_texts: HashMap<String, String>,
+}
+
+pub struct RuntimeResources {
+    pub resources: Resources,
+    pub tool_runtime: ToolRuntime,
 }
 
 impl Catalog {
@@ -135,8 +140,9 @@ impl Catalog {
     pub async fn build_runtime_resources(
         &self,
         selection: ResourceSelection,
-    ) -> Result<Resources, String> {
+    ) -> Result<RuntimeResources, String> {
         let mut resources = Resources::new();
+        let mut tool_runtime = ToolRuntime::new();
         let mut selected_tool_names = HashSet::new();
 
         for (name, content) in selection.prompt_texts {
@@ -162,7 +168,8 @@ impl Catalog {
                 .cloned()
                 .ok_or_else(|| format!("unknown tool: {tool_name}"))?;
             remember_selected_tool(&mut selected_tool_names, tool.name())?;
-            resources = resources.with_tool(tool);
+            resources = resources.with_tool_definition(ToolDefinition::from_tool(tool.as_ref()));
+            tool_runtime.insert(tool);
         }
 
         for server_name in selection.mcp_servers {
@@ -182,11 +189,16 @@ impl Catalog {
             for tool in tools {
                 ensure_name_is_usable(tool.name(), "mcp tool")?;
                 remember_selected_tool(&mut selected_tool_names, tool.name())?;
-                resources = resources.with_tool(tool.clone());
+                resources =
+                    resources.with_tool_definition(ToolDefinition::from_tool(tool.as_ref()));
+                tool_runtime.insert(tool.clone());
             }
         }
 
-        Ok(resources)
+        Ok(RuntimeResources {
+            resources,
+            tool_runtime,
+        })
     }
 
     pub fn policy_names(&self) -> Vec<String> {
