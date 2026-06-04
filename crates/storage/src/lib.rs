@@ -1,5 +1,5 @@
 pub use error::{WalError, WalResult};
-pub use store::{MachineState, Store};
+pub use store::Store;
 
 pub mod error;
 pub mod index;

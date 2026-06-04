@@ -1,7 +1,10 @@
 mod common;
 
+use std::collections::HashMap;
+
 use machine::{
-    Action, Context, Environment, Fragment, Inbox, Machine, MachineRuntime, ToolRuntime,
+    Action, ApplyContext, ApplyMode, Context, Environment, Fragment, Inbox, Machine, ToolRuntime,
+    Usage,
 };
 use serde_json::json;
 
@@ -13,6 +16,8 @@ async fn run_actions(
 ) {
     let mut machine = Machine::new("test", "test-machine");
     let mut inbox = Inbox::new();
+    let mut usages: Vec<Usage> = Vec::new();
+    let mut counts: HashMap<String, u64> = HashMap::new();
     let tool_runtime = ToolRuntime::new();
     let mut step = 0u64;
     for action in actions {
@@ -21,12 +26,16 @@ async fn run_actions(
             .apply(
                 action.clone(),
                 step,
-                MachineRuntime {
+                ApplyContext {
                     ctx,
                     env,
                     resources,
-                    tool_runtime: &tool_runtime,
                     inbox: &mut inbox,
+                    usages: &mut usages,
+                    counts: &mut counts,
+                },
+                ApplyMode::Live {
+                    tool_runtime: &tool_runtime,
                 },
             )
             .await;
@@ -181,21 +190,25 @@ async fn remove_unknown_returns_hitch() {
     let mut env = Environment::new("/tmp");
     let mut resources = common::test_resources();
 
-    // Remove a non-existent id — should NOT panic.
-    // The Apply action will push a hitch.
     let mut machine = Machine::new("test", "test-machine");
     let mut inbox = Inbox::new();
+    let mut usages: Vec<Usage> = Vec::new();
+    let mut counts: HashMap<String, u64> = HashMap::new();
     let tool_runtime = ToolRuntime::new();
     let done = machine
         .apply(
             Action::Remove(999),
             1,
-            MachineRuntime {
+            ApplyContext {
                 ctx: &mut ctx,
                 env: &mut env,
                 resources: &mut resources,
-                tool_runtime: &tool_runtime,
                 inbox: &mut inbox,
+                usages: &mut usages,
+                counts: &mut counts,
+            },
+            ApplyMode::Live {
+                tool_runtime: &tool_runtime,
             },
         )
         .await;
@@ -214,6 +227,8 @@ async fn take_drains_inbox_into_context() {
     let mut resources = common::test_resources();
     let mut inbox = Inbox::new();
     let mut machine = Machine::new("test", "test-machine");
+    let mut usages: Vec<Usage> = Vec::new();
+    let mut counts: HashMap<String, u64> = HashMap::new();
     let tool_runtime = ToolRuntime::new();
 
     inbox.push(Fragment::assistant("reply"));
@@ -223,12 +238,16 @@ async fn take_drains_inbox_into_context() {
         .apply(
             Action::Take,
             1,
-            MachineRuntime {
+            ApplyContext {
                 ctx: &mut ctx,
                 env: &mut env,
                 resources: &mut resources,
-                tool_runtime: &tool_runtime,
                 inbox: &mut inbox,
+                usages: &mut usages,
+                counts: &mut counts,
+            },
+            ApplyMode::Live {
+                tool_runtime: &tool_runtime,
             },
         )
         .await;
@@ -236,12 +255,16 @@ async fn take_drains_inbox_into_context() {
         .apply(
             Action::Take,
             2,
-            MachineRuntime {
+            ApplyContext {
                 ctx: &mut ctx,
                 env: &mut env,
                 resources: &mut resources,
-                tool_runtime: &tool_runtime,
                 inbox: &mut inbox,
+                usages: &mut usages,
+                counts: &mut counts,
+            },
+            ApplyMode::Live {
+                tool_runtime: &tool_runtime,
             },
         )
         .await;
@@ -323,18 +346,24 @@ async fn dispatch_model_nonexistent_pushes_hitch() {
     let mut res = common::test_resources();
     let mut inbox = Inbox::new();
     let mut machine = Machine::new("test", "test");
+    let mut usages: Vec<Usage> = Vec::new();
+    let mut counts: HashMap<String, u64> = HashMap::new();
     let tool_runtime = ToolRuntime::new();
 
     machine
         .apply(
             Action::Model("nonexistent".to_string()),
             1,
-            MachineRuntime {
+            ApplyContext {
                 ctx: &mut ctx,
                 env: &mut env,
                 resources: &mut res,
-                tool_runtime: &tool_runtime,
                 inbox: &mut inbox,
+                usages: &mut usages,
+                counts: &mut counts,
+            },
+            ApplyMode::Live {
+                tool_runtime: &tool_runtime,
             },
         )
         .await;
@@ -355,18 +384,24 @@ async fn dispatch_activate_nonexistent_pushes_hitch() {
     let mut res = common::test_resources();
     let mut inbox = Inbox::new();
     let mut machine = Machine::new("test", "test");
+    let mut usages: Vec<Usage> = Vec::new();
+    let mut counts: HashMap<String, u64> = HashMap::new();
     let tool_runtime = ToolRuntime::new();
 
     machine
         .apply(
             Action::Activate("unknown".to_string()),
             2,
-            MachineRuntime {
+            ApplyContext {
                 ctx: &mut ctx,
                 env: &mut env,
                 resources: &mut res,
-                tool_runtime: &tool_runtime,
                 inbox: &mut inbox,
+                usages: &mut usages,
+                counts: &mut counts,
+            },
+            ApplyMode::Live {
+                tool_runtime: &tool_runtime,
             },
         )
         .await;
@@ -385,7 +420,7 @@ async fn complete_no_active_model_returns_hitch() {
     let mut ctx = Context::new();
     ctx.append(Fragment::user("hello"));
     let mut res = common::test_resources();
-    res.deactivate_model(); // remove active model
+    res.deactivate_model();
 
     let (fragments, _usage) = machine::completion::complete(&ctx, &res).await;
     assert_eq!(fragments.len(), 1);

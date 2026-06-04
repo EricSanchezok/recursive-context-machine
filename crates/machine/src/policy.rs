@@ -42,6 +42,10 @@ impl Action {
         }
     }
 
+    pub fn is_done(&self) -> bool {
+        matches!(self, Action::Done)
+    }
+
     pub fn verb(&self) -> &'static str {
         match self {
             Action::Append(_) => "Append",

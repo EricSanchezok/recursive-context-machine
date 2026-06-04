@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use accelerator::Captain;
 use machine::{
-    Action, Context, Environment, Fragment, Inbox, Machine, MachineRuntime, Model, Policy, Purpose,
-    Resources, Role, Tool, ToolDefinition, ToolResult, ToolRuntime,
+    Action, ApplyContext, ApplyMode, Context, Environment, Fragment, Inbox, Machine, Model, Policy,
+    Purpose, Resources, Role, Tool, ToolDefinition, ToolResult, ToolRuntime,
 };
 use serde_json::json;
 
@@ -74,6 +74,9 @@ async fn drive_until_halt(
     let tool_runtime = ToolRuntime::new();
     let purpose = Purpose::new(purpose);
 
+    let mut usages: Vec<machine::Usage> = Vec::new();
+    let mut counts: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+
     for step in 1..100 {
         let action = captain.decide(&purpose, ctx, &env, resources, &inbox).await;
         match action {
@@ -84,12 +87,16 @@ async fn drive_until_halt(
                     .apply(
                         action,
                         step,
-                        MachineRuntime {
+                        ApplyContext {
                             ctx,
                             env: &mut env,
                             resources,
-                            tool_runtime: &tool_runtime,
                             inbox: &mut inbox,
+                            usages: &mut usages,
+                            counts: &mut counts,
+                        },
+                        ApplyMode::Live {
+                            tool_runtime: &tool_runtime,
                         },
                     )
                     .await;
