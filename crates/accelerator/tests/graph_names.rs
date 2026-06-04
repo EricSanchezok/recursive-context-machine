@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use accelerator::{
-    Accelerator, Captain, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph, ResFlux,
-    State,
+    Accelerator, BridgeKind, Captain, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode,
+    Graph, ResFlux, State,
 };
 use machine::{
     Environment, Fragment, Model, Policy, Purpose, Resources, Role, ToolDefinition, ToolRuntime,
@@ -459,10 +459,10 @@ fn context_thread_assembles_qa_pairs() {
     );
 }
 
-// ── ContextFlux::Fold tests ──
+// ── FluxMode::Bridge tests (replaces ContextFlux::Fold) ──
 
 #[test]
-fn context_fold_extracts_last_assistant_into_payload() {
+fn bridge_context_to_purpose_extracts_last_assistant() {
     let mut state = State {
         purpose: "search".into(),
         ..State::default()
@@ -480,29 +480,41 @@ fn context_fold_extracts_last_assistant_into_payload() {
             "source",
         ),
     );
-    let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 1);
+    let bridge = graph.add_flux(
+        "bridge",
+        FluxMode::Bridge {
+            from: Channel::Context,
+            to: Channel::Purpose,
+            kind: BridgeKind::ContextLastTextToPurpose,
+        },
+        1,
+    );
 
-    graph.wire(source.context(), fold.slot(0, Channel::Context));
+    graph.wire(source.context(), bridge.slot(0, Channel::Context));
     graph.wire(
-        fold.flux_out(Channel::Context),
-        Graph::output(Endpoint::State(Channel::Context)),
+        bridge.flux_out(Channel::Purpose),
+        Graph::output(Endpoint::State(Channel::Purpose)),
     );
 
-    let output = run(Accelerator::composite_named("fold-test", graph));
+    let output = run(Accelerator::composite_named("bridge-test", graph));
 
-    assert_eq!(output.ctx.fragments().len(), 0, "fold ctx should be empty");
-    assert!(
-        output.fold_payload.contains("second message"),
-        "fold_payload should contain the last assistant text"
+    assert_eq!(
+        output.ctx.fragments().len(),
+        0,
+        "bridge ctx should be empty"
     );
     assert!(
-        !output.fold_payload.contains("first message"),
-        "fold_payload should NOT contain earlier non-last texts"
+        output.purpose.contains("second message"),
+        "purpose should contain the last assistant text"
+    );
+    assert!(
+        !output.purpose.contains("first message"),
+        "purpose should NOT contain earlier non-last texts"
     );
 }
 
 #[test]
-fn context_fold_single_assistant() {
+fn bridge_context_to_purpose_single_assistant() {
     let mut state = State {
         purpose: "search".into(),
         ..State::default()
@@ -519,20 +531,28 @@ fn context_fold_single_assistant() {
             "source",
         ),
     );
-    let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 1);
-
-    graph.wire(source.context(), fold.slot(0, Channel::Context));
-    graph.wire(
-        fold.flux_out(Channel::Context),
-        Graph::output(Endpoint::State(Channel::Context)),
+    let bridge = graph.add_flux(
+        "bridge",
+        FluxMode::Bridge {
+            from: Channel::Context,
+            to: Channel::Purpose,
+            kind: BridgeKind::ContextLastTextToPurpose,
+        },
+        1,
     );
 
-    let output = run(Accelerator::composite_named("fold-single", graph));
-    assert_eq!(output.fold_payload, "single result");
+    graph.wire(source.context(), bridge.slot(0, Channel::Context));
+    graph.wire(
+        bridge.flux_out(Channel::Purpose),
+        Graph::output(Endpoint::State(Channel::Purpose)),
+    );
+
+    let output = run(Accelerator::composite_named("bridge-single", graph));
+    assert_eq!(output.purpose, "single result");
 }
 
 #[test]
-fn context_fold_ignores_system_and_tool_fragments() {
+fn bridge_context_to_purpose_ignores_system_and_tool_fragments() {
     let mut state = State {
         purpose: "search".into(),
         ..State::default()
@@ -555,23 +575,31 @@ fn context_fold_ignores_system_and_tool_fragments() {
             "source",
         ),
     );
-    let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 1);
-
-    graph.wire(source.context(), fold.slot(0, Channel::Context));
-    graph.wire(
-        fold.flux_out(Channel::Context),
-        Graph::output(Endpoint::State(Channel::Context)),
+    let bridge = graph.add_flux(
+        "bridge",
+        FluxMode::Bridge {
+            from: Channel::Context,
+            to: Channel::Purpose,
+            kind: BridgeKind::ContextLastTextToPurpose,
+        },
+        1,
     );
 
-    let output = run(Accelerator::composite_named("fold-ignore-system", graph));
+    graph.wire(source.context(), bridge.slot(0, Channel::Context));
+    graph.wire(
+        bridge.flux_out(Channel::Purpose),
+        Graph::output(Endpoint::State(Channel::Purpose)),
+    );
+
+    let output = run(Accelerator::composite_named("bridge-ignore-other", graph));
     assert_eq!(
-        output.fold_payload, "final answer",
+        output.purpose, "final answer",
         "only the last assistant text, not system or tool results"
     );
 }
 
 #[test]
-fn context_fold_multi_slot_joins() {
+fn bridge_context_to_purpose_multi_slot_joins() {
     let mut first = State {
         purpose: "search".into(),
         ..State::default()
@@ -605,22 +633,30 @@ fn context_fold_multi_slot_joins() {
             "second",
         ),
     );
-    let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 2);
-
-    graph.wire(first_acc.context(), fold.slot(0, Channel::Context));
-    graph.wire(second_acc.context(), fold.slot(1, Channel::Context));
-    graph.wire(
-        fold.flux_out(Channel::Context),
-        Graph::output(Endpoint::State(Channel::Context)),
+    let bridge = graph.add_flux(
+        "bridge",
+        FluxMode::Bridge {
+            from: Channel::Context,
+            to: Channel::Purpose,
+            kind: BridgeKind::ContextLastTextToPurpose,
+        },
+        2,
     );
 
-    let output = run(Accelerator::composite_named("fold-multi", graph));
+    graph.wire(first_acc.context(), bridge.slot(0, Channel::Context));
+    graph.wire(second_acc.context(), bridge.slot(1, Channel::Context));
+    graph.wire(
+        bridge.flux_out(Channel::Purpose),
+        Graph::output(Endpoint::State(Channel::Purpose)),
+    );
+
+    let output = run(Accelerator::composite_named("bridge-multi", graph));
     assert!(
-        output.fold_payload.contains("Found 3 papers"),
+        output.purpose.contains("Found 3 papers"),
         "should include first slot's last assistant"
     );
     assert!(
-        output.fold_payload.contains("Downloaded arxiv:2401.12345"),
+        output.purpose.contains("Downloaded arxiv:2401.12345"),
         "should include second slot's last assistant"
     );
 }

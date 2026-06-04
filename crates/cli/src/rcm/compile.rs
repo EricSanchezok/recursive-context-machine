@@ -5,10 +5,10 @@ use std::pin::Pin;
 
 use accelerator::mcp::{McpServerConfig, McpTransportConfig};
 use accelerator::{
-    Accelerator, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate, Endpoint, EnvFlux,
-    EnvironmentPredicate, FluxMode, GatherSpec, Graph, Port, Predicate as AccelPredicate,
-    PurposeFlux, PurposePredicate, ResFlux, ResourceSelection, ResourcesPredicate, ScatterSpec,
-    State,
+    Accelerator, BridgeKind, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate,
+    Endpoint, EnvFlux, EnvironmentPredicate, FluxMode, GatherSpec, Graph, Port,
+    Predicate as AccelPredicate, PurposeFlux, PurposePredicate, ResFlux, ResourceSelection,
+    ResourcesPredicate, ScatterSpec, State,
 };
 use machine::{Limit, Modalities, Modality, Model, Policy, Protocol};
 
@@ -174,7 +174,8 @@ impl Compiler {
                 ));
             }
             let mode = flux_mode_from_def(flux_def)?;
-            let channel = mode.channel();
+            let input_channel = mode.input_channel();
+            let output_channel = mode.output_channel();
             let component = graph.add_flux(
                 flux_def.name.as_deref().unwrap_or(flux_def.id.as_str()),
                 mode,
@@ -184,7 +185,8 @@ impl Compiler {
             component_kinds.insert(
                 flux_def.id.clone(),
                 ComponentTag::Flux {
-                    channel,
+                    input_channel,
+                    output_channel,
                     arity: flux_def.arity,
                 },
             );
@@ -221,7 +223,11 @@ impl Compiler {
 #[derive(Clone, Copy)]
 enum ComponentTag {
     Accelerator,
-    Flux { channel: Channel, arity: usize },
+    Flux {
+        input_channel: Channel,
+        output_channel: Channel,
+        arity: usize,
+    },
     Condition,
 }
 
@@ -472,6 +478,23 @@ fn flux_mode_from_def(def: &ast::FluxDef) -> Result<FluxMode, String> {
         ("context", "thread") => Ok(FluxMode::Context(ContextFlux::Thread)),
         ("environment", "overlay") => Ok(FluxMode::Environment(EnvFlux::Overlay)),
         ("resources", "merge") => Ok(FluxMode::Resources(ResFlux::Merge)),
+        ("bridge", "last_text") => {
+            let from_str = def
+                .from
+                .as_deref()
+                .ok_or_else(|| "bridge flux requires 'from'".to_string())?;
+            let to_str = def
+                .to
+                .as_deref()
+                .ok_or_else(|| "bridge flux requires 'to'".to_string())?;
+            let from = parse_channel(from_str)?;
+            let to = parse_channel(to_str)?;
+            Ok(FluxMode::Bridge {
+                from,
+                to,
+                kind: BridgeKind::ContextLastTextToPurpose,
+            })
+        }
         _ => Err(format!("unknown flux mode: {} {}", def.channel, def.mode)),
     }
 }
@@ -525,14 +548,21 @@ fn component_port(
         (ComponentTag::Accelerator, EndpointDef::State(channel)) => {
             Ok(component.port_state(parse_channel(channel)?))
         }
-        (ComponentTag::Flux { channel, .. }, EndpointDef::FluxOut) => {
-            Ok(component.flux_out(channel))
+        (ComponentTag::Flux { output_channel, .. }, EndpointDef::FluxOut) => {
+            Ok(component.flux_out(output_channel))
         }
-        (ComponentTag::Flux { channel, arity }, EndpointDef::FluxSlot(slot)) => {
+        (
+            ComponentTag::Flux {
+                input_channel,
+                arity,
+                ..
+            },
+            EndpointDef::FluxSlot(slot),
+        ) => {
             if *slot >= arity {
                 return Err(format!("flux slot {} is out of range", slot));
             }
-            Ok(component.slot(*slot, channel))
+            Ok(component.slot(*slot, input_channel))
         }
         (ComponentTag::Condition, EndpointDef::Trigger) => Ok(component.condition_in()),
         (ComponentTag::Condition, EndpointDef::ConditionTrue) => {

@@ -25,12 +25,6 @@ pub enum ContextFlux {
     /// answer. This creates a Q&A thread where downstream sees "question →
     /// answer, question → answer, now solve this".
     Thread,
-    /// Fold — extract the last assistant text from each slot's context and
-    /// store it in the fold_payload of the output State. The downstream
-    /// accelerator then uses this payload to construct a merged purpose
-    /// fragment (purpose_b) injected before the first Halt, folding upstream
-    /// output into the task description itself.
-    Fold,
 }
 
 #[derive(Clone)]
@@ -43,21 +37,52 @@ pub enum ResFlux {
     Merge,
 }
 
+/// Cross-channel data transfer: reads from one channel, transforms, writes to
+/// another. Bridge does not produce output on its input channel — the
+/// transformed data is written exclusively to the output channel.
+#[derive(Clone, Copy)]
+pub enum BridgeKind {
+    /// For each slot: extract the last assistant text from the context,
+    /// join with "\n\n", and write as a purpose string.
+    ContextLastTextToPurpose,
+}
+
 #[derive(Clone)]
 pub enum FluxMode {
     Purpose(PurposeFlux),
     Context(ContextFlux),
     Environment(EnvFlux),
     Resources(ResFlux),
+    /// Cross-channel bridge: reads data from `from` channel via slots,
+    /// transforms it according to `kind`, and writes the result to `to`
+    /// channel.
+    Bridge {
+        from: Channel,
+        to: Channel,
+        kind: BridgeKind,
+    },
 }
 
 impl FluxMode {
-    pub fn channel(&self) -> Channel {
+    /// The channel this flux reads slot data from.
+    pub fn input_channel(&self) -> Channel {
         match self {
             FluxMode::Purpose(_) => Channel::Purpose,
             FluxMode::Context(_) => Channel::Context,
             FluxMode::Environment(_) => Channel::Environment,
             FluxMode::Resources(_) => Channel::Resources,
+            FluxMode::Bridge { from, .. } => *from,
+        }
+    }
+
+    /// The channel this flux writes its output to.
+    pub fn output_channel(&self) -> Channel {
+        match self {
+            FluxMode::Purpose(_) => Channel::Purpose,
+            FluxMode::Context(_) => Channel::Context,
+            FluxMode::Environment(_) => Channel::Environment,
+            FluxMode::Resources(_) => Channel::Resources,
+            FluxMode::Bridge { to, .. } => *to,
         }
     }
 
@@ -68,9 +93,12 @@ impl FluxMode {
             FluxMode::Context(ContextFlux::Last) => "context_last",
             FluxMode::Context(ContextFlux::Digest) => "context_digest",
             FluxMode::Context(ContextFlux::Thread) => "context_thread",
-            FluxMode::Context(ContextFlux::Fold) => "context_fold",
             FluxMode::Environment(EnvFlux::Overlay) => "environment_overlay",
             FluxMode::Resources(ResFlux::Merge) => "resources_merge",
+            FluxMode::Bridge {
+                kind: BridgeKind::ContextLastTextToPurpose,
+                ..
+            } => "bridge_context_last_to_purpose",
         }
     }
 }
@@ -99,40 +127,46 @@ impl Flux {
 
     pub fn apply(&self, slots: &[State]) -> State {
         let mut state = State::default();
-        match self.mode.channel() {
-            Channel::Purpose => {
+        match &self.mode {
+            FluxMode::Purpose(_) => {
                 state.purpose = apply_purpose(self, |slot| slots[slot].purpose.clone())
             }
-            Channel::Context => {
-                state.ctx = apply_ctx(self, |slot| slots[slot].ctx.clone());
-                // For Fold mode, also extract the fold_payload from slots.
-                if matches!(self.mode, FluxMode::Context(ContextFlux::Fold)) {
-                    let mut parts: Vec<String> = Vec::new();
-                    for (slot, _) in slots.iter().enumerate().take(self.arity) {
-                        if let Some(last_assistant) = slots[slot]
-                            .ctx
-                            .fragments()
-                            .iter()
-                            .rev()
-                            .find(|f| f.role == Role::Assistant)
-                            && let Some(text) = last_assistant.as_text()
-                        {
-                            let trimmed = text.trim();
-                            if !trimmed.is_empty() {
-                                parts.push(trimmed.to_string());
-                            }
-                        }
-                    }
-                    state.fold_payload = parts.join("\n\n");
+            FluxMode::Context(_) => state.ctx = apply_ctx(self, |slot| slots[slot].ctx.clone()),
+            FluxMode::Environment(_) => state.env = apply_env(self, |slot| slots[slot].env.clone()),
+            FluxMode::Resources(_) => state.res = apply_res(self, |slot| slots[slot].res.clone()),
+            FluxMode::Bridge { kind, .. } => match kind {
+                BridgeKind::ContextLastTextToPurpose => {
+                    state.purpose = extract_last_assistant_text(slots);
                 }
-            }
-            Channel::Environment => state.env = apply_env(self, |slot| slots[slot].env.clone()),
-            Channel::Resources => state.res = apply_res(self, |slot| slots[slot].res.clone()),
-            Channel::Pulse => {}
+            },
         }
         state
     }
 }
+
+// ── helper: extract last assistant text from each slot's context ──
+
+fn extract_last_assistant_text(slots: &[State]) -> String {
+    let mut parts: Vec<String> = Vec::with_capacity(slots.len());
+    for slot in slots {
+        if let Some(text) = slot
+            .ctx
+            .fragments()
+            .iter()
+            .rev()
+            .find(|f| f.role == Role::Assistant)
+            .and_then(|f| f.as_text())
+        {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                parts.push(trimmed.to_string());
+            }
+        }
+    }
+    parts.join("\n\n")
+}
+
+// ── per-channel apply helpers ──
 
 fn apply_purpose(flux: &Flux, mut read: impl FnMut(usize) -> String) -> String {
     match &flux.mode {
@@ -185,108 +219,8 @@ fn apply_ctx(flux: &Flux, mut read: impl FnMut(usize) -> Context) -> Context {
             }
             result
         }
-        FluxMode::Context(ContextFlux::Fold) => {
-            // Fold: extract last assistant text from each slot's context.
-            // The context itself is empty — the payload travels via fold_payload.
-            Context::new()
-        }
         _ => unreachable!("flux mode channel already matched"),
     }
-}
-
-/// Extract a structured digest from a context, appending condensed fragments
-/// to `target`. Inspired by Synergy's TurnDigest:
-/// - Final assistant text → kept
-/// - Tool results → summarized as `[Tool: {name}] {title}`
-/// - Tool errors → kept as `[Tool: {name}] Error: {msg}`
-/// - Hitches → kept (they are error signals)
-/// - System prompts → dropped (they are scaffolding)
-/// - Tool calls → dropped (the result or error carries the information)
-fn digest_context_into(source: &Context, target: &mut Context) {
-    let fragments = source.fragments();
-    if fragments.is_empty() {
-        return;
-    }
-
-    // Collect digest lines for this slot.
-    let mut lines: Vec<String> = Vec::new();
-
-    for frag in fragments {
-        match &frag.content {
-            machine::Content::Text(text) => {
-                if frag.role == Role::System {
-                    // Drop system prompts — they are scaffolding.
-                    continue;
-                }
-                let trimmed = text.text.trim();
-                if !trimmed.is_empty() {
-                    lines.push(trimmed.to_string());
-                }
-            }
-            machine::Content::ToolResult(tr) => {
-                lines.push(format!("[Tool result] {}", tr.content.trim()));
-            }
-            machine::Content::Hitch { message, .. } => {
-                lines.push(format!("[Error] {}", message.trim()));
-            }
-            machine::Content::ToolCall(_) => {
-                // Drop tool calls — the result or error carries the information.
-            }
-            _ => {
-                // Drop other media types (Image, Audio, Video, Document).
-            }
-        }
-    }
-
-    if lines.is_empty() {
-        return;
-    }
-
-    // Emit a single assistant fragment with the digest.
-    let digest = lines.join("\n");
-    target.append(Fragment::assistant(digest));
-}
-
-/// Assemble a Q&A thread from a slot's context.
-///
-/// For each slot, we first digest the context (extract key information,
-/// dropping scaffolding), then emit a user question followed by the digest
-/// as the answer. This creates a thread where downstream sees:
-///
-///   User: [Task 1] Please complete the following task.
-///   Assistant: {digest of slot 0}
-///   User: [Task 2] Please complete the following task.
-///   Assistant: {digest of slot 1}
-///   ...
-///
-/// The downstream accelerator then receives this as its context, making it
-/// clear that multiple upstream tasks have been completed and it should
-/// focus on the next step.
-fn thread_context_into(slot: usize, source: &Context, target: &mut Context) {
-    let fragments = source.fragments();
-    if fragments.is_empty() {
-        return;
-    }
-
-    // Digest the slot's context into a temporary context.
-    let mut digest = Context::new();
-    digest_context_into(source, &mut digest);
-
-    // Extract the digest text (digest_context_into emits one assistant fragment).
-    let answer_text = digest
-        .fragments()
-        .last()
-        .and_then(|frag| frag.as_text())
-        .unwrap_or("(no output)");
-
-    // Prepend the slot question.
-    target.append(Fragment::user(format!(
-        "[Task {}] Please complete the following task.",
-        slot + 1
-    )));
-
-    // Append the digested answer.
-    target.append(Fragment::assistant(answer_text));
 }
 
 fn apply_env(flux: &Flux, mut read: impl FnMut(usize) -> Environment) -> Environment {
@@ -348,4 +282,88 @@ fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -> Resources
         }
         _ => unreachable!("flux mode channel already matched"),
     }
+}
+
+/// Extract a structured digest from a context, appending condensed fragments
+/// to `target`. Inspired by Synergy's TurnDigest:
+/// - Final assistant text → kept
+/// - Tool results → summarized as `[Tool: {name}] {title}`
+/// - Tool errors → kept as `[Tool: {name}] Error: {msg}`
+/// - Hitches → kept (they are error signals)
+/// - System prompts → dropped (they are scaffolding)
+/// - Tool calls → dropped (the result or error carries the information)
+fn digest_context_into(source: &Context, target: &mut Context) {
+    let fragments = source.fragments();
+    if fragments.is_empty() {
+        return;
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+
+    for frag in fragments {
+        match &frag.content {
+            machine::Content::Text(text) => {
+                if frag.role == Role::System {
+                    continue;
+                }
+                let trimmed = text.text.trim();
+                if !trimmed.is_empty() {
+                    lines.push(trimmed.to_string());
+                }
+            }
+            machine::Content::ToolResult(tr) => {
+                lines.push(format!("[Tool result] {}", tr.content.trim()));
+            }
+            machine::Content::Hitch { message, .. } => {
+                lines.push(format!("[Error] {}", message.trim()));
+            }
+            machine::Content::ToolCall(_) => {}
+            _ => {}
+        }
+    }
+
+    if lines.is_empty() {
+        return;
+    }
+
+    let digest = lines.join("\n");
+    target.append(Fragment::assistant(digest));
+}
+
+/// Assemble a Q&A thread from a slot's context.
+///
+/// For each slot, we first digest the context (extract key information,
+/// dropping scaffolding), then emit a user question followed by the digest
+/// as the answer. This creates a thread where downstream sees:
+///
+///   User: [Task 1] Please complete the following task.
+///   Assistant: {digest of slot 0}
+///   User: [Task 2] Please complete the following task.
+///   Assistant: {digest of slot 1}
+///   ...
+///
+/// The downstream accelerator then receives this as its context, making it
+/// clear that multiple upstream tasks have been completed and it should
+/// focus on the next step.
+fn thread_context_into(slot: usize, source: &Context, target: &mut Context) {
+    let fragments = source.fragments();
+    if fragments.is_empty() {
+        return;
+    }
+
+    let mut digest = Context::new();
+    digest_context_into(source, &mut digest);
+
+    let answer_text = digest
+        .fragments()
+        .last()
+        .and_then(|frag| frag.as_text())
+        .unwrap_or("(no output)");
+
+    target.append(Fragment::user(format!(
+        "[Task {}] Please complete the following task.",
+        slot + 1
+    )));
+
+    target.append(Fragment::assistant(answer_text));
 }

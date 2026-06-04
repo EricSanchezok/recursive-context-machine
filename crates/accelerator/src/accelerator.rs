@@ -108,16 +108,20 @@ impl Accelerator {
         let mut state = input;
         if let AcceleratorBody::Primitive(primitive) = &self.body {
             let base = &primitive.state;
-            if state.purpose.is_empty() {
-                state.purpose.clone_from(&base.purpose);
+            // If both graph-wired purpose and base purpose are present,
+            // concatenate: upstream result first, then the task description.
+            // This enables Bridge(Context→Purpose) to prepend upstream output
+            // to the downstream task without a side-channel like fold_payload.
+            let base_purpose = base.purpose.clone();
+            if !state.purpose.is_empty()
+                && !base_purpose.is_empty()
+                && state.purpose != base_purpose
+            {
+                state.purpose = format!("{}\n\n{}", state.purpose, base_purpose);
+            } else if state.purpose.is_empty() {
+                state.purpose.clone_from(&base_purpose);
             }
             if state.ctx.is_empty() {
-                // Only fill fold_payload from base when the input didn't
-                // provide one (e.g. Fold mode provides fold_payload via
-                // the Context channel even though ctx is empty).
-                if state.fold_payload.is_empty() {
-                    state.fold_payload.clone_from(&base.fold_payload);
-                }
                 state.ctx = base.ctx.clone();
             }
             if state.env.cwd.as_os_str().is_empty() {
@@ -158,27 +162,17 @@ struct PrimitiveAccelerator {
 impl PrimitiveAccelerator {
     async fn fire(self, mut state: State) -> State {
         let base_purpose = state.purpose.clone();
-        let fold_payload = state.fold_payload.clone();
-
-        // Fold mode: merge fold_payload into purpose so that Captain's
-        // setup_step injects a purpose that already contains upstream info.
-        let combined_purpose = if !fold_payload.is_empty() {
-            format!("{}\n\n{}", fold_payload, base_purpose)
-        } else {
-            base_purpose.clone()
-        };
-        let purpose = Purpose::new(&combined_purpose);
+        let purpose = Purpose::new(&base_purpose);
 
         // Determine whether we need to reorder on first Halt.
-        // For non-fold modes with upstream content: scaffolding comes from
-        // Captain setup, but non-scaffolding fragments from flux may sit
-        // before or among the scaffolding. On first Halt we move them after
-        // the env fragment and inject purpose_b.
-        let has_content_to_move = !fold_payload.is_empty() // fold: info is in purpose, no ctx content
-            || state.ctx.fragments().iter().any(|f| {
-                !is_scaffolding(f) && !is_purpose_tag(f)
-            });
-        let needs_reorder = has_content_to_move && fold_payload.is_empty();
+        // Non-scaffolding, non-purpose fragments from flux may sit before or
+        // among Captain's scaffolding. On first Halt we move them after the
+        // env fragment and inject purpose_b.
+        let needs_reorder = state
+            .ctx
+            .fragments()
+            .iter()
+            .any(|f| !is_scaffolding(f) && !is_purpose_tag(f));
 
         let mut inbox = Inbox::new();
         let mut step = 0u64;
