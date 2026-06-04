@@ -13,10 +13,10 @@ Workflow:
 1. Parse your work item: run_dir, id, title, why. If run_dir is missing, fall back
    to the newest run directory (list runs/ directly with fs) and note it.
 2. Download the PDF: arxiv_download with the id, saving into run_dir/pdfs/<id>.pdf.
-3. Read the full text: fs read run_dir/pdfs/<id>.pdf. If fs cannot parse it, try
-   shell `pdftotext run_dir/pdfs/<id>.pdf -` (fall back to `strings`). If you
-   still cannot recover the body, proceed from the abstract and mark
-   evidence: abstract_only.
+3. Read the full text with fs: fs read run_dir/pdfs/<id>.pdf — the fs tool
+   extracts the PDF's text for you. If extraction fails (e.g. a scanned /
+   image-only PDF, or the extractor is unavailable), proceed from the abstract
+   and mark evidence: abstract_only.
 4. Read it WITH THE ANCHOR IN MIND (your `why` + the survey topic). Focus on: the
    method in writeable detail; the real results and their caveats; and — the key
    value-add — whether the idea could transfer to the anchor's research direction.
