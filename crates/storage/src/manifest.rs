@@ -191,14 +191,14 @@ impl Manifest {
     }
 
     pub fn set_snap_offset(&mut self, offset: u64) -> WalResult<()> {
-        if let Some(current) = self.snapshot_offset {
-            if offset < current {
-                return Err(WalError::ManifestError {
-                    reason: CorruptManifest::InvariantViolated {
-                        detail: "checkpoint offset must not decrease",
-                    },
-                });
-            }
+        if let Some(current) = self.snapshot_offset
+            && offset < current
+        {
+            return Err(WalError::ManifestError {
+                reason: CorruptManifest::InvariantViolated {
+                    detail: "checkpoint offset must not decrease",
+                },
+            });
         }
         self.snapshot_offset = Some(offset);
         self.save()

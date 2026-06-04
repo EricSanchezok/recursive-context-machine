@@ -1,6 +1,8 @@
 mod common;
 
-use machine::{Action, Context, Environment, Fragment, Inbox, Machine, ToolRuntime};
+use machine::{
+    Action, Context, Environment, Fragment, Inbox, Machine, MachineRuntime, ToolRuntime,
+};
 use serde_json::json;
 
 async fn run_actions(
@@ -19,11 +21,13 @@ async fn run_actions(
             .apply(
                 action.clone(),
                 step,
-                ctx,
-                env,
-                resources,
-                &tool_runtime,
-                &mut inbox,
+                MachineRuntime {
+                    ctx,
+                    env,
+                    resources,
+                    tool_runtime: &tool_runtime,
+                    inbox: &mut inbox,
+                },
             )
             .await;
         if done.done {
@@ -186,11 +190,13 @@ async fn remove_unknown_returns_hitch() {
         .apply(
             Action::Remove(999),
             1,
-            &mut ctx,
-            &mut env,
-            &mut resources,
-            &tool_runtime,
-            &mut inbox,
+            MachineRuntime {
+                ctx: &mut ctx,
+                env: &mut env,
+                resources: &mut resources,
+                tool_runtime: &tool_runtime,
+                inbox: &mut inbox,
+            },
         )
         .await;
 
@@ -217,22 +223,26 @@ async fn take_drains_inbox_into_context() {
         .apply(
             Action::Take,
             1,
-            &mut ctx,
-            &mut env,
-            &mut resources,
-            &tool_runtime,
-            &mut inbox,
+            MachineRuntime {
+                ctx: &mut ctx,
+                env: &mut env,
+                resources: &mut resources,
+                tool_runtime: &tool_runtime,
+                inbox: &mut inbox,
+            },
         )
         .await;
     machine
         .apply(
             Action::Take,
             2,
-            &mut ctx,
-            &mut env,
-            &mut resources,
-            &tool_runtime,
-            &mut inbox,
+            MachineRuntime {
+                ctx: &mut ctx,
+                env: &mut env,
+                resources: &mut resources,
+                tool_runtime: &tool_runtime,
+                inbox: &mut inbox,
+            },
         )
         .await;
 
@@ -319,11 +329,13 @@ async fn dispatch_model_nonexistent_pushes_hitch() {
         .apply(
             Action::Model("nonexistent".to_string()),
             1,
-            &mut ctx,
-            &mut env,
-            &mut res,
-            &tool_runtime,
-            &mut inbox,
+            MachineRuntime {
+                ctx: &mut ctx,
+                env: &mut env,
+                resources: &mut res,
+                tool_runtime: &tool_runtime,
+                inbox: &mut inbox,
+            },
         )
         .await;
 
@@ -349,11 +361,13 @@ async fn dispatch_activate_nonexistent_pushes_hitch() {
         .apply(
             Action::Activate("unknown".to_string()),
             2,
-            &mut ctx,
-            &mut env,
-            &mut res,
-            &tool_runtime,
-            &mut inbox,
+            MachineRuntime {
+                ctx: &mut ctx,
+                env: &mut env,
+                resources: &mut res,
+                tool_runtime: &tool_runtime,
+                inbox: &mut inbox,
+            },
         )
         .await;
 
