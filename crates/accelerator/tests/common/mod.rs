@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use accelerator::{Accelerator, State};
-use machine::{Action, Context, Environment, Inbox, Policy, Purpose, Resources};
+use machine::{Action, Context, Environment, Inbox, Policy, Purpose, Resources, ToolRuntime};
 
 #[derive(Clone)]
 pub struct DonePolicy;
@@ -31,6 +31,7 @@ pub fn primitive(purpose: &str) -> Accelerator {
             ..State::default()
         },
         Box::new(DonePolicy),
+        ToolRuntime::new(),
         purpose,
     )
 }

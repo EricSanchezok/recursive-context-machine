@@ -156,7 +156,7 @@ impl ResourcesPredicate {
         match self {
             Self::HasModel(name) => resources.models.contains_key(name),
             Self::ActiveModelIs(name) => resources.active_model == *name,
-            Self::HasTool(name) => resources.tools.contains_key(name),
+            Self::HasTool(name) => resources.tool_definitions.contains_key(name),
             Self::ToolEnabled(name) => resources.active_tools.contains(name),
             Self::HasPrompt(name) => resources.prompts.contains_key(name),
         }

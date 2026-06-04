@@ -1,6 +1,8 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use serde::{Deserialize, Serialize};
+
 use crate::context::Context;
 use crate::env::Environment;
 use crate::fragment::Fragment;
@@ -8,7 +10,7 @@ use crate::inbox::Inbox;
 use crate::purpose::Purpose;
 use crate::resources::Resources;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     Append(Fragment),
     Insert { after: u64, fragment: Fragment },
@@ -24,7 +26,6 @@ pub enum Action {
 }
 
 impl Action {
-    /// Human-readable action label for stats and tracing.
     pub fn name(&self) -> &'static str {
         match self {
             Action::Append(_) => "append",
@@ -41,7 +42,10 @@ impl Action {
         }
     }
 
-    /// gRPC verb for this action (PascalCase, matches `ActionCommand.verb`).
+    pub fn is_done(&self) -> bool {
+        matches!(self, Action::Done)
+    }
+
     pub fn verb(&self) -> &'static str {
         match self {
             Action::Append(_) => "Append",
@@ -59,7 +63,6 @@ impl Action {
     }
 }
 
-/// All gRPC verb strings, kept in sync with [`Action`] variants (same order).
 pub const ACTION_VERBS: &[&str] = &[
     "Append",
     "Insert",

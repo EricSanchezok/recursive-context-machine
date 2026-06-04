@@ -7,7 +7,6 @@ use crate::rcm;
 
 pub fn build_state(run: &Run) -> rcm::State {
     let counts = run
-        .machine
         .counts
         .iter()
         .map(|(k, v)| (k.to_string(), *v))
@@ -21,12 +20,12 @@ pub fn build_state(run: &Run) -> rcm::State {
         active_model: run.resources.active_model.clone(),
         active_tools: run.resources.active_tools.iter().cloned().collect(),
         available_models: run.resources.model_order.clone(),
-        available_tools: run.resources.tools.keys().cloned().collect(),
+        available_tools: run.resources.tool_definitions.keys().cloned().collect(),
         done: run.done,
         inbox_pending: run.inbox.peek().is_some(),
         inbox_peek: run.inbox.peek().map(fragment_to_proto),
         counts,
-        usages: run.machine.usages.iter().map(usage_to_proto).collect(),
+        usages: run.usages.iter().map(usage_to_proto).collect(),
         tool_profiles: build_tool_profiles(run),
         model_profiles: build_model_profiles(run),
         platform: run.env.platform.clone(),
@@ -40,11 +39,11 @@ pub fn build_state(run: &Run) -> rcm::State {
 
 fn build_tool_profiles(run: &Run) -> Vec<rcm::ToolProfile> {
     run.resources
-        .tools
+        .tool_definitions
         .iter()
         .map(|(name, tool)| rcm::ToolProfile {
             name: name.clone(),
-            description: tool.description().to_string(),
+            description: tool.description.clone(),
             active: run.resources.active_tools.contains(name),
         })
         .collect()

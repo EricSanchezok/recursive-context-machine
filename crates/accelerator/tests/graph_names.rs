@@ -7,7 +7,9 @@ use accelerator::{
     Accelerator, Captain, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph, ResFlux,
     State,
 };
-use machine::{Environment, Fragment, Model, Policy, Purpose, Resources, Role};
+use machine::{
+    Environment, Fragment, Model, Policy, Purpose, Resources, Role, ToolDefinition, ToolRuntime,
+};
 
 use std::future::Future;
 use std::pin::Pin;
@@ -44,6 +46,7 @@ fn primitive_with_policy(purpose: &str, policy: Box<dyn Policy>) -> Accelerator 
             ..State::default()
         },
         policy,
+        ToolRuntime::new(),
         purpose,
     )
 }
@@ -105,7 +108,12 @@ fn composite_accelerator_routes_context_to_output() {
     let mut graph = Graph::new();
     let source = graph.add_accelerator(
         "source",
-        Accelerator::primitive(source_state, Box::new(common::DonePolicy), "source"),
+        Accelerator::primitive(
+            source_state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "source",
+        ),
     );
     graph.wire(
         source.context(),
@@ -127,7 +135,7 @@ fn resource_flux_preserves_model_order_and_tool_pool() {
                 name: "fast".into(),
                 ..Default::default()
             })
-            .with_tool(Arc::new(accelerator::tools::FindTool)),
+            .with_tool_definition(ToolDefinition::from_tool(&accelerator::tools::FindTool)),
         ..State::default()
     };
     let second_state = State {
@@ -137,18 +145,28 @@ fn resource_flux_preserves_model_order_and_tool_pool() {
                 name: "careful".into(),
                 ..Default::default()
             })
-            .with_tool(Arc::new(accelerator::tools::ShellTool)),
+            .with_tool_definition(ToolDefinition::from_tool(&accelerator::tools::ShellTool)),
         ..State::default()
     };
 
     let mut graph = Graph::new();
     let first = graph.add_accelerator(
         "first",
-        Accelerator::primitive(first_state, Box::new(common::DonePolicy), "first"),
+        Accelerator::primitive(
+            first_state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "first",
+        ),
     );
     let second = graph.add_accelerator(
         "second",
-        Accelerator::primitive(second_state, Box::new(common::DonePolicy), "second"),
+        Accelerator::primitive(
+            second_state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "second",
+        ),
     );
     let join = graph.add_flux("join", FluxMode::Resources(ResFlux::Merge), 2);
 
@@ -162,8 +180,8 @@ fn resource_flux_preserves_model_order_and_tool_pool() {
     let output = run(Accelerator::composite_named("resources", graph));
 
     assert_eq!(output.res.model_order, vec!["fast", "careful"]);
-    assert!(output.res.tools.contains_key("find"));
-    assert!(output.res.tools.contains_key("shell"));
+    assert!(output.res.tool_definitions.contains_key("find"));
+    assert!(output.res.tool_definitions.contains_key("shell"));
 }
 
 #[test]
@@ -217,11 +235,21 @@ fn downstream_waits_for_parallel_sources() {
     let mut graph = Graph::new();
     let first = graph.add_accelerator(
         "first",
-        Accelerator::primitive(first_state, Box::new(common::DonePolicy), "first"),
+        Accelerator::primitive(
+            first_state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "first",
+        ),
     );
     let second = graph.add_accelerator(
         "second",
-        Accelerator::primitive(second_state, Box::new(common::DonePolicy), "second"),
+        Accelerator::primitive(
+            second_state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "second",
+        ),
     );
     let join = graph.add_flux("join", FluxMode::Context(ContextFlux::Append), 2);
 
@@ -256,11 +284,21 @@ fn context_last_keeps_only_last_fragment_per_slot() {
     let mut graph = Graph::new();
     let first = graph.add_accelerator(
         "first",
-        Accelerator::primitive(first_state, Box::new(common::DonePolicy), "first"),
+        Accelerator::primitive(
+            first_state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "first",
+        ),
     );
     let second = graph.add_accelerator(
         "second",
-        Accelerator::primitive(second_state, Box::new(common::DonePolicy), "second"),
+        Accelerator::primitive(
+            second_state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "second",
+        ),
     );
     let join = graph.add_flux("join", FluxMode::Context(ContextFlux::Last), 2);
 
@@ -306,7 +344,12 @@ fn context_digest_extracts_key_segments() {
     let mut graph = Graph::new();
     let source = graph.add_accelerator(
         "source",
-        Accelerator::primitive(state, Box::new(common::DonePolicy), "source"),
+        Accelerator::primitive(
+            state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "source",
+        ),
     );
     let digest = graph.add_flux("digest", FluxMode::Context(ContextFlux::Digest), 1);
 
@@ -355,11 +398,21 @@ fn context_thread_assembles_qa_pairs() {
     let mut graph = Graph::new();
     let first = graph.add_accelerator(
         "first",
-        Accelerator::primitive(first_state, Box::new(common::DonePolicy), "first"),
+        Accelerator::primitive(
+            first_state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "first",
+        ),
     );
     let second = graph.add_accelerator(
         "second",
-        Accelerator::primitive(second_state, Box::new(common::DonePolicy), "second"),
+        Accelerator::primitive(
+            second_state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "second",
+        ),
     );
     let thread = graph.add_flux("thread", FluxMode::Context(ContextFlux::Thread), 2);
 
@@ -420,7 +473,12 @@ fn context_fold_extracts_last_assistant_into_payload() {
     let mut graph = Graph::new();
     let source = graph.add_accelerator(
         "source",
-        Accelerator::primitive(state, Box::new(common::DonePolicy), "source"),
+        Accelerator::primitive(
+            state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "source",
+        ),
     );
     let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 1);
 
@@ -454,7 +512,12 @@ fn context_fold_single_assistant() {
     let mut graph = Graph::new();
     let source = graph.add_accelerator(
         "source",
-        Accelerator::primitive(state, Box::new(common::DonePolicy), "source"),
+        Accelerator::primitive(
+            state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "source",
+        ),
     );
     let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 1);
 
@@ -485,7 +548,12 @@ fn context_fold_ignores_system_and_tool_fragments() {
     let mut graph = Graph::new();
     let source = graph.add_accelerator(
         "source",
-        Accelerator::primitive(state, Box::new(common::DonePolicy), "source"),
+        Accelerator::primitive(
+            state,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "source",
+        ),
     );
     let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 1);
 
@@ -521,11 +589,21 @@ fn context_fold_multi_slot_joins() {
     let mut graph = Graph::new();
     let first_acc = graph.add_accelerator(
         "first",
-        Accelerator::primitive(first, Box::new(common::DonePolicy), "first"),
+        Accelerator::primitive(
+            first,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "first",
+        ),
     );
     let second_acc = graph.add_accelerator(
         "second",
-        Accelerator::primitive(second, Box::new(common::DonePolicy), "second"),
+        Accelerator::primitive(
+            second,
+            Box::new(common::DonePolicy),
+            ToolRuntime::new(),
+            "second",
+        ),
     );
     let fold = graph.add_flux("fold", FluxMode::Context(ContextFlux::Fold), 2);
 
@@ -565,7 +643,12 @@ async fn last_flux_reorders_upstream_content_after_scaffolding() {
         ..State::default()
     };
 
-    let accelerator = Accelerator::primitive(state, Box::new(Captain::new()), "last-reorder-test");
+    let accelerator = Accelerator::primitive(
+        state,
+        Box::new(Captain::new()),
+        ToolRuntime::new(),
+        "last-reorder-test",
+    );
 
     // Feed upstream context through run_with: a handoff from upstream.
     let mut input = State::default();

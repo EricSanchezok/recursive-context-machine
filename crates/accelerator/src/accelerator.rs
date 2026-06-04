@@ -1,5 +1,7 @@
 use machine::hook;
-use machine::{Action, Fragment, Inbox, Machine, Purpose, Role};
+use machine::{
+    Action, ApplyContext, ApplyMode, Fragment, Inbox, Machine, Purpose, Role, ToolRuntime,
+};
 use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
@@ -32,12 +34,17 @@ impl Accelerator {
     pub fn primitive(
         state: State,
         policy: Box<dyn machine::Policy>,
+        tool_runtime: ToolRuntime,
         name: impl Into<String>,
     ) -> Self {
         Self {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
-            body: AcceleratorBody::Primitive(PrimitiveAccelerator { state, policy }),
+            body: AcceleratorBody::Primitive(PrimitiveAccelerator {
+                state,
+                policy,
+                tool_runtime,
+            }),
         }
     }
 
@@ -120,7 +127,10 @@ impl Accelerator {
             }
             state.res.models.clone_from(&base.res.models);
             state.res.model_order.clone_from(&base.res.model_order);
-            state.res.tools.clone_from(&base.res.tools);
+            state
+                .res
+                .tool_definitions
+                .clone_from(&base.res.tool_definitions);
             state.res.prompts.clone_from(&base.res.prompts);
             state.res.active_model.clone_from(&base.res.active_model);
             state.res.active_tools.clone_from(&base.res.active_tools);
@@ -144,6 +154,7 @@ enum AcceleratorBody {
 struct PrimitiveAccelerator {
     state: State,
     policy: Box<dyn machine::Policy>,
+    tool_runtime: ToolRuntime,
 }
 
 impl PrimitiveAccelerator {
@@ -175,6 +186,7 @@ impl PrimitiveAccelerator {
         let mut step = 0u64;
         let mut machine = Machine::new("ephemeral", "ephemeral");
         let policy = self.policy;
+        let tool_runtime = self.tool_runtime;
         let mut reorder_pending = needs_reorder;
 
         hook!(event = "machine_start", purpose = %purpose.text);
@@ -229,17 +241,24 @@ impl PrimitiveAccelerator {
                 }
             }
 
-            if machine
+            let result = machine
                 .apply(
                     action,
                     step,
-                    &mut state.ctx,
-                    &mut state.env,
-                    &mut state.res,
-                    &mut inbox,
+                    ApplyContext {
+                        ctx: &mut state.ctx,
+                        env: &mut state.env,
+                        resources: &mut state.res,
+                        inbox: &mut inbox,
+                        usages: &mut state.usages,
+                        counts: &mut state.counts,
+                    },
+                    ApplyMode::Live {
+                        tool_runtime: &tool_runtime,
+                    },
                 )
-                .await
-            {
+                .await;
+            if result.done {
                 break;
             }
         }
