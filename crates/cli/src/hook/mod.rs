@@ -103,7 +103,7 @@ pub enum ToolEvent {
 pub enum FragmentEvent {
     Appended(FragmentMeta),
     Taken(FragmentMeta),
-    Inserted(FragmentMeta),
+    Inserted { meta: FragmentMeta, after: u64 },
     Replaced(FragmentMeta),
     Removed { id: u64 },
     Swapped { first: u64, second: u64 },
@@ -115,6 +115,7 @@ pub struct FragmentMeta {
     pub step: u64,
     pub role: String,
     pub kind: String,
+    pub tag: String,
     pub preview: String,
 }
 
@@ -260,6 +261,7 @@ impl HookFields {
             step: self.u64("step").unwrap_or(0),
             role: self.string("role").unwrap_or_default(),
             kind: self.string("kind").unwrap_or_default(),
+            tag: self.string("tag").unwrap_or_default(),
             preview: self.string("preview").unwrap_or_default(),
         }
     }
@@ -359,7 +361,10 @@ impl HookEvent {
             }),
             "appended" => HookKind::Fragment(FragmentEvent::Appended(fields.fragment_meta())),
             "taken" => HookKind::Fragment(FragmentEvent::Taken(fields.fragment_meta())),
-            "inserted" => HookKind::Fragment(FragmentEvent::Inserted(fields.fragment_meta())),
+            "inserted" => HookKind::Fragment(FragmentEvent::Inserted {
+                meta: fields.fragment_meta(),
+                after: fields.u64("after").unwrap_or(0),
+            }),
             "replaced" => HookKind::Fragment(FragmentEvent::Replaced(fields.fragment_meta())),
             "removed" => HookKind::Fragment(FragmentEvent::Removed {
                 id: fields.u64("id").unwrap_or(0),
