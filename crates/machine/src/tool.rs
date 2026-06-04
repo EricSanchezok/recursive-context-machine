@@ -49,7 +49,7 @@ pub trait Tool: Send + Sync {
 
 #[derive(Clone, Default)]
 pub struct ToolRuntime {
-    tools: HashMap<String, Arc<dyn Tool>>,
+    executors: HashMap<String, Arc<dyn Tool>>,
 }
 
 impl ToolRuntime {
@@ -57,36 +57,31 @@ impl ToolRuntime {
         Self::default()
     }
 
-    pub fn with_tool(mut self, tool: Arc<dyn Tool>) -> Self {
-        self.insert(tool);
-        self
-    }
-
     pub fn insert(&mut self, tool: Arc<dyn Tool>) {
-        self.tools.insert(tool.name().to_string(), tool);
+        self.executors.insert(tool.name().to_string(), tool);
     }
 
     pub fn get(&self, name: &str) -> Option<&dyn Tool> {
-        self.tools.get(name).map(|tool| tool.as_ref())
+        self.executors.get(name).map(|tool| tool.as_ref())
     }
 
     pub fn get_arc(&self, name: &str) -> Option<Arc<dyn Tool>> {
-        self.tools.get(name).cloned()
+        self.executors.get(name).cloned()
     }
 
     pub fn contains(&self, name: &str) -> bool {
-        self.tools.contains_key(name)
+        self.executors.contains_key(name)
     }
 
     pub fn names(&self) -> Vec<String> {
-        let mut names: Vec<String> = self.tools.keys().cloned().collect();
+        let mut names: Vec<String> = self.executors.keys().cloned().collect();
         names.sort();
         names
     }
 
     pub fn merge(&mut self, other: &ToolRuntime) {
-        for (name, tool) in &other.tools {
-            self.tools
+        for (name, tool) in &other.executors {
+            self.executors
                 .entry(name.clone())
                 .or_insert_with(|| tool.clone());
         }

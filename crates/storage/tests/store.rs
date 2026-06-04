@@ -44,15 +44,17 @@ fn record_and_restore_context_actions() {
     let mut store = Store::open(dir.path()).unwrap();
 
     store
-        .record(&MachineEvent::state_only(
+        .record(&MachineEvent::state(
             1,
             Action::Append(Fragment::user("hello")),
+            Vec::new(),
         ))
         .unwrap();
     store
-        .record(&MachineEvent::state_only(
+        .record(&MachineEvent::state(
             2,
             Action::Append(Fragment::assistant("world")),
+            Vec::new(),
         ))
         .unwrap();
 
@@ -71,18 +73,24 @@ fn restore_replays_runtime_resource_actions() {
     store.checkpoint(&state).unwrap();
 
     store
-        .record(&MachineEvent::state_only(1, Action::Model("fast".into())))
-        .unwrap();
-    store
-        .record(&MachineEvent::state_only(
-            2,
-            Action::Activate("search".into()),
+        .record(&MachineEvent::state(
+            1,
+            Action::Model("fast".into()),
+            Vec::new(),
         ))
         .unwrap();
     store
-        .record(&MachineEvent::state_only(
+        .record(&MachineEvent::state(
+            2,
+            Action::Activate("search".into()),
+            Vec::new(),
+        ))
+        .unwrap();
+    store
+        .record(&MachineEvent::state(
             3,
             Action::Deactivate("search".into()),
+            Vec::new(),
         ))
         .unwrap();
 
@@ -101,6 +109,34 @@ fn restore_replays_runtime_resource_actions() {
     assert_eq!(
         restored.resources.active_tools,
         state.resources.active_tools
+    );
+}
+
+#[test]
+fn failed_action_replays_recorded_inbox_hitch() {
+    let dir = TempDir::new().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    let hitch = Fragment::hitch(
+        "fragment id 999 not found",
+        None,
+        machine::Role::System,
+        None::<&str>,
+    );
+
+    store
+        .record(&MachineEvent::state(1, Action::Remove(999), vec![hitch]))
+        .unwrap();
+
+    let restored = store.restore().unwrap().unwrap();
+    assert_eq!(restored.context.fragments().len(), 0);
+    assert_eq!(restored.inbox.len(), 1);
+    assert!(
+        restored
+            .inbox
+            .peek()
+            .unwrap()
+            .content_as_text()
+            .contains("fragment id 999 not found")
     );
 }
 
@@ -127,7 +163,7 @@ fn halt_output_replays_through_inbox_and_take() {
         })
         .unwrap();
     store
-        .record(&MachineEvent::state_only(2, Action::Take))
+        .record(&MachineEvent::state(2, Action::Take, Vec::new()))
         .unwrap();
 
     let restored = store.restore().unwrap().unwrap();
@@ -142,9 +178,10 @@ fn checkpoint_skips_replaying_old_events() {
     let mut store = Store::open(dir.path()).unwrap();
 
     store
-        .record(&MachineEvent::state_only(
+        .record(&MachineEvent::state(
             1,
             Action::Append(Fragment::user("before")),
+            Vec::new(),
         ))
         .unwrap();
     let mut checkpoint = MachineState::default();
@@ -152,9 +189,10 @@ fn checkpoint_skips_replaying_old_events() {
     checkpoint.step = 1;
     store.checkpoint(&checkpoint).unwrap();
     store
-        .record(&MachineEvent::state_only(
+        .record(&MachineEvent::state(
             2,
             Action::Append(Fragment::assistant("after")),
+            Vec::new(),
         ))
         .unwrap();
 

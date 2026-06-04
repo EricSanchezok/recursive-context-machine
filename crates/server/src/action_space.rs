@@ -109,7 +109,7 @@ pub fn build_action_space(run: &Run) -> ActionSpace {
                 sink: None,
             });
         }
-        for tool_name in run.resources.tools.keys() {
+        for tool_name in run.resources.tool_definitions.keys() {
             actions.push(ActionItem {
                 command: Some(ActionCommand {
                     verb: "Activate".into(),

@@ -18,7 +18,7 @@ pub struct Catalog {
 
 #[derive(Clone, Default)]
 struct ResourceCatalog {
-    tools: HashMap<String, Arc<dyn Tool>>,
+    tool_executors: HashMap<String, Arc<dyn Tool>>,
     models: HashMap<String, Model>,
     prompts: HashMap<String, String>,
     mcp_servers: HashMap<String, McpServerEntry>,
@@ -27,7 +27,7 @@ struct ResourceCatalog {
 #[derive(Clone)]
 struct McpServerEntry {
     config: McpServerConfig,
-    tools: Arc<OnceCell<Vec<Arc<dyn Tool>>>>,
+    tool_executors: Arc<OnceCell<Vec<Arc<dyn Tool>>>>,
 }
 
 #[derive(Clone, Default)]
@@ -86,8 +86,8 @@ impl Catalog {
     pub fn register_tool(&mut self, tool: Arc<dyn Tool>) -> Result<(), String> {
         let name = tool.name().to_string();
         ensure_name_is_usable(&name, "tool")?;
-        ensure_name_is_free(&self.resources.tools, &name, "tool")?;
-        self.resources.tools.insert(name, tool);
+        ensure_name_is_free(&self.resources.tool_executors, &name, "tool")?;
+        self.resources.tool_executors.insert(name, tool);
         Ok(())
     }
 
@@ -117,7 +117,7 @@ impl Catalog {
             config.label.clone(),
             McpServerEntry {
                 config,
-                tools: Arc::new(OnceCell::new()),
+                tool_executors: Arc::new(OnceCell::new()),
             },
         );
         Ok(())
@@ -163,13 +163,12 @@ impl Catalog {
         for tool_name in selection.tools {
             let tool = self
                 .resources
-                .tools
+                .tool_executors
                 .get(&tool_name)
                 .cloned()
                 .ok_or_else(|| format!("unknown tool: {tool_name}"))?;
             remember_selected_tool(&mut selected_tool_names, tool.name())?;
-            resources = resources.with_tool_definition(ToolDefinition::from_tool(tool.as_ref()));
-            tool_runtime.insert(tool);
+            add_tool_to_runtime_resources(tool, &mut resources, &mut tool_runtime);
         }
 
         for server_name in selection.mcp_servers {
@@ -178,20 +177,18 @@ impl Catalog {
                 .mcp_servers
                 .get(&server_name)
                 .ok_or_else(|| format!("unknown mcp server: {server_name}"))?;
-            let tools = entry
-                .tools
+            let tool_executors = entry
+                .tool_executors
                 .get_or_try_init(|| async {
                     let registry =
                         crate::mcp::McpRegistry::start(std::slice::from_ref(&entry.config)).await?;
                     Ok::<_, String>(registry.tools_for(&server_name).unwrap_or_default())
                 })
                 .await?;
-            for tool in tools {
+            for tool in tool_executors {
                 ensure_name_is_usable(tool.name(), "mcp tool")?;
                 remember_selected_tool(&mut selected_tool_names, tool.name())?;
-                resources =
-                    resources.with_tool_definition(ToolDefinition::from_tool(tool.as_ref()));
-                tool_runtime.insert(tool.clone());
+                add_tool_to_runtime_resources(tool.clone(), &mut resources, &mut tool_runtime);
             }
         }
 
@@ -206,7 +203,7 @@ impl Catalog {
     }
 
     pub fn tool_names(&self) -> Vec<String> {
-        sorted_names(self.resources.tools.keys())
+        sorted_names(self.resources.tool_executors.keys())
     }
 
     pub fn prompt_names(&self) -> Vec<String> {
@@ -224,6 +221,18 @@ impl Catalog {
     pub fn mcp_server_names(&self) -> Vec<String> {
         sorted_names(self.resources.mcp_servers.keys())
     }
+}
+
+fn add_tool_to_runtime_resources(
+    tool: Arc<dyn Tool>,
+    resources: &mut Resources,
+    tool_runtime: &mut ToolRuntime,
+) {
+    resources.tool_definitions.insert(
+        tool.name().to_string(),
+        ToolDefinition::from_tool(tool.as_ref()),
+    );
+    tool_runtime.insert(tool);
 }
 
 fn sorted_names<'a>(names: impl Iterator<Item = &'a String>) -> Vec<String> {

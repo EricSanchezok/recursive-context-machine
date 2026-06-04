@@ -19,7 +19,9 @@ pub struct MachineEvent {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ActionOutcome {
-    StateOnly,
+    State {
+        inbox: Vec<Fragment>,
+    },
     Reactor {
         fragments: Vec<Fragment>,
         usage: Usage,
@@ -27,19 +29,11 @@ pub enum ActionOutcome {
 }
 
 impl MachineEvent {
-    pub fn state_only(step: u64, action: Action) -> Self {
+    pub fn state(step: u64, action: Action, inbox: Vec<Fragment>) -> Self {
         Self {
             step,
             action,
-            outcome: ActionOutcome::StateOnly,
-        }
-    }
-
-    pub fn reactor(step: u64, fragments: Vec<Fragment>, usage: Usage) -> Self {
-        Self {
-            step,
-            action: Action::Halt,
-            outcome: ActionOutcome::Reactor { fragments, usage },
+            outcome: ActionOutcome::State { inbox },
         }
     }
 }

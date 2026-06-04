@@ -125,7 +125,10 @@ impl Accelerator {
             }
             state.res.models.clone_from(&base.res.models);
             state.res.model_order.clone_from(&base.res.model_order);
-            state.res.tools.clone_from(&base.res.tools);
+            state
+                .res
+                .tool_definitions
+                .clone_from(&base.res.tool_definitions);
             state.res.prompts.clone_from(&base.res.prompts);
             state.res.active_model.clone_from(&base.res.active_model);
             state.res.active_tools.clone_from(&base.res.active_tools);
