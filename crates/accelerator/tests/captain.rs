@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use accelerator::Captain;
 use machine::{
-    Action, Context, Environment, Fragment, Inbox, Machine, Model, Policy, Purpose, Resources,
-    Role, Tool, ToolDefinition, ToolResult, ToolRuntime,
+    Action, Context, Environment, Fragment, Inbox, Machine, MachineRuntime, Model, Policy, Purpose,
+    Resources, Role, Tool, ToolDefinition, ToolResult, ToolRuntime,
 };
 use serde_json::json;
 
@@ -84,11 +84,13 @@ async fn drive_until_halt(
                     .apply(
                         action,
                         step,
-                        ctx,
-                        &mut env,
-                        resources,
-                        &tool_runtime,
-                        &mut inbox,
+                        MachineRuntime {
+                            ctx,
+                            env: &mut env,
+                            resources,
+                            tool_runtime: &tool_runtime,
+                            inbox: &mut inbox,
+                        },
                     )
                     .await;
             }

@@ -179,13 +179,11 @@ impl SegmentWriter {
 
             let item_len = u32::from_le_bytes(len_buf);
 
-            if len_buf == TAIL_MAGIC {
-                if position + 8 == file_len {
-                    return Err(WalError::SegmentCorrupted {
-                        segment_id: seg_id,
-                        reason: CorruptSegment::AlreadyClosed,
-                    });
-                }
+            if len_buf == TAIL_MAGIC && position + 8 == file_len {
+                return Err(WalError::SegmentCorrupted {
+                    segment_id: seg_id,
+                    reason: CorruptSegment::AlreadyClosed,
+                });
             }
 
             if item_len < ITEM_HEADER_SIZE || position + item_len as u64 > file_len {

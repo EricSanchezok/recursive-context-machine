@@ -35,7 +35,7 @@ pub use fragment::{
     Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, ToolResult, Video,
 };
 pub use inbox::Inbox;
-pub use machine::Machine;
+pub use machine::{Machine, MachineRuntime};
 pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
 pub use policy::{ACTION_VERBS, Action, Policy};
 pub use purpose::Purpose;

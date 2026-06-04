@@ -21,6 +21,14 @@ pub struct Machine {
     pub counts: HashMap<String, u64>,
 }
 
+pub struct MachineRuntime<'a> {
+    pub ctx: &'a mut Context,
+    pub env: &'a mut Environment,
+    pub resources: &'a mut Resources,
+    pub tool_runtime: &'a ToolRuntime,
+    pub inbox: &'a mut Inbox,
+}
+
 impl Machine {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
@@ -35,12 +43,15 @@ impl Machine {
         &mut self,
         action: Action,
         step: u64,
-        ctx: &mut Context,
-        env: &mut Environment,
-        resources: &mut Resources,
-        tool_runtime: &ToolRuntime,
-        inbox: &mut Inbox,
+        runtime: MachineRuntime<'_>,
     ) -> ApplyResult {
+        let MachineRuntime {
+            ctx,
+            env,
+            resources,
+            tool_runtime,
+            inbox,
+        } = runtime;
         *self.counts.entry(action.name().to_string()).or_default() += 1;
         let machine_id = self.id.to_string();
         let mut inbox_fragments = Vec::new();

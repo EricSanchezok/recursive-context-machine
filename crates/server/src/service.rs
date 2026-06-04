@@ -1,5 +1,5 @@
 use accelerator::{Catalog, ResourceSelection};
-use machine::{Inbox, Machine};
+use machine::{Inbox, Machine, MachineRuntime};
 use tonic::{Request, Response, Status};
 
 use crate::action_space::build_action_space;
@@ -112,11 +112,13 @@ impl Rcm for RcmService {
             .apply(
                 action,
                 run.step,
-                &mut run.ctx,
-                &mut run.env,
-                &mut run.resources,
-                &run.tool_runtime,
-                &mut run.inbox,
+                MachineRuntime {
+                    ctx: &mut run.ctx,
+                    env: &mut run.env,
+                    resources: &mut run.resources,
+                    tool_runtime: &run.tool_runtime,
+                    inbox: &mut run.inbox,
+                },
             )
             .await;
         run.done = result.done;
