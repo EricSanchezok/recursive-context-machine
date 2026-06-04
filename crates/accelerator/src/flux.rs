@@ -15,15 +15,7 @@ pub enum ContextFlux {
     Append,
     /// Keep only the last fragment from each slot.
     Last,
-    /// Structured digest — extract key information from each slot's context,
-    /// producing a condensed summary per slot. Inspired by Synergy's
-    /// TurnDigest: tool outputs are truncated, reasoning is dropped, and only
-    /// the essential segments (final text, tool summaries, errors) are kept.
     Digest,
-    /// Thread-style assembly — for each slot, prepend the slot's purpose as a
-    /// user question, followed by the slot's last meaningful fragment as the
-    /// answer. This creates a Q&A thread where downstream sees "question →
-    /// answer, question → answer, now solve this".
     Thread,
 }
 
@@ -37,15 +29,8 @@ pub enum ResFlux {
     Merge,
 }
 
-/// Cross-channel data transfer: reads from one channel, mechanically converts
-/// to another. Bridge does not apply any extraction, filtering, or business
-/// logic — it purely flattens data from the source channel format into the
-/// target channel format.
 #[derive(Clone, Copy)]
 pub enum BridgeKind {
-    /// Flatten all text fragments from context into a single purpose string.
-    /// Upstream ContextFlux (Last/Append/Digest/Thread) controls what
-    /// fragments reach the Bridge.
     ContextToPurpose,
 }
 
@@ -55,9 +40,6 @@ pub enum FluxMode {
     Context(ContextFlux),
     Environment(EnvFlux),
     Resources(ResFlux),
-    /// Cross-channel bridge: reads data from `from` channel via slots,
-    /// transforms it according to `kind`, and writes the result to `to`
-    /// channel.
     Bridge {
         from: Channel,
         to: Channel,
@@ -146,8 +128,6 @@ impl Flux {
     }
 }
 
-// ── helper: flatten all context text fragments into a single string ──
-
 fn flatten_context_to_text(slots: &[State]) -> String {
     let mut parts: Vec<String> = Vec::new();
     for slot in slots {
@@ -162,8 +142,6 @@ fn flatten_context_to_text(slots: &[State]) -> String {
     }
     parts.join("\n\n")
 }
-
-// ── per-channel apply helpers ──
 
 fn apply_purpose(flux: &Flux, mut read: impl FnMut(usize) -> String) -> String {
     match &flux.mode {
@@ -281,14 +259,6 @@ fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -> Resources
     }
 }
 
-/// Extract a structured digest from a context, appending condensed fragments
-/// to `target`. Inspired by Synergy's TurnDigest:
-/// - Final assistant text → kept
-/// - Tool results → summarized as `[Tool: {name}] {title}`
-/// - Tool errors → kept as `[Tool: {name}] Error: {msg}`
-/// - Hitches → kept (they are error signals)
-/// - System prompts → dropped (they are scaffolding)
-/// - Tool calls → dropped (the result or error carries the information)
 fn digest_context_into(source: &Context, target: &mut Context) {
     let fragments = source.fragments();
     if fragments.is_empty() {
@@ -327,21 +297,6 @@ fn digest_context_into(source: &Context, target: &mut Context) {
     target.append(Fragment::assistant(digest));
 }
 
-/// Assemble a Q&A thread from a slot's context.
-///
-/// For each slot, we first digest the context (extract key information,
-/// dropping scaffolding), then emit a user question followed by the digest
-/// as the answer. This creates a thread where downstream sees:
-///
-///   User: [Task 1] Please complete the following task.
-///   Assistant: {digest of slot 0}
-///   User: [Task 2] Please complete the following task.
-///   Assistant: {digest of slot 1}
-///   ...
-///
-/// The downstream accelerator then receives this as its context, making it
-/// clear that multiple upstream tasks have been completed and it should
-/// focus on the next step.
 fn thread_context_into(slot: usize, source: &Context, target: &mut Context) {
     let fragments = source.fragments();
     if fragments.is_empty() {

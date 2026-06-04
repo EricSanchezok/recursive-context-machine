@@ -108,10 +108,7 @@ impl Accelerator {
         let mut state = input;
         if let AcceleratorBody::Primitive(primitive) = &self.body {
             let base = &primitive.state;
-            // If both graph-wired purpose and base purpose are present,
-            // concatenate: upstream result first, then the task description.
-            // This enables Bridge(Context→Purpose) to prepend upstream output
-            // to the downstream task without a side-channel like fold_payload.
+            // Concatenate wired purpose with the accelerator's base purpose.
             let base_purpose = base.purpose.clone();
             if !state.purpose.is_empty()
                 && !base_purpose.is_empty()
@@ -164,10 +161,7 @@ impl PrimitiveAccelerator {
         let base_purpose = state.purpose.clone();
         let purpose = Purpose::new(&base_purpose);
 
-        // Determine whether we need to reorder on first Halt.
-        // Non-scaffolding, non-purpose fragments from flux may sit before or
-        // among Captain's scaffolding. On first Halt we move them after the
-        // env fragment and inject purpose_b.
+        // Reorder non-scaffolding context content on first Halt.
         let needs_reorder = state
             .ctx
             .fragments()
@@ -189,9 +183,7 @@ impl PrimitiveAccelerator {
                 .decide(&purpose, &state.ctx, &state.env, &state.res, &inbox)
                 .await;
 
-            // Intercept the first Halt (after Captain setup completes) to
-            // reorder context: move upstream non-scaffolding content to
-            // after the env fragment, then insert purpose_b.
+            // Intercept the first Halt to reorder and inject purpose_b.
             if matches!(&action, Action::Halt) && reorder_pending {
                 reorder_pending = false;
                 let env_pos = state
