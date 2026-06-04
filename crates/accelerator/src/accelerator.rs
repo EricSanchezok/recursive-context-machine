@@ -347,7 +347,11 @@ fn scatter_file(name: &str, input: &State) -> Vec<State> {
     let Some(run_dir) = run_dir_from_context(input) else {
         return vec![input.clone()];
     };
-    let path = input.env.cwd.join(&run_dir).join(name);
+    let raw_path = format!("{run_dir}/{name}");
+    let path = crate::tools::resolve_path(&raw_path, &input.env.cwd);
+    if !path.starts_with(&input.env.cwd) {
+        return vec![input.clone()];
+    }
     let Ok(contents) = std::fs::read_to_string(&path) else {
         return vec![input.clone()];
     };
