@@ -478,7 +478,7 @@ fn flux_mode_from_def(def: &ast::FluxDef) -> Result<FluxMode, String> {
         ("context", "thread") => Ok(FluxMode::Context(ContextFlux::Thread)),
         ("environment", "overlay") => Ok(FluxMode::Environment(EnvFlux::Overlay)),
         ("resources", "merge") => Ok(FluxMode::Resources(ResFlux::Merge)),
-        ("bridge", "last_text") => {
+        ("bridge", "flatten") => {
             let from_str = def
                 .from
                 .as_deref()
@@ -492,7 +492,7 @@ fn flux_mode_from_def(def: &ast::FluxDef) -> Result<FluxMode, String> {
             Ok(FluxMode::Bridge {
                 from,
                 to,
-                kind: BridgeKind::ContextLastTextToPurpose,
+                kind: BridgeKind::ContextToPurpose,
             })
         }
         _ => Err(format!("unknown flux mode: {} {}", def.channel, def.mode)),
