@@ -5,10 +5,14 @@ use "./query_plan.rcm" as QueryPlan
 use "./discovery.rcm" as Discovery
 use "./expansion.rcm" as Expansion
 use "./rank_pool.rcm" as RankPool
+use "./card_plan.rcm" as CardPlan
+use "./paper_card.rcm" as PaperCard
 use "./research_map.rcm" as ResearchMap
 use "./judge_panel.rcm" as JudgePanel
 use "./image_planner.rcm" as ImagePlanner
-use "./survey_writer.rcm" as SurveyWriter
+use "./survey_outline.rcm" as SurveyOutline
+use "./section_expander.rcm" as SectionExpander
+use "./survey_assembler.rcm" as SurveyAssembler
 use "./survey_writer_zh.rcm" as SurveyWriterZh
 
 graph {
@@ -17,10 +21,26 @@ graph {
     accelerator discovery = Discovery
     accelerator expansion = Expansion
     accelerator rank_pool = RankPool
+    accelerator card_plan = CardPlan
+    // Fan out over the planned papers: each reads one paper's full text and
+    // writes a full-text-grounded, anchor-aware card to run_dir/cards/<id>.md.
+    map paper_cards {
+        accelerator = PaperCard
+        scatter = json
+        gather  = digest
+    }
     accelerator research_map = ResearchMap
     accelerator judge_panel = JudgePanel
     accelerator image_planner = ImagePlanner
-    accelerator survey_writer = SurveyWriter
+    accelerator survey_outline = SurveyOutline
+    // Fan out over the outline's sections: each writes one detailed section to
+    // run_dir/sections/<n>_<slug>.md, grounded in the paper cards.
+    map section_expand {
+        accelerator = SectionExpander
+        scatter = json
+        gather  = digest
+    }
+    accelerator survey_assembler = SurveyAssembler
     accelerator survey_writer_zh = SurveyWriterZh
 
     flux anchor_handoff {
@@ -53,6 +73,18 @@ graph {
         arity = 1
     }
 
+    flux cardplan_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux cards_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
     flux map_handoff {
         channel = context
         mode = last
@@ -71,7 +103,19 @@ graph {
         arity = 1
     }
 
-    flux survey_handoff {
+    flux outline_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux sections_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux zh_handoff {
         channel = context
         mode = last
         arity = 1
@@ -96,8 +140,16 @@ graph {
     expansion.done -> rank_pool.trigger
 
     rank_pool.context -> rank_handoff.slot(0)
-    rank_handoff.out -> research_map.context
-    rank_pool.done -> research_map.trigger
+    rank_handoff.out -> card_plan.context
+    rank_pool.done -> card_plan.trigger
+
+    card_plan.context -> cardplan_handoff.slot(0)
+    cardplan_handoff.out -> paper_cards.context
+    card_plan.done -> paper_cards.trigger
+
+    paper_cards.context -> cards_handoff.slot(0)
+    cards_handoff.out -> research_map.context
+    paper_cards.done -> research_map.trigger
 
     research_map.context -> map_handoff.slot(0)
     map_handoff.out -> judge_panel.context
@@ -108,14 +160,22 @@ graph {
     judge_panel.done -> image_planner.trigger
 
     image_planner.context -> image_handoff.slot(0)
-    image_handoff.out -> survey_writer.context
-    image_planner.done -> survey_writer.trigger
+    image_handoff.out -> survey_outline.context
+    image_planner.done -> survey_outline.trigger
 
-    survey_writer.context -> survey_handoff.slot(0)
-    survey_handoff.out -> survey_writer_zh.context
-    survey_writer.done -> survey_writer_zh.trigger
+    survey_outline.context -> outline_handoff.slot(0)
+    outline_handoff.out -> section_expand.context
+    survey_outline.done -> section_expand.trigger
 
-    survey_writer.done -> output.done
-    survey_writer.context -> output.context
-    survey_writer.purpose -> output.purpose
+    section_expand.context -> sections_handoff.slot(0)
+    sections_handoff.out -> survey_assembler.context
+    section_expand.done -> survey_assembler.trigger
+
+    survey_assembler.context -> zh_handoff.slot(0)
+    zh_handoff.out -> survey_writer_zh.context
+    survey_assembler.done -> survey_writer_zh.trigger
+
+    survey_assembler.done -> output.done
+    survey_assembler.context -> output.context
+    survey_assembler.purpose -> output.purpose
 }
