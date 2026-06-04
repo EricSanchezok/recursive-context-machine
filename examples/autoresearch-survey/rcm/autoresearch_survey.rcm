@@ -26,7 +26,7 @@ graph {
     // writes a full-text-grounded, anchor-aware card to run_dir/cards/<id>.md.
     map paper_cards {
         accelerator = PaperCard
-        scatter = json
+        scatter = file "00_card_plan.json"
         gather  = digest
     }
     accelerator research_map = ResearchMap
@@ -37,7 +37,7 @@ graph {
     // run_dir/sections/<n>_<slug>.md, grounded in the paper cards.
     map section_expand {
         accelerator = SectionExpander
-        scatter = json
+        scatter = file "00_sections.json"
         gather  = digest
     }
     accelerator survey_assembler = SurveyAssembler

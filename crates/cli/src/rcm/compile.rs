@@ -145,7 +145,7 @@ impl Compiler {
                 .get(&map_def.inner_alias)
                 .ok_or_else(|| format!("unknown map accelerator import: {}", map_def.inner_alias))?
                 .clone();
-            let scatter = resolve_scatter(&map_def.scatter)?;
+            let scatter = resolve_scatter(&map_def.scatter, map_def.scatter_file.as_deref())?;
             let gather = resolve_gather(&map_def.gather)?;
             let accelerator = Accelerator::map_named(map_def.id.as_str(), inner, scatter, gather);
             // A Map wires exactly like an accelerator node (one context in/out,
@@ -508,9 +508,12 @@ fn resolve_prompts(
     Ok(prompts)
 }
 
-fn resolve_scatter(name: &str) -> Result<ScatterSpec, String> {
-    match name {
+fn resolve_scatter(kind: &str, file: Option<&str>) -> Result<ScatterSpec, String> {
+    match kind {
         "json" => Ok(ScatterSpec::Json),
+        "file" => file
+            .map(|name| ScatterSpec::File(name.to_string()))
+            .ok_or_else(|| "map scatter = file requires a filename".to_string()),
         other => Err(format!("unknown map scatter: {}", other)),
     }
 }
