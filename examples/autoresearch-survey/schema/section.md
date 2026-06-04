@@ -7,8 +7,8 @@ while letting every section go deep.
 
 ## Section spec (outline → expansion)
 
-The outline's **final message is a JSON array**, one element per section, in the
-order they should appear. Each element:
+The outline writes a **JSON array to `run_dir/00_sections.json`**, one element per
+section, in the order they should appear. Each element:
 
 - `run_dir`: the run directory, repeated verbatim in every element.
 - `n`: two-digit order string, e.g. `"01"` — controls file name and final order.

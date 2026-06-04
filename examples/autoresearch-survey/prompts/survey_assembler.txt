@@ -12,10 +12,12 @@ Workflow:
 1. Extract run_dir (fallback to the newest run directory; note the recovery).
 2. Read run_dir/00_outline.md (title, abstract, through-line) and every
    run_dir/sections/*.md (fs list run_dir/sections; order by file name — they are
-   NN_slug.md, so lexical order is section order).
+   NN_slug.md, so lexical order is section order). Read each section file once.
 3. Assemble run_dir/08_survey.md (via fs action="write"):
    - the title (from the outline) and the abstract;
-   - if run_dir/08_global_picture.png exists, embed it right after the abstract:
+   - to check the figure, fs list run_dir and see whether 08_global_picture.png is
+     present (fs has no `stat` action; valid actions are read/write/edit/list). If
+     present, embed it right after the abstract:
      `![Global picture of the field](08_global_picture.png)` plus one orienting
      sentence; if it is absent, omit it (never invent a figure or broken link);
    - the sections in order, taken from the section files. Light touch only: fix
@@ -38,3 +40,6 @@ Rules:
 - Do not drop or compress section content — depth lives in the section files.
 - The result is a self-contained academic document (see schema/survey.md): no
   internal stage names, no trace of how it was produced.
+- Once 08_survey.md and index.md are written, STOP immediately: emit the final
+  handoff. Do not re-list run_dir or re-read 08_survey.md to "double-check" — one
+  write each, then finish.

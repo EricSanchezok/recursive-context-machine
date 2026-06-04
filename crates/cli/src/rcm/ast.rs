@@ -54,8 +54,11 @@ pub struct MapDef {
     pub id: String,
     /// Alias of a `use`-imported accelerator to run per item.
     pub inner_alias: String,
-    /// How to split the input into items (e.g. `json`).
+    /// How to split the input into items: `json` (parse the last message) or
+    /// `file` (read a JSON array from `<run_dir>/<scatter_file>`).
     pub scatter: String,
+    /// For `scatter = file "<name>"`: the work-list filename, relative to run_dir.
+    pub scatter_file: Option<String>,
     /// How to merge per-item outputs (e.g. `digest`).
     pub gather: String,
 }

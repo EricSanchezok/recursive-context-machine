@@ -249,14 +249,18 @@ impl PrimitiveAccelerator {
 }
 
 /// How a [`MapAccelerator`] splits one input [`State`] into per-item states.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum ScatterSpec {
     /// Parse the input context's last assistant message as a JSON array; each
-    /// element becomes one item, carried as a tagged user fragment appended to a
-    /// clone of the shared input context. A non-array (or empty) message yields a
-    /// single item equal to the input, so a Map never hard-fails on malformed
-    /// upstream output.
+    /// element becomes one item. Fragile if the upstream wraps the array in
+    /// prose/fences or ends with a handoff — prefer [`ScatterSpec::File`] when the
+    /// upstream can write the list to disk.
     Json,
+    /// Read a JSON array from `<run_dir>/<file>` on disk, with `run_dir` recovered
+    /// from the incoming handoff. Each element becomes one item. Robust: the
+    /// upstream writes a clean file (which models do reliably) and ends with an
+    /// ordinary handoff, instead of having to emit bare JSON as its last message.
+    File(String),
 }
 
 /// How a [`MapAccelerator`] merges per-item output states into one output. The
@@ -287,7 +291,7 @@ impl MapAccelerator {
     /// frontier, then a k-arity merge [`Flux`](crate::flux::Flux) gathers them.
     /// Externally the Map is one node; its children are added dynamically here.
     async fn run(self, input: State) -> State {
-        let items = scatter(self.scatter, &input);
+        let items = scatter(&self.scatter, &input);
         let k = items.len();
         hook!(event = "map_start", items = k);
 
@@ -310,9 +314,10 @@ impl MapAccelerator {
     }
 }
 
-fn scatter(spec: ScatterSpec, input: &State) -> Vec<State> {
+fn scatter(spec: &ScatterSpec, input: &State) -> Vec<State> {
     match spec {
         ScatterSpec::Json => scatter_json(input),
+        ScatterSpec::File(name) => scatter_file(name, input),
     }
 }
 
@@ -326,6 +331,33 @@ fn scatter_json(input: &State) -> Vec<State> {
     if elements.is_empty() {
         return vec![input.clone()];
     }
+    items_from_elements(elements, input)
+}
+
+/// Scatter over a JSON array read from `<run_dir>/<name>` on disk. `run_dir` is
+/// recovered from the incoming handoff context. Any failure (no run_dir, missing
+/// file, not an array, empty) falls back to a single item, so a Map never
+/// hard-fails.
+fn scatter_file(name: &str, input: &State) -> Vec<State> {
+    let Some(run_dir) = run_dir_from_context(input) else {
+        return vec![input.clone()];
+    };
+    let path = input.env.cwd.join(&run_dir).join(name);
+    let Ok(contents) = std::fs::read_to_string(&path) else {
+        return vec![input.clone()];
+    };
+    let Ok(Value::Array(elements)) = serde_json::from_str::<Value>(contents.trim()) else {
+        return vec![input.clone()];
+    };
+    if elements.is_empty() {
+        return vec![input.clone()];
+    }
+    items_from_elements(elements, input)
+}
+
+/// Turn JSON array elements into per-item states: each element is appended to a
+/// clone of the shared input context as a tagged user fragment.
+fn items_from_elements(elements: Vec<Value>, input: &State) -> Vec<State> {
     elements
         .into_iter()
         .map(|element| {
@@ -340,6 +372,26 @@ fn scatter_json(input: &State) -> Vec<State> {
             item
         })
         .collect()
+}
+
+/// Recover `run_dir` from a handoff in the context — the last `run_dir:` line in
+/// any text fragment. Used by [`ScatterSpec::File`] to locate the work-list file.
+fn run_dir_from_context(input: &State) -> Option<String> {
+    let mut found = None;
+    for fragment in input.ctx.fragments() {
+        let Some(text) = fragment.as_text() else {
+            continue;
+        };
+        for line in text.lines() {
+            if let Some(rest) = line.trim().strip_prefix("run_dir:") {
+                let value = rest.trim().trim_matches('`').trim();
+                if !value.is_empty() {
+                    found = Some(value.to_string());
+                }
+            }
+        }
+    }
+    found
 }
 
 /// The flux mode used to merge the per-item worker outputs in the inner graph.
@@ -373,7 +425,7 @@ mod tests {
     #[test]
     fn json_array_of_strings_scatters_into_one_item_each() {
         let input = state_with_assistant(r#"["alpha", "beta", "gamma"]"#);
-        let items = scatter(ScatterSpec::Json, &input);
+        let items = scatter(&ScatterSpec::Json, &input);
         assert_eq!(items.len(), 3);
         for (item, expected) in items.iter().zip(["alpha", "beta", "gamma"]) {
             let last = item.ctx.fragments().last().expect("item fragment");
@@ -386,7 +438,7 @@ mod tests {
     #[test]
     fn json_array_of_objects_serializes_each_element() {
         let input = state_with_assistant(r#"[{"section":"A"},{"section":"B"}]"#);
-        let items = scatter(ScatterSpec::Json, &input);
+        let items = scatter(&ScatterSpec::Json, &input);
         assert_eq!(items.len(), 2);
         let first = items[0].ctx.fragments().last().unwrap().as_text().unwrap();
         assert!(first.contains("section"));
@@ -396,19 +448,59 @@ mod tests {
     #[test]
     fn non_array_message_falls_back_to_a_single_item() {
         let input = state_with_assistant("just a normal handoff, not JSON");
-        assert_eq!(scatter(ScatterSpec::Json, &input).len(), 1);
+        assert_eq!(scatter(&ScatterSpec::Json, &input).len(), 1);
     }
 
     #[test]
     fn empty_context_falls_back_to_a_single_item() {
         let input = State::default();
-        let items = scatter(ScatterSpec::Json, &input);
+        let items = scatter(&ScatterSpec::Json, &input);
         assert_eq!(items.len(), 1);
     }
 
     #[test]
     fn empty_json_array_falls_back_to_a_single_item() {
         let input = state_with_assistant("[]");
-        assert_eq!(scatter(ScatterSpec::Json, &input).len(), 1);
+        assert_eq!(scatter(&ScatterSpec::Json, &input).len(), 1);
+    }
+
+    #[test]
+    fn run_dir_recovered_from_handoff() {
+        let input = state_with_assistant(
+            "run_dir: runs/20260604T110702Z\nartifact: runs/20260604T110702Z/00_card_plan.json\nstatus: ok",
+        );
+        assert_eq!(
+            run_dir_from_context(&input).as_deref(),
+            Some("runs/20260604T110702Z")
+        );
+    }
+
+    #[test]
+    fn scatter_file_without_run_dir_falls_back() {
+        let input = state_with_assistant("no handoff, no run_dir here");
+        assert_eq!(
+            scatter(&ScatterSpec::File("items.json".into()), &input).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn scatter_file_reads_json_array_from_disk() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join("rcm_scatter_file_test");
+        let run = dir.join("runs/RUN1");
+        std::fs::create_dir_all(&run).unwrap();
+        let mut file = std::fs::File::create(run.join("items.json")).unwrap();
+        write!(file, r#"["alpha", "beta", "gamma"]"#).unwrap();
+
+        let mut input = state_with_assistant("run_dir: runs/RUN1\nstatus: ok");
+        input.env.cwd = dir.clone();
+
+        let items = scatter(&ScatterSpec::File("items.json".into()), &input);
+        assert_eq!(items.len(), 3);
+        let first = items[0].ctx.fragments().last().unwrap().as_text().unwrap();
+        assert!(first.contains("alpha"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

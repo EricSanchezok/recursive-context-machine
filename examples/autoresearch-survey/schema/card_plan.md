@@ -11,8 +11,8 @@ It is the budget gate between the ranked pool and full-text reading.
 
 ## Output
 
-The planner's final message is a JSON array (consumed by the `paper_cards` map),
-one element per selected paper:
+The planner writes a JSON array to `run_dir/00_card_plan.json` (consumed by the
+`paper_cards` map), one element per selected paper:
 
 - `run_dir`: the run directory, verbatim, in every element.
 - `id`: the paper's arXiv id — must exist in the ranked pool; never invented.
