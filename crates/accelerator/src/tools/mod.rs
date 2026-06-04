@@ -24,11 +24,11 @@ use std::path::{Path, PathBuf};
 
 use crate::catalog::Catalog;
 
-/// Register all built-in tools in the catalog.
 pub fn register(catalog: &mut Catalog) {
     for tool in builtin_tools() {
-        let name = tool.name().to_string();
-        catalog.tools.insert(name, tool);
+        catalog
+            .register_tool(tool)
+            .expect("built-in tool names must be unique");
     }
 }
 

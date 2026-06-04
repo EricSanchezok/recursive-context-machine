@@ -148,6 +148,7 @@ impl Parser {
                 "purpose" => def.purpose = Some(self.expect_string()?),
                 "models" => def.models = self.expect_string_array()?,
                 "policy" => def.policy = Some(self.expect_string()?),
+                "environment" => def.environment = Some(self.expect_string()?),
                 "prompts" => def.prompts = Some(self.prompt_sources()?),
                 "tools" => def.tools = Some(self.expect_string_array()?),
                 "mcps" => def.mcps = Some(self.expect_string_array()?),

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use accelerator::Captain;
 use machine::{
-    Action, Context, Environment, Fragment, Inbox, Machine, Model, Policy, Purpose, Resources,
-    Role, Tool, ToolResult,
+    Action, ApplyContext, ApplyMode, Context, Environment, Fragment, Inbox, Machine, Model, Policy,
+    Purpose, Resources, Role, Tool, ToolDefinition, ToolResult, ToolRuntime,
 };
 use serde_json::json;
 
@@ -54,8 +54,8 @@ fn resources() -> Resources {
             name: "careful".into(),
             ..Default::default()
         })
-        .with_tool(named_tool("read"))
-        .with_tool(named_tool("search"));
+        .with_tool_definition(ToolDefinition::from_tool(named_tool("read").as_ref()))
+        .with_tool_definition(ToolDefinition::from_tool(named_tool("search").as_ref()));
     resources
         .prompts
         .insert("captain".into(), "Captain prompt".into());
@@ -71,7 +71,11 @@ async fn drive_until_halt(
     let mut env = Environment::new(".");
     let mut inbox = Inbox::new();
     let mut machine = Machine::new("test", "test");
+    let tool_runtime = ToolRuntime::new();
     let purpose = Purpose::new(purpose);
+
+    let mut usages: Vec<machine::Usage> = Vec::new();
+    let mut counts: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
 
     for step in 1..100 {
         let action = captain.decide(&purpose, ctx, &env, resources, &inbox).await;
@@ -80,7 +84,21 @@ async fn drive_until_halt(
             Action::Done => panic!("captain ended before first halt"),
             action => {
                 machine
-                    .apply(action, step, ctx, &mut env, resources, &mut inbox)
+                    .apply(
+                        action,
+                        step,
+                        ApplyContext {
+                            ctx,
+                            env: &mut env,
+                            resources,
+                            inbox: &mut inbox,
+                            usages: &mut usages,
+                            counts: &mut counts,
+                        },
+                        ApplyMode::Live {
+                            tool_runtime: &tool_runtime,
+                        },
+                    )
                     .await;
             }
         }

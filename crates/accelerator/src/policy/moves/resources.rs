@@ -10,7 +10,7 @@ pub(crate) fn activate(resources: &Resources) -> Step {
     }
 
     if let Some(tool_name) = resources
-        .tools
+        .tool_definitions
         .keys()
         .find(|tool_name| !resources.active_tools.contains(*tool_name))
     {
