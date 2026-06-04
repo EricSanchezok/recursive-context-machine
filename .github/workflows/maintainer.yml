@@ -104,6 +104,17 @@ jobs:
           echo "before=$before" >> "$GITHUB_OUTPUT"
           echo "pre-run maintainer comments on $KIND #$NUMBER: $before"
 
+      - name: Check out PR head for in-context review reads
+        # pr_review's diff_review / intent_check read PR files via the fs tool, so
+        # the working tree must hold the PR's code — not the base we rendered from.
+        # Done AFTER rendering (templates + dispatch.toml come from base) and only
+        # for pull_request events. Files are only read, never built or executed,
+        # so PR code on disk is not run. The rendered .rcm lives in the gitignored
+        # .rcm-cache/ and survives the branch switch. Internal/branch PRs only —
+        # forks can't run this pipeline today (no secrets on fork pull_request).
+        if: ${{ steps.dispatch.outputs.rendered != '' && github.event_name == 'pull_request' }}
+        run: gh pr checkout ${{ github.event.pull_request.number }}
+
       - name: Run rendered pipeline
         if: steps.dispatch.outputs.rendered != ''
         run: ./accelerate run "${{ steps.dispatch.outputs.rendered }}" --stream
