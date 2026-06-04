@@ -26,7 +26,7 @@ graph {
     }
 
     accelerator respond {
-        purpose = "用 `gh pr comment {{PR_NUMBER}} --repo {{REPO}} -b \"<评论>\"` 发 review 评论。评论结构:开头一句总体判断(可合并/需调整);然后用 markdown checklist 列出 analyze 的每项发现,正面用 ✓ 负面用 ⚠;末尾给 1-3 条具体修改建议。中文撰写,代码标识符保持英文。只用 shell+gh。"
+        purpose = "把 review 评论写成 markdown:开头一句总体判断(可合并/需调整);用 checklist 列出 analyze 的每项发现(正面 ✓ 负面 ⚠);末尾给 1-3 条具体修改建议。中文撰写,代码标识符保持英文。\n发评论只能用带引号 heredoc 经 --body-file 传入,严禁内联 -b——正文里的反引号、$、引号会被 shell 解释甚至注入:\ngh pr comment {{PR_NUMBER}} --repo {{REPO}} --body-file - <<'RCM_BODY'\n<在此写完整评论正文>\nRCM_BODY\n闭合标记 RCM_BODY 必须独占一行、行首顶格,且正文里不得出现这一行。\n发完必须自检确实发出去了:1) 上面命令要 exit 0 并打印评论 URL;2) 再跑 `gh pr view {{PR_NUMBER}} --repo {{REPO}} --json comments -q '.comments[-1].url'` 确认最新评论就是本次所发。若失败(如 fork PR 的只读 token 报 403、网络错误)原样重试一次;仍失败不要谎报成功。只用 shell+gh。\nhandoff 末尾:成功则写 status: ok 与 comment_url: <URL>;最终没发出去则写 status: blocked 与一行原因。"
         models = ["kimi-k2-6"]
         policy = "captain"
         tools = ["shell"]
