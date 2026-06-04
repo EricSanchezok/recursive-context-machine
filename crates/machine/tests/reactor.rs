@@ -1,5 +1,5 @@
 use machine::fragment::{Content, Fragment};
-use machine::{Environment, Resources, Tool, ToolResult};
+use machine::{Environment, Resources, Tool, ToolDefinition, ToolResult, ToolRuntime};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::time::{Duration, sleep};
@@ -59,15 +59,25 @@ fn make_sleep_tool(name: &str, ms: u64) -> Arc<dyn Tool> {
     Arc::new(DelayTool::new(name, ms))
 }
 
+fn resources_and_runtime(tools: Vec<Arc<dyn Tool>>) -> (Resources, ToolRuntime) {
+    let mut resources = Resources::new();
+    let mut tool_runtime = ToolRuntime::new();
+    for tool in tools {
+        resources = resources.with_tool_definition(ToolDefinition::from_tool(tool.as_ref()));
+        tool_runtime.insert(tool);
+    }
+    (resources, tool_runtime)
+}
+
 /// Parallel execution: 3 × 100ms via join_all → ≈100ms (not 300ms).
 #[tokio::test]
 async fn parallel_tool_execution() {
     let env = Environment::new("/tmp");
-    let mut resources = Resources::new();
-    resources = resources
-        .with_tool(make_sleep_tool("a", 100))
-        .with_tool(make_sleep_tool("b", 100))
-        .with_tool(make_sleep_tool("c", 100));
+    let (mut resources, tool_runtime) = resources_and_runtime(vec![
+        make_sleep_tool("a", 100),
+        make_sleep_tool("b", 100),
+        make_sleep_tool("c", 100),
+    ]);
     resources.enable("a").unwrap();
     resources.enable("b").unwrap();
     resources.enable("c").unwrap();
@@ -81,10 +91,10 @@ async fn parallel_tool_execution() {
     use futures_util::future::join_all;
     let mut futures = Vec::new();
     for frag in &fragments {
-        if let Content::ToolCall(tc) = &frag.content {
-            if let Some(tool) = resources.get(&tc.name) {
-                futures.push(tool.execute(tc.arguments.clone(), &env));
-            }
+        if let Content::ToolCall(tc) = &frag.content
+            && let Some(tool) = tool_runtime.get(&tc.name)
+        {
+            futures.push(tool.execute(tc.arguments.clone(), &env));
         }
     }
 
@@ -107,11 +117,11 @@ async fn parallel_tool_execution() {
 #[tokio::test]
 async fn serial_tool_execution_baseline() {
     let env = Environment::new("/tmp");
-    let mut resources = Resources::new();
-    resources = resources
-        .with_tool(make_sleep_tool("a", 100))
-        .with_tool(make_sleep_tool("b", 100))
-        .with_tool(make_sleep_tool("c", 100));
+    let (mut resources, tool_runtime) = resources_and_runtime(vec![
+        make_sleep_tool("a", 100),
+        make_sleep_tool("b", 100),
+        make_sleep_tool("c", 100),
+    ]);
     resources.enable("a").unwrap();
     resources.enable("b").unwrap();
     resources.enable("c").unwrap();
@@ -124,10 +134,10 @@ async fn serial_tool_execution_baseline() {
 
     let t0 = Instant::now();
     for frag in &fragments {
-        if let Content::ToolCall(tc) = &frag.content {
-            if let Some(tool) = resources.get(&tc.name) {
-                let _ = tool.execute(tc.arguments.clone(), &env).await;
-            }
+        if let Content::ToolCall(tc) = &frag.content
+            && let Some(tool) = tool_runtime.get(&tc.name)
+        {
+            let _ = tool.execute(tc.arguments.clone(), &env).await;
         }
     }
     let elapsed = t0.elapsed();
@@ -142,8 +152,7 @@ async fn serial_tool_execution_baseline() {
 #[tokio::test]
 async fn text_and_tools_mixed() {
     let env = Environment::new("/tmp");
-    let mut resources = Resources::new();
-    resources = resources.with_tool(make_sleep_tool("slow", 50));
+    let (mut resources, tool_runtime) = resources_and_runtime(vec![make_sleep_tool("slow", 50)]);
     resources.enable("slow").unwrap();
 
     let fragments = vec![
@@ -156,7 +165,7 @@ async fn text_and_tools_mixed() {
     let mut futures = Vec::new();
     for frag in &fragments {
         if let Content::ToolCall(tc) = &frag.content {
-            if let Some(tool) = resources.get(&tc.name) {
+            if let Some(tool) = tool_runtime.get(&tc.name) {
                 futures.push(tool.execute(tc.arguments.clone(), &env));
             }
         } else {
@@ -193,11 +202,11 @@ async fn one_failure_does_not_block_others() {
     }
 
     let env = Environment::new("/tmp");
-    let mut resources = Resources::new();
-    resources = resources
-        .with_tool(make_sleep_tool("slow", 50))
-        .with_tool(Arc::new(FailingTool))
-        .with_tool(make_sleep_tool("also-slow", 50));
+    let (mut resources, tool_runtime) = resources_and_runtime(vec![
+        make_sleep_tool("slow", 50),
+        Arc::new(FailingTool),
+        make_sleep_tool("also-slow", 50),
+    ]);
     resources.enable("slow").unwrap();
     resources.enable("fail").unwrap();
     resources.enable("also-slow").unwrap();
@@ -210,10 +219,10 @@ async fn one_failure_does_not_block_others() {
 
     let mut futures = Vec::new();
     for frag in &fragments {
-        if let Content::ToolCall(tc) = &frag.content {
-            if let Some(tool) = resources.get(&tc.name) {
-                futures.push(tool.execute(tc.arguments.clone(), &env));
-            }
+        if let Content::ToolCall(tc) = &frag.content
+            && let Some(tool) = tool_runtime.get(&tc.name)
+        {
+            futures.push(tool.execute(tc.arguments.clone(), &env));
         }
     }
 
@@ -266,11 +275,11 @@ async fn spawn_isolates_tool_panic() {
     }
 
     let env = Arc::new(Environment::new("/tmp"));
-    let mut resources = Resources::new();
-    resources = resources
-        .with_tool(make_sleep_tool("a", 50))
-        .with_tool(Arc::new(SpawnPanicTool))
-        .with_tool(make_sleep_tool("b", 50));
+    let (mut resources, tool_runtime) = resources_and_runtime(vec![
+        make_sleep_tool("a", 50),
+        Arc::new(SpawnPanicTool),
+        make_sleep_tool("b", 50),
+    ]);
     resources.enable("a").unwrap();
     resources.enable("spawn_panic").unwrap();
     resources.enable("b").unwrap();
@@ -284,7 +293,7 @@ async fn spawn_isolates_tool_panic() {
     let mut tool_clones: Vec<Option<Arc<dyn Tool>>> = Vec::new();
     for frag in &fragments {
         if let Content::ToolCall(tc) = &frag.content {
-            tool_clones.push(resources.tools.get(&tc.name).cloned());
+            tool_clones.push(tool_runtime.get_arc(&tc.name));
         } else {
             tool_clones.push(None);
         }

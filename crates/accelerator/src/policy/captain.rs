@@ -1,42 +1,59 @@
-use std::collections::HashSet;
 use std::future::Future;
-use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU8, Ordering};
 
-use chrono::Local;
-use machine::{
-    Action, Content, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources, Role,
-};
-use tracing::{trace, warn};
+use machine::{Action, Context, Environment, Inbox, Policy, Purpose, Resources};
 
-use super::retry::{HTTP_FORBIDDEN, HTTP_UNAUTHORIZED, Retry};
+use super::retry::Retry;
+use super::{Step, moves};
+use moves::react::ReactDecision;
 
-/// Captain — a simple single-agent Policy.
-///
-///   Inbox not empty             → Take
-///   Inbox empty:
-///     first call ever           → Halt
-///     last is Hitch:
-///       401/403                 → Done
-///       transient, budget > 0   → backoff, Halt (retry)
-///       budget exhausted        → Done
-///     last is Tool              → Halt
-///     last is not Tool          → Done
-///
-/// Before entering the main decide loop, Captain runs a setup state machine
-/// that injects system prompts, instructions, purpose, activates tools/models,
-/// and injects the env fragment — all via ordinary Action emissions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    Agent = 0,
+    Instruction = 1,
+    Environment = 2,
+    Purpose = 3,
+    Resources = 4,
+    Respond = 5,
+    Running = 6,
+}
+
+impl Phase {
+    fn from_u8(value: u8) -> Self {
+        match value {
+            0 => Self::Agent,
+            1 => Self::Instruction,
+            2 => Self::Environment,
+            3 => Self::Purpose,
+            4 => Self::Resources,
+            5 => Self::Respond,
+            _ => Self::Running,
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Agent => Self::Instruction,
+            Self::Instruction => Self::Environment,
+            Self::Environment => Self::Purpose,
+            Self::Purpose => Self::Resources,
+            Self::Resources => Self::Respond,
+            Self::Respond => Self::Running,
+            Self::Running => Self::Running,
+        }
+    }
+}
+
 pub struct Captain {
-    setup: std::sync::atomic::AtomicU8,
-    first_call: std::sync::atomic::AtomicBool,
+    phase: AtomicU8,
     retry: Retry,
 }
 
 impl Clone for Captain {
     fn clone(&self) -> Self {
         Self {
-            setup: std::sync::atomic::AtomicU8::new(0),
-            first_call: std::sync::atomic::AtomicBool::new(false),
+            phase: AtomicU8::new(Phase::Agent as u8),
             retry: self.retry.clone(),
         }
     }
@@ -45,8 +62,7 @@ impl Clone for Captain {
 impl Default for Captain {
     fn default() -> Self {
         Self {
-            setup: std::sync::atomic::AtomicU8::new(0),
-            first_call: std::sync::atomic::AtomicBool::new(false),
+            phase: AtomicU8::new(Phase::Agent as u8),
             retry: Retry::default(),
         }
     }
@@ -59,154 +75,59 @@ impl Captain {
 }
 
 impl Captain {
-    /// Run the next setup step, returning an Action if one is needed.
-    /// Returns `None` when setup is complete.
-    fn setup_step(
-        &self,
-        purpose: &Purpose,
-        ctx: &Context,
-        _env: &Environment,
-        resources: &Resources,
-    ) -> Option<Action> {
-        loop {
-            let step = self.setup.load(std::sync::atomic::Ordering::Relaxed);
-            match step {
-                // Step 0: Bootstrap — inject/capture system prompt (tag="agent")
-                0 => {
-                    let desired = resources
-                        .prompts
-                        .get("captain")
-                        .cloned()
-                        .unwrap_or_default();
-                    if let Some(existing) = ctx
-                        .fragments()
-                        .iter()
-                        .find(|f| f.role == Role::System && f.tag == "agent")
-                    {
-                        if existing.as_text() == Some(&desired) {
-                            self.setup
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            continue;
-                        }
-                        return Some(Action::Replace {
-                            id: existing.id(),
-                            fragment: Fragment::system(desired).with_tag("agent"),
-                        });
-                    }
-                    self.setup
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    return Some(Action::Append(Fragment::system(desired).with_tag("agent")));
-                }
-                // Step 1: Instructions — inject instruction files (tag="instruction")
-                1 => {
-                    self.setup
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if ctx
-                        .fragments()
-                        .iter()
-                        .any(|f| f.role == Role::System && f.tag == "instruction")
-                    {
-                        continue;
-                    }
-                    let files = find_instruction_files();
-                    if files.is_empty() {
-                        continue;
-                    }
-                    let parts: Vec<String> = files
-                        .iter()
-                        .filter(|(_, content)| !content.trim().is_empty())
-                        .map(|(path, content)| {
-                            let name = path
-                                .file_name()
-                                .unwrap_or(path.as_os_str())
-                                .to_string_lossy();
-                            format!(
-                                "=== {name} (from {}) ===\n{}",
-                                path.display(),
-                                content.trim()
-                            )
-                        })
-                        .collect();
-                    if parts.is_empty() {
-                        continue;
-                    }
-                    return Some(Action::Append(
-                        Fragment::system(parts.join("\n\n")).with_tag("instruction"),
-                    ));
-                }
-                // Step 2: Purpose — inject the steering task as a User fragment
-                // (tag="purpose"). This is the instruction that drives the
-                // agent; without it the agent only sees system scaffolding and
-                // falls into "ask" mode instead of executing. Runs once — the
-                // "purpose" tag guards against re-injection on re-entry.
-                2 => {
-                    self.setup
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if purpose.is_empty() {
-                        continue;
-                    }
-                    if ctx
-                        .fragments()
-                        .iter()
-                        .any(|f| f.role == Role::User && f.tag == "purpose")
-                    {
-                        continue;
-                    }
-                    return Some(Action::Append(
-                        Fragment::user(purpose.text.clone()).with_tag("purpose"),
-                    ));
-                }
-                // Step 3: ResourceSetup — activate first model and all tools
-                // Retryable: stays at step 3 until both model and tools are set up.
-                3 => {
-                    if resources.active_model.is_empty() {
-                        if let Some(model_name) = resources.model_order.first() {
-                            return Some(Action::Model(model_name.clone()));
-                        }
-                    }
-                    if let Some(tool_name) = resources
-                        .tools
-                        .keys()
-                        .find(|tool_name| !resources.active_tools.contains(*tool_name))
-                    {
-                        return Some(Action::Activate(tool_name.clone()));
-                    }
-                    // All done — advance to running.
-                    self.setup
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    continue;
-                }
-                // Step 4+: Running — setup is done
-                _ => return None,
+    fn phase(&self) -> Phase {
+        Phase::from_u8(self.phase.load(Ordering::Relaxed))
+    }
+
+    fn enter(&self, phase: Phase) {
+        self.phase.store(phase as u8, Ordering::Relaxed);
+    }
+
+    fn advance(&self) {
+        self.enter(self.phase().next());
+    }
+
+    fn drive(&self, step: Step) -> Option<Action> {
+        match step {
+            Step::Emit(action) => Some(action),
+            Step::Ready => {
+                self.advance();
+                None
             }
         }
     }
 
-    /// Inject or replace the env fragment (tag="env") — called before every Halt.
-    fn env_action(&self, ctx: &Context, env: &Environment) -> Option<Action> {
-        let now = Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
-        let text = format!(
-            "cwd: {}\nplatform: {}\ntime: {}",
-            env.cwd.display(),
-            env.platform,
-            now,
-        );
+    fn setup(
+        &self,
+        ctx: &Context,
+        env: &Environment,
+        resources: &Resources,
+        purpose: &Purpose,
+    ) -> Option<Action> {
+        loop {
+            let step = match self.phase() {
+                Phase::Agent => moves::agent::prepare(ctx, resources, "captain"),
+                Phase::Instruction => moves::instruction::load(ctx),
+                Phase::Environment => moves::env::refresh(ctx, env),
+                Phase::Purpose => moves::purpose::append(ctx, purpose),
+                Phase::Resources => moves::resources::activate(resources),
+                _ => return None,
+            };
 
-        if let Some(existing) = ctx
-            .fragments()
-            .iter()
-            .find(|f| f.role == Role::System && f.tag == "env")
-        {
-            if existing.as_text() == Some(&text) {
-                return None;
+            if let Some(action) = self.drive(step) {
+                return Some(action);
             }
-            return Some(Action::Replace {
-                id: existing.id(),
-                fragment: Fragment::system(text).with_tag("env"),
-            });
         }
+    }
 
-        Some(Action::Append(Fragment::system(text).with_tag("env")))
+    fn respond(&self, ctx: &Context, env: &Environment) -> Action {
+        match moves::env::refresh(ctx, env) {
+            Step::Emit(action) => action,
+            Step::Ready => {
+                self.enter(Phase::Running);
+                Action::Halt
+            }
+        }
     }
 }
 
@@ -228,114 +149,21 @@ impl Policy for Captain {
         inbox: &'a Inbox,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            // Run setup steps until one emits an action or all are done.
-            if let Some(action) = self.setup_step(purpose, ctx, env, resources) {
+            if let Some(action) = self.setup(ctx, env, resources, purpose) {
                 return action;
             }
 
-            if inbox.peek().is_some() {
-                return Action::Take;
+            if self.phase() == Phase::Respond {
+                return self.respond(ctx, env);
             }
 
-            if !self.first_call.load(std::sync::atomic::Ordering::Relaxed) {
-                // First real call — inject env and then Halt.
-                if let Some(action) = self.env_action(ctx, env) {
-                    return action;
-                }
-                self.first_call
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-                trace!("decide: first call, halting");
-                return Action::Halt;
-            }
-
-            let last = ctx.fragments().last();
-
-            if let Some(frag) = last {
-                if let Content::Hitch { code, .. } = &frag.content {
-                    if let Some(c) = code {
-                        if *c == HTTP_UNAUTHORIZED || *c == HTTP_FORBIDDEN {
-                            warn!(code = *c, "decide: permanent hitch, done");
-                            return Action::Done;
-                        }
-                    }
-
-                    if self.retry.backoff().await {
-                        let attempts = self.retry.count();
-                        trace!(attempts, "decide: hitched, retrying");
-                        if let Some(action) = self.env_action(ctx, env) {
-                            return action;
-                        }
-                        return Action::Halt;
-                    }
-                    warn!("decide: retry budget exhausted, done");
-                    return Action::Done;
-                }
-            }
-
-            self.retry.reset();
-
-            if let Some(action) = self.env_action(ctx, env) {
-                return action;
-            }
-
-            match last.map(|f| f.role) {
-                Some(Role::Tool) => {
-                    trace!("decide: last is Tool, halting");
-                    Action::Halt
-                }
-                _ => {
-                    trace!("decide: done");
-                    Action::Done
+            match moves::react::decide(ctx, inbox, &self.retry).await {
+                ReactDecision::Action(action) => action,
+                ReactDecision::Respond => {
+                    self.enter(Phase::Respond);
+                    self.respond(ctx, env)
                 }
             }
         })
     }
-}
-
-// ── Instruction file scanning (moved from phases/instruct.rs) ──
-
-const FILE_NAMES: [&str; 3] = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"];
-
-fn global_paths() -> Vec<PathBuf> {
-    let Some(home) = std::env::var("HOME").ok() else {
-        return Vec::new();
-    };
-    vec![
-        Path::new(&home).join(".synergy/config/AGENTS.md"),
-        Path::new(&home).join(".claude/CLAUDE.md"),
-    ]
-}
-
-fn find_instruction_files() -> Vec<(PathBuf, String)> {
-    let mut seen = HashSet::new();
-    let mut results = Vec::new();
-
-    if let Ok(cwd) = std::env::current_dir() {
-        let mut dir = Some(cwd);
-        while let Some(d) = dir {
-            if !seen.insert(d.clone()) {
-                break;
-            }
-            for name in &FILE_NAMES {
-                let path = d.join(name);
-                if path.is_file()
-                    && let Ok(content) = std::fs::read_to_string(&path)
-                {
-                    results.push((path, content));
-                }
-            }
-            dir = d.parent().map(|p| p.to_path_buf());
-        }
-    }
-
-    for path in global_paths() {
-        if path.is_file()
-            && !results.iter().any(|(p, _)| *p == path)
-            && let Ok(content) = std::fs::read_to_string(&path)
-        {
-            results.push((path, content));
-        }
-    }
-
-    results
 }

@@ -72,6 +72,7 @@ impl Parser {
         self.expect_ident("graph")?;
         self.expect(Token::LBrace)?;
         let mut accelerators = Vec::new();
+        let mut maps = Vec::new();
         let mut fluxes = Vec::new();
         let mut conditions = Vec::new();
         let mut wires = Vec::new();
@@ -79,6 +80,7 @@ impl Parser {
         while !self.eat(Token::RBrace) {
             match self.peek_ident() {
                 Some("accelerator") => accelerators.push(self.graph_accelerator()?),
+                Some("map") => maps.push(self.map_node()?),
                 Some("flux") => fluxes.push(self.flux()?),
                 Some("condition") => conditions.push(self.condition()?),
                 _ => wires.push(self.wire()?),
@@ -87,9 +89,35 @@ impl Parser {
 
         Ok(GraphDef {
             accelerators,
+            maps,
             fluxes,
             conditions,
             wires,
+        })
+    }
+
+    fn map_node(&mut self) -> Result<MapDef, String> {
+        self.expect_ident("map")?;
+        let id = self.expect_ident_any()?;
+        self.expect(Token::LBrace)?;
+        let mut inner_alias = None;
+        let mut scatter = None;
+        let mut gather = None;
+        while !self.eat(Token::RBrace) {
+            let key = self.expect_ident_any()?;
+            self.expect(Token::Equals)?;
+            match key.as_str() {
+                "accelerator" => inner_alias = Some(self.expect_ident_any()?),
+                "scatter" => scatter = Some(self.expect_ident_any()?),
+                "gather" => gather = Some(self.expect_ident_any()?),
+                _ => return Err(format!("unknown map field: {}", key)),
+            }
+        }
+        Ok(MapDef {
+            id,
+            inner_alias: inner_alias.ok_or_else(|| "map requires accelerator".to_string())?,
+            scatter: scatter.ok_or_else(|| "map requires scatter".to_string())?,
+            gather: gather.ok_or_else(|| "map requires gather".to_string())?,
         })
     }
 
@@ -120,6 +148,7 @@ impl Parser {
                 "purpose" => def.purpose = Some(self.expect_string()?),
                 "models" => def.models = self.expect_string_array()?,
                 "policy" => def.policy = Some(self.expect_string()?),
+                "environment" => def.environment = Some(self.expect_string()?),
                 "prompts" => def.prompts = Some(self.prompt_sources()?),
                 "tools" => def.tools = Some(self.expect_string_array()?),
                 "mcps" => def.mcps = Some(self.expect_string_array()?),

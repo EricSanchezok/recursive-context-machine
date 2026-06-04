@@ -12,26 +12,33 @@
 
 ## 输入 Topic
 
-入口从下面两个位置读取 topic，优先级从高到低：
+topic 就是整张图的 **purpose**：
 
-1. 环境变量 `AUTORESEARCH_TOPIC`
-2. 本地文件 `examples/autoresearch-survey/topic.md`
+- 用 CLI 的 `--purpose` 覆盖，或写在 `anchor.rcm` 的 `purpose` 字段里（默认是一个 smoke-test topic）。
 
-如果两者都不存在，系统会使用一个 smoke-test topic。
+purpose 通过 `input.purpose -> anchor.purpose` 注入到 anchor 节点。不再使用 `AUTORESEARCH_TOPIC` 环境变量或 `topic.md` 文件。
 
 示例：
 
+**从本 example 目录运行**（`cd` 进来）。prompt 里的 `schema/`、`runs/` 都是相对当前目录的路径；从这里跑还能让各节点读到本目录的 `AGENTS.md`、而不是仓库根的开发指南。
+
 ```sh
+cd examples/autoresearch-survey
 export DEEPSEEK_API_KEY=sk-...
-export AUTORESEARCH_TOPIC="KV cache compression for long-context large language model inference"
-cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/autoresearch_survey.rcm --speed 0 --context
+export OPENAI_API_KEY=sk-...   # 可选，仅 image_planner 生成全景图时需要
+../../target/release/accelerate run rcm/autoresearch_survey.rcm \
+  --purpose "KV cache compression for long-context large language model inference" \
+  --speed 0 --context
 ```
 
-也可以单跑某个单元：
+不带 `--purpose` 时，使用 `anchor.rcm` 里声明的默认 topic。未设置 `OPENAI_API_KEY` 时，全景图步骤会跳过，survey 仍照常生成（无开头插图）。
+
+也可以单跑某个单元（同样从本目录）：
 
 ```sh
-cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/anchor.rcm --speed 0 --context
-cargo run --bin accelerate -- run examples/autoresearch-survey/rcm/discovery.rcm --speed 0 --context
+../../target/release/accelerate run rcm/anchor.rcm \
+  --purpose "KV cache compression for long-context LLM inference" --speed 0 --context
+../../target/release/accelerate run rcm/discovery.rcm --speed 0 --context
 ```
 
 单跑中游单元时，它会优先读取上游 context 中的 `run_dir`；如果没有，就尝试使用最近一次 `runs/*` 目录。
@@ -61,8 +68,14 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 7. `judge_panel.rcm`  
    并行 coverage、scope、benchmark、gap judges，最后汇总裁决。
 
-8. `survey_writer.rcm`  
-   把 research map 和 judge panel 投影成最终的分节叙事长文 survey，并打印给用户。
+8. `image_planner.rcm`  
+   读 research map，调用 `image_gen` 工具（gpt-image-2）生成领域全景图 `08_global_picture.png`。需要 `OPENAI_API_KEY`；缺失时报 blocked，writer 会跳过插图继续。
+
+9. `survey_writer.rcm`  
+   把 research map 和 judge panel 投影成最终的分节叙事长文 survey，开头插入全景图，并打印给用户。
+
+10. `survey_writer_zh.rcm`  
+   接在 `survey_writer` 之后，把英文成稿 `08_survey.md` 忠实翻译成中文 `08_survey.zh.md`（旁支落盘，不改变图的正式输出仍是英文版）。
 
 `survey_brief.rcm` 仍保留为一个可单跑的单元（生成凝练的可审计简报），但已不在 end-to-end 管线中；管线由 `judge_panel` 直接进入 `survey_writer`。
 
@@ -77,7 +90,9 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 - `04_ranked_pool.md`
 - `05_research_map.md`
 - `06_judge_panel.md`
+- `08_global_picture.png`（需要 `OPENAI_API_KEY`；缺失时跳过）
 - `08_survey.md`
+- `08_survey.zh.md`（中文版）
 - `index.md`
 
 这些文件是 runtime artifacts，默认不进入 git。（单跑 `survey_brief.rcm` 时会额外产出 `07_survey_brief.md`。）

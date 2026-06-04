@@ -9,7 +9,7 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "autoresearch anchor"
+    purpose = "automated literature survey agents with citation graph expansion"
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/anchor.txt" }

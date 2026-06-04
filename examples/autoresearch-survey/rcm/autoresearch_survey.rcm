@@ -7,7 +7,9 @@ use "./expansion.rcm" as Expansion
 use "./rank_pool.rcm" as RankPool
 use "./research_map.rcm" as ResearchMap
 use "./judge_panel.rcm" as JudgePanel
+use "./image_planner.rcm" as ImagePlanner
 use "./survey_writer.rcm" as SurveyWriter
+use "./survey_writer_zh.rcm" as SurveyWriterZh
 
 graph {
     accelerator anchor = Anchor
@@ -17,7 +19,9 @@ graph {
     accelerator rank_pool = RankPool
     accelerator research_map = ResearchMap
     accelerator judge_panel = JudgePanel
+    accelerator image_planner = ImagePlanner
     accelerator survey_writer = SurveyWriter
+    accelerator survey_writer_zh = SurveyWriterZh
 
     flux anchor_handoff {
         channel = context
@@ -61,6 +65,20 @@ graph {
         arity = 1
     }
 
+    flux image_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux survey_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    input.purpose -> anchor.purpose
+
     anchor.context -> anchor_handoff.slot(0)
     anchor_handoff.out -> query_plan.context
     anchor.done -> query_plan.trigger
@@ -86,8 +104,16 @@ graph {
     research_map.done -> judge_panel.trigger
 
     judge_panel.context -> judge_handoff.slot(0)
-    judge_handoff.out -> survey_writer.context
-    judge_panel.done -> survey_writer.trigger
+    judge_handoff.out -> image_planner.context
+    judge_panel.done -> image_planner.trigger
+
+    image_planner.context -> image_handoff.slot(0)
+    image_handoff.out -> survey_writer.context
+    image_planner.done -> survey_writer.trigger
+
+    survey_writer.context -> survey_handoff.slot(0)
+    survey_handoff.out -> survey_writer_zh.context
+    survey_writer.done -> survey_writer_zh.trigger
 
     survey_writer.done -> output.done
     survey_writer.context -> output.context

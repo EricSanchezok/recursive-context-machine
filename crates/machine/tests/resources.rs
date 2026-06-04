@@ -1,4 +1,4 @@
-use machine::{LookupResult, Resources, Tool, ToolResult};
+use machine::{LookupResult, Resources, Tool, ToolDefinition, ToolResult};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -62,10 +62,16 @@ fn tool() -> Arc<dyn Tool> {
 fn other_tool() -> Arc<dyn Tool> {
     Arc::new(AnotherTool)
 }
+fn tool_definition() -> ToolDefinition {
+    ToolDefinition::from_tool(tool().as_ref())
+}
+fn other_tool_definition() -> ToolDefinition {
+    ToolDefinition::from_tool(other_tool().as_ref())
+}
 
 #[test]
 fn enable_makes_lookup_active() {
-    let mut res = Resources::new().with_tool(tool());
+    let mut res = Resources::new().with_tool_definition(tool_definition());
     assert_eq!(res.lookup("test"), LookupResult::Inactive);
     res.enable("test").unwrap();
     assert_eq!(res.lookup("test"), LookupResult::Active);
@@ -73,7 +79,7 @@ fn enable_makes_lookup_active() {
 
 #[test]
 fn disable_makes_lookup_inactive() {
-    let mut res = Resources::new().with_tool(tool());
+    let mut res = Resources::new().with_tool_definition(tool_definition());
     res.enable("test").unwrap();
     assert_eq!(res.lookup("test"), LookupResult::Active);
     res.disable("test");
@@ -87,37 +93,39 @@ fn enable_nonexistent_returns_err() {
 }
 
 #[test]
-fn lookup_active_implies_get_some() {
-    let mut res = Resources::new().with_tool(tool()).with_tool(other_tool());
+fn lookup_active_implies_definition_exists() {
+    let mut res = Resources::new()
+        .with_tool_definition(tool_definition())
+        .with_tool_definition(other_tool_definition());
     res.enable("test").unwrap();
     res.enable("other").unwrap();
     for name in &["test", "other"] {
         assert_eq!(res.lookup(name), LookupResult::Active);
         assert!(
-            res.get(name).is_some(),
-            "get() must return Some for tool '{}' when lookup() == Active",
+            res.tool_definition(name).is_some(),
+            "tool_definition() must return Some for tool '{}' when lookup() == Active",
             name
         );
     }
 }
 
 #[test]
-fn lookup_inactive_implies_get_none() {
-    let res = Resources::new().with_tool(tool());
+fn lookup_inactive_still_has_definition() {
+    let res = Resources::new().with_tool_definition(tool_definition());
     assert_eq!(res.lookup("test"), LookupResult::Inactive);
     assert!(
-        res.get("test").is_none(),
-        "get() must return None when lookup() == Inactive"
+        res.tool_definition("test").is_some(),
+        "inactive registered tools still keep their serializable definition"
     );
 }
 
 #[test]
-fn lookup_not_found_implies_get_none() {
+fn lookup_not_found_has_no_definition() {
     let res = Resources::new();
     assert_eq!(res.lookup("nonexistent"), LookupResult::NotFound);
     assert!(
-        res.get("nonexistent").is_none(),
-        "get() must return None when lookup() == NotFound"
+        res.tool_definition("nonexistent").is_none(),
+        "tool_definition() must return None when lookup() == NotFound"
     );
 }
 
@@ -125,7 +133,7 @@ fn lookup_not_found_implies_get_none() {
 fn inactive_hitch_mentions_disabled() {
     use machine::Fragment;
     use machine::fragment::Content;
-    let res = Resources::new().with_tool(tool());
+    let res = Resources::new().with_tool_definition(tool_definition());
     assert_eq!(res.lookup("test"), LookupResult::Inactive);
     let hitch = Fragment::hitch(
         format!("tool '{}' is disabled — activate it before use", "test"),

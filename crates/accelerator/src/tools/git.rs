@@ -189,10 +189,10 @@ fn check_push(args: &[&str]) -> Result<(), String> {
     }
 
     for arg in args.iter().filter(|arg| !arg.starts_with('-')) {
-        if let Some(branch) = arg.strip_prefix(':') {
-            if PROTECTED_BRANCHES.contains(&branch) {
-                return Err(format!("deleting remote branch '{branch}' is denied"));
-            }
+        if let Some(branch) = arg.strip_prefix(':')
+            && PROTECTED_BRANCHES.contains(&branch)
+        {
+            return Err(format!("deleting remote branch '{branch}' is denied"));
         }
         let target = arg.split(':').next_back().unwrap_or(arg);
         let target = target.trim_start_matches('+');
@@ -255,10 +255,10 @@ fn check_branch(args: &[&str]) -> Result<(), String> {
 }
 
 fn check_stash(args: &[&str]) -> Result<(), String> {
-    if let Some(first) = args.first() {
-        if *first == "drop" || *first == "clear" {
-            return Err(format!("stash {first} discards stashed work; denied"));
-        }
+    if let Some(first) = args.first()
+        && (*first == "drop" || *first == "clear")
+    {
+        return Err(format!("stash {first} discards stashed work; denied"));
     }
     Ok(())
 }

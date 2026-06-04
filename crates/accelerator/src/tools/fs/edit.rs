@@ -293,12 +293,12 @@ fn block_anchor_replacer(content: &str, find: &str) -> Vec<String> {
     // Collect candidates where both anchors match in content.
     // The end anchor is searched after the start anchor + 2 lines.
     let mut candidates: Vec<(usize, usize)> = Vec::new();
-    for i in 0..content_lines.len() {
-        if content_lines[i].trim() != first {
+    for (i, line_i) in content_lines.iter().enumerate() {
+        if line_i.trim() != first {
             continue;
         }
-        for j in (i + 2)..content_lines.len() {
-            if content_lines[j].trim() == last {
+        for (j, line_j) in content_lines.iter().enumerate().skip(i + 2) {
+            if line_j.trim() == last {
                 candidates.push((i, j));
                 break; // first occurrence of last anchor after this start
             }
@@ -595,14 +595,12 @@ fn similar_lines_hint(content: &str, find: &str) -> String {
     let display_end = (best_start + find_lines.len() + context_after).min(content_lines.len());
 
     let mut result = String::from("No match found. Similar lines:\n\n");
-    for i in display_start..display_end {
+    for (i, line) in content_lines[display_start..display_end].iter().enumerate() {
+        let i = display_start + i;
         let line_num = i + 1; // 1-based
         let in_match = i >= best_start && i < best_start + find_lines.len();
         let marker = if in_match { ">" } else { " " };
-        result.push_str(&format!(
-            "{marker} {:05} | {}\n",
-            line_num, content_lines[i]
-        ));
+        result.push_str(&format!("{marker} {:05} | {line}\n", line_num));
     }
     result
 }

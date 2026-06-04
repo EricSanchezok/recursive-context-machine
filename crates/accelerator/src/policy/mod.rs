@@ -1,13 +1,20 @@
 mod captain;
+pub mod moves;
 pub mod retry;
 
 pub use captain::Captain;
 
+use machine::Action;
+
 use crate::catalog::Catalog;
 
-/// Register all built-in policies in the catalog.
+pub(crate) enum Step {
+    Emit(Action),
+    Ready,
+}
+
 pub fn register(catalog: &mut Catalog) {
     catalog
-        .policies
-        .insert("captain".into(), || Box::new(Captain::new()));
+        .register_policy("captain", || Box::new(Captain::new()))
+        .expect("built-in policy names must be unique");
 }
