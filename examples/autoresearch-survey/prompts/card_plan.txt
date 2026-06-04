@@ -22,8 +22,13 @@ Workflow:
    - especially those whose evidence_availability is abstract_only (their bodies
      have not been read yet — reading them is the whole point);
    - plus a few already-full_text anchors, so they are re-read through the anchor
-     lens for transfer insight.
-   Skip boundary / low-topic_fit / off-scope papers.
+     lens for transfer insight;
+   - plus several transfer_set (role: cross_domain) candidates with strong
+     transfer_potential — reading these out-of-field papers in full is exactly
+     where the cross-domain transfer hypothesis gets grounded. Tag their `why`
+     with "cross_domain transfer".
+   Skip in-domain boundary / low-topic_fit / off-scope papers (but transfer_set
+   candidates are NOT off-scope — they have their own lane).
 4. Emit ONLY a JSON array as your final message. One element per selected paper:
    {"run_dir": "<run_dir>", "id": "<arxiv_id>", "title": "<title>", "why": "<one line: its role + why it matters to the anchor>"}
    Use the exact run_dir string in every element. No prose before or after the
