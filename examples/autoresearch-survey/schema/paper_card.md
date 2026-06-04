@@ -21,13 +21,16 @@ One file per paper at `run_dir/cards/<arxiv_id>.md`.
   the anchor's direction? how, and what would block it?* This is the payoff of
   reading the full text through the anchor lens. If there is no clear transfer,
   say so in one line.
-- `evidence`: `full_text` | `partial` | `abstract_only` — be honest about how
-  much of the body you actually read and parsed.
+- `evidence`: `html` | `full_text` | `partial` | `abstract_only` — be honest about
+  how much of the body you actually read and parsed. `html` means the arXiv HTML
+  rendering was used (best structure, some formula residue); `full_text` means PDF
+  text extraction was used (no structure, possible column-order issues); `partial`
+  means only part of the paper was read.
 
 ## Rules
 
 - Ground every claim in the paper. Never fabricate numbers, methods, or results.
-- If the PDF could not be parsed, set `evidence: abstract_only` and say so under
-  `results` — do not pretend to have read the body.
+- If neither the HTML nor the PDF could be read, set `evidence: abstract_only`
+  and say so under `results` — do not pretend to have read the body.
 - Keep it compact (≈ a long abstract plus the transfer note), not a reproduction
   of the paper.
