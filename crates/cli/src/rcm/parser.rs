@@ -321,6 +321,7 @@ impl Parser {
         let mut modalities_output = Vec::new();
         let mut headers = std::collections::HashMap::new();
         let mut thinking = false;
+        let mut timeout = None;
 
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
@@ -349,6 +350,12 @@ impl Parser {
                             format!("thinking must be \"true\" or \"false\", got: {}", value)
                         })?;
                     }
+                    "timeout" => {
+                        let value = self.expect_string()?;
+                        timeout = Some(value.parse().map_err(|_| {
+                            format!("timeout must be a number of seconds, got: {}", value)
+                        })?);
+                    }
                     other => return Err(format!("unknown model field: {}", other)),
                 }
             }
@@ -371,6 +378,7 @@ impl Parser {
             modalities_output,
             headers,
             thinking,
+            timeout,
         })
     }
 
