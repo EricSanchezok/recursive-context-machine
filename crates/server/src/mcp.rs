@@ -2,7 +2,7 @@ use accelerator::mcp::{McpServerConfig, McpTransportConfig};
 use std::collections::HashMap;
 use tonic::Status;
 
-pub fn build_mcp_config(spec: &crate::rcm::McpServerSpec) -> Result<McpServerConfig, Status> {
+pub fn mcp_config_from_spec(spec: &crate::rcm::McpServerSpec) -> Result<McpServerConfig, Status> {
     let transport = spec
         .transport
         .as_ref()
@@ -12,16 +12,16 @@ pub fn build_mcp_config(spec: &crate::rcm::McpServerSpec) -> Result<McpServerCon
         Some(Kind::Stdio(stdio)) => McpTransportConfig::Stdio {
             command: stdio.command.clone(),
             args: stdio.args.clone(),
-            env: resolve_mcp_values(&stdio.env)?,
+            env: mcp_env_from_spec(&stdio.env)?,
             cwd: stdio.cwd.clone().map(std::path::PathBuf::from),
         },
         Some(Kind::Http(http)) => McpTransportConfig::Http {
             url: http.url.clone(),
-            headers: resolve_mcp_pairs(&http.headers)?,
+            headers: mcp_headers_from_spec(&http.headers)?,
         },
         Some(Kind::Sse(sse)) => McpTransportConfig::Sse {
             url: sse.url.clone(),
-            headers: resolve_mcp_pairs(&sse.headers)?,
+            headers: mcp_headers_from_spec(&sse.headers)?,
         },
         None => return Err(Status::invalid_argument("mcp transport kind required")),
     };
@@ -31,30 +31,31 @@ pub fn build_mcp_config(spec: &crate::rcm::McpServerSpec) -> Result<McpServerCon
     })
 }
 
-fn resolve_mcp_values(
+fn mcp_env_from_spec(
     values: &HashMap<String, crate::rcm::McpValueSpec>,
 ) -> Result<HashMap<String, String>, Status> {
     values
         .iter()
-        .map(|(k, v)| Ok((k.clone(), resolve_mcp_value(v)?)))
+        .map(|(name, value)| Ok((name.clone(), mcp_value_text(value)?)))
         .collect()
 }
 
-fn resolve_mcp_pairs(
+fn mcp_headers_from_spec(
     values: &HashMap<String, crate::rcm::McpValueSpec>,
 ) -> Result<Vec<(String, String)>, Status> {
     values
         .iter()
-        .map(|(k, v)| Ok((k.clone(), resolve_mcp_value(v)?)))
+        .map(|(name, value)| Ok((name.clone(), mcp_value_text(value)?)))
         .collect()
 }
 
-fn resolve_mcp_value(value: &crate::rcm::McpValueSpec) -> Result<String, Status> {
+fn mcp_value_text(value: &crate::rcm::McpValueSpec) -> Result<String, Status> {
     use crate::rcm::mcp_value_spec::Source;
     match &value.source {
-        Some(Source::Literal(v)) => Ok(v.clone()),
-        Some(Source::Env(v)) => std::env::var(v)
-            .map_err(|e| Status::invalid_argument(format!("env var '{}' not set: {}", v, e))),
+        Some(Source::Literal(value)) => Ok(value.clone()),
+        Some(Source::Env(name)) => std::env::var(name).map_err(|error| {
+            Status::invalid_argument(format!("env var '{name}' not set: {error}"))
+        }),
         None => Ok(String::new()),
     }
 }

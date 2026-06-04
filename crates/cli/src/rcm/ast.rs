@@ -36,6 +36,7 @@ pub struct PrimitiveDef {
     pub tools: Option<Vec<String>>,
     pub mcps: Option<Vec<String>>,
     pub policy: Option<String>,
+    pub environment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

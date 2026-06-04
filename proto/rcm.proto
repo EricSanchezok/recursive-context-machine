@@ -13,10 +13,14 @@ service RCM {
 
 message OpenRequest {
   string purpose = 1;
-  repeated ModelSpec models = 2;
-  repeated McpServerSpec mcps = 3;
+  repeated ModelSpec model_definitions = 2;
+  repeated McpServerSpec mcp_definitions = 3;
   repeated string tools = 4;
   map<string, string> prompts = 5;
+  repeated string models = 6;
+  repeated string mcps = 7;
+  string policy = 8;
+  string environment = 9;
 }
 
 message ModelSpec {
