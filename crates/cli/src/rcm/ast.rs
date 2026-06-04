@@ -92,6 +92,8 @@ pub struct ModelDef {
     pub modalities_output: Vec<String>,
     pub headers: HashMap<String, String>,
     pub thinking: bool,
+    /// Per-request timeout in seconds. `None` uses the engine default.
+    pub timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]

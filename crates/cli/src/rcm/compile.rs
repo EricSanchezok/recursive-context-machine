@@ -364,7 +364,7 @@ fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String
         } else {
             Some(def.headers.clone())
         };
-        let model = Model {
+        let mut model = Model {
             name: def.id.clone(),
             protocol,
             endpoint: def.endpoint.clone(),
@@ -380,6 +380,9 @@ fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String
             thinking: def.thinking,
             ..Default::default()
         };
+        if let Some(timeout) = def.timeout {
+            model.timeout = timeout;
+        }
         if models.insert(def.id.clone(), model).is_some() {
             return Err(format!("duplicate model: {}", def.id));
         }
