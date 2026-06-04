@@ -195,6 +195,8 @@ impl Parser {
         let mut name = None;
         let mut channel = None;
         let mut mode = None;
+        let mut from = None;
+        let mut to = None;
         let mut arity = None;
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
@@ -203,6 +205,8 @@ impl Parser {
                 "name" => name = Some(self.expect_string()?),
                 "channel" => channel = Some(self.expect_ident_any()?),
                 "mode" => mode = Some(self.expect_ident_any()?),
+                "from" => from = Some(self.expect_ident_any()?),
+                "to" => to = Some(self.expect_ident_any()?),
                 "arity" => arity = Some(self.expect_usize()?),
                 _ => return Err(format!("unknown flux field: {}", key)),
             }
@@ -212,6 +216,8 @@ impl Parser {
             name,
             channel: channel.ok_or_else(|| "flux requires channel".to_string())?,
             mode: mode.ok_or_else(|| "flux requires mode".to_string())?,
+            from,
+            to,
             arity: arity.ok_or_else(|| "flux requires arity".to_string())?,
         })
     }

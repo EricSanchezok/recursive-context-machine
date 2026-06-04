@@ -103,6 +103,8 @@ pub struct FluxDef {
     pub name: Option<String>,
     pub channel: String,
     pub mode: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
     pub arity: usize,
 }
 
