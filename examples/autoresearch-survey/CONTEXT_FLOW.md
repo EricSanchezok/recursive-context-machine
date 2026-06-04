@@ -29,8 +29,9 @@ Every node ends with a handoff in the shape defined by [`schema/handoff.md`](sch
 | `citation_seed_selector` | `run_dir` | `02_candidate_pool.md`, expansion schema | `03a_seed_papers.md` | `run_dir`, seed path, seed count, seed arXiv IDs |
 | `reference_expander` | seed handoff only | `03a_seed_papers.md` | PDFs, `03b_citation_expansion.md` | `run_dir`, artifact path, PDF count, resolved and unresolved reference counts |
 | `semantic_expander` | seed handoff only | `00`, `01`, `02`, `03a` artifacts | `03c_semantic_expansion.md` | `run_dir`, artifact path, new candidate count, query count, top drift risks |
-| `expansion_merger` | expansion handoffs only | `03a`, `03b`, `03c` artifacts | `03_expansion.md` | `run_dir`, expansion path, seed/resolution/addition counts, drift risks |
-| `rank_pool` | `run_dir` | `02_candidate_pool.md`, `03_expansion.md` | `04_ranked_pool.md` | `run_dir`, ranked pool path, core/supporting/boundary counts |
+| `cross_domain_expander` | seed handoff only | `00`, `01`, `02` artifacts | `03d_cross_domain.md` | `run_dir`, artifact path, pattern count, cross-domain candidate count, representative IDs |
+| `expansion_merger` | expansion handoffs only | `03a`–`03d` artifacts | `03_expansion.md` | `run_dir`, expansion path, seed/resolution/addition/cross-domain counts, drift risks |
+| `rank_pool` | `run_dir` | `02_candidate_pool.md`, `03_expansion.md` | `04_ranked_pool.md` | `run_dir`, ranked pool path, core/supporting/boundary/transfer counts |
 | `card_plan` | `run_dir` | `04_ranked_pool.md` | — (emits a JSON work list) | a JSON array of papers to read in full; its final message is consumed by `paper_cards` |
 | `paper_cards` (map) | `card_plan`'s JSON list | each selected paper's PDF (full text) | `cards/<id>.md` per paper | gather digest of the per-paper handoffs |
 | `research_map` | `run_dir` | `cards/`, `00` through `04` artifacts | `05_research_map.md` | `run_dir`, map path, taxonomy names, readiness counts |
@@ -48,6 +49,8 @@ Every node ends with a handoff in the shape defined by [`schema/handoff.md`](sch
 `survey_brief` is no longer in the end-to-end pipeline. The writing stage is now three steps: `survey_outline` (a macro skeleton with a clear through-line, plus a JSON section list) → `section_expand` (a `map` that writes one detailed, card-grounded section per element) → `survey_assembler` (stitch the sections, embed the figure, and build one deduped reference list). The brief unit (`survey_brief.rcm`, reading the judge panel and writing `07_survey_brief.md`) is kept for standalone audit runs.
 
 Depth comes from reading full text, not abstracts: `card_plan` selects the papers that matter, `paper_cards` reads each PDF in full — through the research anchor's lens, noting cross-domain transfer potential — and writes a compact card, and `section_expand` writes each section from those cards. No single node holds the whole diff of papers or the whole survey.
+
+Cross-domain transfer is its own lane. At expansion, `cross_domain_expander` abstracts our methods into domain-agnostic patterns and searches *other* fields (neighbouring fields first) for work that shares them, adding them with `role: cross_domain`. That role is carried through as a separate `transfer_set` in the ranked pool (ranked by `transfer_potential`, never penalised for low `topic_fit`), a `cross_domain_transfer` section in the research map, and a dedicated cross-domain section in the survey. The `scope_judge` treats it as intentional inspiration, not scope leakage; `card_plan` also reads a few transfer candidates in full so their transfer hypothesis is grounded — but a cross-domain *result* is never reported as an in-field result.
 
 ## Wiring Rules
 

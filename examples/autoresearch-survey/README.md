@@ -57,7 +57,7 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
    并行运行 method、benchmark、survey、frontier scouts，产出初始 candidate pool。
 
 4. `expansion.rcm`  
-   执行 citation graph expansion 和 semantic neighbor expansion。
+   三条并行支路:citation graph expansion、semantic neighbor expansion,以及 **cross-domain transfer mining**——把已发现方法抽象成领域无关的 pattern,拿去搜**其它领域**(优先邻域)里共享这些 pattern、可能带来迁移 insight 的论文,以 `role: cross_domain` 入池(单独的 transfer lane,不混进本域池)。
 
 5. `rank_pool.rcm`  
    只列 signals，不给总分，筛出核心论文和边界论文。

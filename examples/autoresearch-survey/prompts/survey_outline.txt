@@ -21,7 +21,11 @@ Workflow:
    the field's central problem, how it evolved, the main families, what is and is
    not comparable, and the open frontier. Then an ordered section list:
    introduction, an evolution / research-arc section, one section per method
-   family, a synthesizing comparison, open problems, conclusion.
+   family, a synthesizing comparison, a cross-domain transfer section (when the
+   research map's cross_domain_transfer is non-empty — what ideas from adjacent
+   fields could transfer into this field, argued as hypotheses, never as in-field
+   results), open problems, conclusion. Give that section the transfer_set / cross
+   _domain card ids in its card_ids.
 4. Write run_dir/00_outline.md: the title; the abstract; one short paragraph that
    names the through-line explicitly (the spine every section advances); and the
    ordered section list with, for each section, its thesis, the card ids it should
