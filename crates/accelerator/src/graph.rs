@@ -636,10 +636,7 @@ fn state_with_channel(channel: Channel, source: &State) -> State {
     let mut state = State::default();
     match channel {
         Channel::Purpose => state.purpose.clone_from(&source.purpose),
-        Channel::Context => {
-            state.ctx = source.ctx.clone();
-            state.fold_payload.clone_from(&source.fold_payload);
-        }
+        Channel::Context => state.ctx = source.ctx.clone(),
         Channel::Environment => state.env = source.env.clone(),
         Channel::Resources => state.res = source.res.clone(),
         Channel::Pulse => {}
@@ -650,10 +647,7 @@ fn state_with_channel(channel: Channel, source: &State) -> State {
 fn set_channel(target: &mut State, channel: Channel, source: State) {
     match channel {
         Channel::Purpose => target.purpose = source.purpose,
-        Channel::Context => {
-            target.ctx = source.ctx;
-            target.fold_payload = source.fold_payload;
-        }
+        Channel::Context => target.ctx = source.ctx,
         Channel::Environment => target.env = source.env,
         Channel::Resources => target.res = source.res,
         Channel::Pulse => {}
