@@ -77,8 +77,8 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 10. `survey_outline.rcm` → `section_expand`（map）→ `survey_assembler.rcm`  
     撰写分三步：`survey_outline` 先定**宏观骨架**（清晰脉络 + 每节的 thesis / 引用卡片 / transfer 角度），并产出一个 JSON 章节清单；`section_expand` 是一个 `map` 节点，对每个章节**并行**地基于卡片写出**足够细致**的一节到 `sections/<n>_<slug>.md`；`survey_assembler` 把各节拼接、插入全景图、并汇成单一去重的参考文献表，产出 `08_survey.md` 与 `index.md`。
 
-11. `survey_writer_zh.rcm`  
-    接在 `survey_assembler` 之后，把英文成稿 `08_survey.md` 忠实翻译成中文 `08_survey.zh.md`（旁支落盘，正式输出仍是英文版）。
+11. `zh_frame.rcm` → `zh_sections`（map）→ `zh_assemble.rcm`  
+    中文版分三步(旁支,正式输出仍是英文):`zh_frame` 先翻译标题/摘要并建立**术语表**(保留 Transformer、ImageNet、方法名等专有名词为英文,统一可译术语的中文);`zh_sections` 是一个 `map`,**并行**按节翻译(以术语表为参照,避免术语漂移、行文更顺),写 `sections_zh/<n>_<slug>.md`;`zh_assemble` 把各节中文**拼接**(不重译)成 `08_survey.zh.md`。`survey_writer_zh.rcm` 仍作为可单跑的一次性翻译单元保留。
 
 `survey_brief.rcm` 仍保留为一个可单跑的单元（生成凝练的可审计简报），但已不在 end-to-end 管线中。
 

@@ -12,10 +12,10 @@ use crate::wire::{Channel, ComponentId, ComponentRef, Endpoint, Port, PortOwner,
 
 /// Maximum number of components executed concurrently within a single frontier.
 /// Bounds a wide `map` fan-out (one worker per item over a runtime-sized list) so
-/// it does not overwhelm external services (model / arXiv APIs). Ordinary
-/// frontiers — sequential pipelines, the handful of parallel scouts/judges — are
-/// smaller than this and run unaffected.
-const FRONTIER_CONCURRENCY: usize = 6;
+/// it does not launch hundreds of model / arXiv calls at once, while still
+/// allowing healthy parallelism. Ordinary frontiers — sequential pipelines, the
+/// handful of parallel scouts/judges — are smaller than this and run unaffected.
+const FRONTIER_CONCURRENCY: usize = 16;
 
 #[derive(Clone)]
 pub struct Graph {

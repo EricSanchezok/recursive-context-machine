@@ -21,6 +21,9 @@ fn compile_autoresearch_survey_rcm_files() {
         "examples/autoresearch-survey/rcm/survey_outline.rcm",
         "examples/autoresearch-survey/rcm/section_expander.rcm",
         "examples/autoresearch-survey/rcm/survey_assembler.rcm",
+        "examples/autoresearch-survey/rcm/zh_frame.rcm",
+        "examples/autoresearch-survey/rcm/section_translator.rcm",
+        "examples/autoresearch-survey/rcm/zh_assemble.rcm",
         "examples/autoresearch-survey/rcm/survey_brief.rcm",
         "examples/autoresearch-survey/rcm/autoresearch_survey.rcm",
     ];
