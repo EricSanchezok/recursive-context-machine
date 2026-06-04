@@ -6,8 +6,8 @@ use std::pin::Pin;
 use accelerator::mcp::{McpRegistry, McpServerConfig, McpTransportConfig};
 use accelerator::{
     Accelerator, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate, Endpoint, EnvFlux,
-    EnvironmentPredicate, FluxMode, Graph, Port, Predicate as AccelPredicate, PurposeFlux,
-    PurposePredicate, ResFlux, ResourcesPredicate, State,
+    EnvironmentPredicate, FluxMode, GatherSpec, Graph, Port, Predicate as AccelPredicate,
+    PurposeFlux, PurposePredicate, ResFlux, ResourcesPredicate, ScatterSpec, State,
 };
 use machine::{Limit, Modalities, Modality, Model, Policy, Protocol};
 
@@ -138,6 +138,21 @@ impl Compiler {
             let component = graph.add_accelerator(accelerator_def.id.as_str(), accelerator);
             insert_symbol(&mut symbols, accelerator_def.id.as_str(), component)?;
             component_kinds.insert(accelerator_def.id.clone(), ComponentTag::Accelerator);
+        }
+
+        for map_def in &graph_def.maps {
+            let inner = imports
+                .get(&map_def.inner_alias)
+                .ok_or_else(|| format!("unknown map accelerator import: {}", map_def.inner_alias))?
+                .clone();
+            let scatter = resolve_scatter(&map_def.scatter)?;
+            let gather = resolve_gather(&map_def.gather)?;
+            let accelerator = Accelerator::map_named(map_def.id.as_str(), inner, scatter, gather);
+            // A Map wires exactly like an accelerator node (one context in/out,
+            // trigger, done), so it is tagged Accelerator for port resolution.
+            let component = graph.add_accelerator(map_def.id.as_str(), accelerator);
+            insert_symbol(&mut symbols, map_def.id.as_str(), component)?;
+            component_kinds.insert(map_def.id.clone(), ComponentTag::Accelerator);
         }
 
         for flux_def in &graph_def.fluxes {
@@ -491,6 +506,20 @@ fn resolve_prompts(
         prompts.insert(name.clone(), content);
     }
     Ok(prompts)
+}
+
+fn resolve_scatter(name: &str) -> Result<ScatterSpec, String> {
+    match name {
+        "json" => Ok(ScatterSpec::Json),
+        other => Err(format!("unknown map scatter: {}", other)),
+    }
+}
+
+fn resolve_gather(name: &str) -> Result<GatherSpec, String> {
+    match name {
+        "digest" => Ok(GatherSpec::Digest),
+        other => Err(format!("unknown map gather: {}", other)),
+    }
 }
 
 fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {

@@ -1,0 +1,27 @@
+name = "Map Smoke"
+
+// Minimal demo of the `map` fan-out primitive. A `map` node runs an imported
+// accelerator once per item, concurrently, then gathers the results.
+//
+// `scatter = json` splits the Map's incoming context: it parses the last
+// assistant message as a JSON array and runs `Inner` once per element (each
+// element is injected into that run's context as an `item` fragment). A
+// non-array message degrades to a single run, so the Map never hard-fails.
+//
+// `gather = digest` merges each run's final message into one summary context.
+//
+// In a real pipeline an upstream node emits the JSON array (e.g. a planner that
+// lists sections or papers). Run standalone (no upstream array) it does one run.
+
+use "./inner.rcm" as Inner
+
+graph {
+    map fan {
+        accelerator = Inner
+        scatter = json
+        gather  = digest
+    }
+
+    fan.done -> output.done
+    fan.context -> output.context
+}
