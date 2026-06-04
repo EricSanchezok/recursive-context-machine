@@ -112,6 +112,18 @@ impl Graph {
         GraphRun::new(self, input).run().await
     }
 
+    /// Run with specific per-component initial inputs (by component id), on top of
+    /// any boundary-input wiring. Used by a `Map` to seed each dynamically-added
+    /// worker with its own item before execution.
+    pub async fn run_seeded(self, input: State, seeds: Vec<(ComponentId, State)>) -> State {
+        self.validate().expect("invalid graph");
+        let mut run = GraphRun::new(self, input);
+        for (id, state) in seeds {
+            run.inputs[id.index()] = state;
+        }
+        run.run().await
+    }
+
     fn validate_flux_inputs(&self) -> Result<(), String> {
         let mut filled_slots = self
             .components

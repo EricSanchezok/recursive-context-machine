@@ -41,9 +41,23 @@ pub struct PrimitiveDef {
 #[derive(Debug, Clone, Serialize)]
 pub struct GraphDef {
     pub accelerators: Vec<GraphAcceleratorDef>,
+    pub maps: Vec<MapDef>,
     pub fluxes: Vec<FluxDef>,
     pub conditions: Vec<ConditionDef>,
     pub wires: Vec<WireDef>,
+}
+
+/// A `map` node: fans an imported accelerator out over a runtime-sized list.
+/// Wires like an ordinary accelerator; the fan-out happens inside the engine.
+#[derive(Debug, Clone, Serialize)]
+pub struct MapDef {
+    pub id: String,
+    /// Alias of a `use`-imported accelerator to run per item.
+    pub inner_alias: String,
+    /// How to split the input into items (e.g. `json`).
+    pub scatter: String,
+    /// How to merge per-item outputs (e.g. `digest`).
+    pub gather: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
