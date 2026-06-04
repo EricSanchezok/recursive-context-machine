@@ -2,11 +2,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use machine::{Action, Content, Context, Environment, Inbox, Policy, Purpose, Resources, Role};
-use tracing::{trace, warn};
+use machine::{Action, Context, Environment, Inbox, Policy, Purpose, Resources};
 
-use super::retry::{HTTP_FORBIDDEN, HTTP_UNAUTHORIZED, Retry};
+use super::retry::Retry;
 use super::{Step, moves};
+use moves::react::ReactDecision;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -157,43 +157,13 @@ impl Policy for Captain {
                 return self.respond(ctx, env);
             }
 
-            if inbox.peek().is_some() {
-                return Action::Take;
-            }
-
-            let last = ctx.fragments().last();
-
-            if let Some(fragment) = last
-                && let Content::Hitch { code, .. } = &fragment.content
-            {
-                if let Some(status_code) = code
-                    && (*status_code == HTTP_UNAUTHORIZED || *status_code == HTTP_FORBIDDEN)
-                {
-                    warn!(code = *status_code, "decide: permanent hitch, done");
-                    return Action::Done;
-                }
-
-                if self.retry.backoff().await {
-                    let attempts = self.retry.count();
-                    trace!(attempts, "decide: hitched, retrying");
+            match moves::react::decide(ctx, inbox, &self.retry).await {
+                ReactDecision::Action(action) => action,
+                ReactDecision::Respond => {
                     self.enter(Phase::Respond);
-                    return self.respond(ctx, env);
+                    self.respond(ctx, env)
                 }
-
-                warn!("decide: retry budget exhausted, done");
-                return Action::Done;
             }
-
-            self.retry.reset();
-
-            if last.is_some_and(|fragment| fragment.role == Role::Tool) {
-                trace!("decide: last is Tool, halting");
-                self.enter(Phase::Respond);
-                return self.respond(ctx, env);
-            }
-
-            trace!("decide: done");
-            Action::Done
         })
     }
 }
