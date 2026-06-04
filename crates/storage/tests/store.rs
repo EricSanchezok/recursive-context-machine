@@ -1,8 +1,9 @@
 use machine::{
-    Action, ActionOutcome, Environment, Fragment, MachineEvent, Model, Resources, ToolDefinition,
+    Action, ActionOutcome, Environment, Fragment, MachineEvent, MachineState, Model, Resources,
+    ToolDefinition,
 };
 use serde_json::json;
-use storage::{MachineState, Store};
+use storage::Store;
 use tempfile::TempDir;
 
 fn model(name: &str) -> Model {
@@ -31,15 +32,15 @@ fn state_with_resources() -> MachineState {
     }
 }
 
-#[test]
-fn restore_returns_none_for_empty_store() {
+#[tokio::test]
+async fn restore_returns_none_for_empty_store() {
     let dir = TempDir::new().unwrap();
     let store = Store::open(dir.path()).unwrap();
-    assert!(store.restore().unwrap().is_none());
+    assert!(store.restore().await.unwrap().is_none());
 }
 
-#[test]
-fn record_and_restore_context_actions() {
+#[tokio::test]
+async fn record_and_restore_context_actions() {
     let dir = TempDir::new().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
 
@@ -58,15 +59,15 @@ fn record_and_restore_context_actions() {
         ))
         .unwrap();
 
-    let restored = store.restore().unwrap().unwrap();
+    let restored = store.restore().await.unwrap().unwrap();
     assert_eq!(restored.context.fragments().len(), 2);
     assert_eq!(restored.context.fragments()[0].as_text(), Some("hello"));
     assert_eq!(restored.context.fragments()[1].as_text(), Some("world"));
     assert_eq!(restored.step, 2);
 }
 
-#[test]
-fn restore_replays_runtime_resource_actions() {
+#[tokio::test]
+async fn restore_replays_runtime_resource_actions() {
     let dir = TempDir::new().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let mut state = state_with_resources();
@@ -94,7 +95,7 @@ fn restore_replays_runtime_resource_actions() {
         ))
         .unwrap();
 
-    let restored = store.restore().unwrap().unwrap();
+    let restored = store.restore().await.unwrap().unwrap();
     assert_eq!(restored.resources.active_model, "fast");
     assert!(!restored.resources.active_tools.contains("search"));
     assert_eq!(restored.step, 3);
@@ -112,8 +113,8 @@ fn restore_replays_runtime_resource_actions() {
     );
 }
 
-#[test]
-fn failed_action_replays_recorded_inbox_hitch() {
+#[tokio::test]
+async fn failed_action_replays_recorded_inbox_hitch() {
     let dir = TempDir::new().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let hitch = Fragment::hitch(
@@ -127,7 +128,7 @@ fn failed_action_replays_recorded_inbox_hitch() {
         .record(&MachineEvent::state(1, Action::Remove(999), vec![hitch]))
         .unwrap();
 
-    let restored = store.restore().unwrap().unwrap();
+    let restored = store.restore().await.unwrap().unwrap();
     assert_eq!(restored.context.fragments().len(), 0);
     assert_eq!(restored.inbox.len(), 1);
     assert!(
@@ -140,8 +141,8 @@ fn failed_action_replays_recorded_inbox_hitch() {
     );
 }
 
-#[test]
-fn halt_output_replays_through_inbox_and_take() {
+#[tokio::test]
+async fn halt_output_replays_through_inbox_and_take() {
     let dir = TempDir::new().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
 
@@ -166,14 +167,16 @@ fn halt_output_replays_through_inbox_and_take() {
         .record(&MachineEvent::state(2, Action::Take, Vec::new()))
         .unwrap();
 
-    let restored = store.restore().unwrap().unwrap();
+    let restored = store.restore().await.unwrap().unwrap();
     assert_eq!(restored.context.fragments().len(), 1);
     assert_eq!(restored.context.fragments()[0].as_text(), Some("answer"));
     assert!(restored.inbox.is_empty());
+    assert_eq!(restored.usages.len(), 1);
+    assert_eq!(restored.usages[0].total_tokens, 2);
 }
 
-#[test]
-fn checkpoint_skips_replaying_old_events() {
+#[tokio::test]
+async fn checkpoint_skips_replaying_old_events() {
     let dir = TempDir::new().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
 
@@ -196,7 +199,7 @@ fn checkpoint_skips_replaying_old_events() {
         ))
         .unwrap();
 
-    let restored = store.restore().unwrap().unwrap();
+    let restored = store.restore().await.unwrap().unwrap();
     assert_eq!(restored.context.fragments().len(), 2);
     assert_eq!(
         restored.context.fragments()[0].as_text(),
