@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use accelerator::{Catalog, ResourceSelection};
-use machine::{Inbox, Machine, MachineRuntime};
+use machine::{ApplyContext, ApplyMode, Inbox, Machine};
 use tonic::{Request, Response, Status};
 
 use crate::action_space::build_action_space;
@@ -74,6 +76,8 @@ impl Rcm for RcmService {
             resources: runtime_resources.resources,
             tool_runtime: runtime_resources.tool_runtime,
             inbox: Inbox::new(),
+            usages: Vec::new(),
+            counts: HashMap::new(),
             step: 0,
             done: false,
         };
@@ -112,12 +116,16 @@ impl Rcm for RcmService {
             .apply(
                 action,
                 run.step,
-                MachineRuntime {
+                ApplyContext {
                     ctx: &mut run.ctx,
                     env: &mut run.env,
                     resources: &mut run.resources,
-                    tool_runtime: &run.tool_runtime,
                     inbox: &mut run.inbox,
+                    usages: &mut run.usages,
+                    counts: &mut run.counts,
+                },
+                ApplyMode::Live {
+                    tool_runtime: &run.tool_runtime,
                 },
             )
             .await;
