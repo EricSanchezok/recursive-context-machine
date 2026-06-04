@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use machine::{Environment, Model, Policy, Resources, Tool};
+use tokio::sync::OnceCell;
 
 use crate::mcp::McpServerConfig;
 
@@ -16,11 +17,17 @@ pub struct Catalog {
 }
 
 #[derive(Clone, Default)]
-pub struct ResourceCatalog {
+struct ResourceCatalog {
     tools: HashMap<String, Arc<dyn Tool>>,
     models: HashMap<String, Model>,
     prompts: HashMap<String, String>,
-    mcp_servers: HashMap<String, McpServerConfig>,
+    mcp_servers: HashMap<String, McpServerEntry>,
+}
+
+#[derive(Clone)]
+struct McpServerEntry {
+    config: McpServerConfig,
+    tools: Arc<OnceCell<Vec<Arc<dyn Tool>>>>,
 }
 
 #[derive(Clone, Default)]
@@ -28,7 +35,7 @@ pub struct ResourceSelection {
     pub models: Vec<String>,
     pub tools: Vec<String>,
     pub mcp_servers: Vec<String>,
-    pub prompts: HashMap<String, String>,
+    pub prompt_texts: HashMap<String, String>,
 }
 
 impl Catalog {
@@ -101,9 +108,13 @@ impl Catalog {
     pub fn register_mcp_server(&mut self, config: McpServerConfig) -> Result<(), String> {
         ensure_name_is_usable(&config.label, "mcp server")?;
         ensure_name_is_free(&self.resources.mcp_servers, &config.label, "mcp server")?;
-        self.resources
-            .mcp_servers
-            .insert(config.label.clone(), config);
+        self.resources.mcp_servers.insert(
+            config.label.clone(),
+            McpServerEntry {
+                config,
+                tools: Arc::new(OnceCell::new()),
+            },
+        );
         Ok(())
     }
 
@@ -121,14 +132,14 @@ impl Catalog {
             .ok_or_else(|| format!("unknown environment: {name}"))
     }
 
-    pub async fn resources_for(&self, selection: ResourceSelection) -> Result<Resources, String> {
+    pub async fn build_runtime_resources(
+        &self,
+        selection: ResourceSelection,
+    ) -> Result<Resources, String> {
         let mut resources = Resources::new();
         let mut selected_tool_names = HashSet::new();
 
-        for (name, content) in &self.resources.prompts {
-            resources.prompts.insert(name.clone(), content.clone());
-        }
-        for (name, content) in selection.prompts {
+        for (name, content) in selection.prompt_texts {
             ensure_name_is_usable(&name, "prompt")?;
             resources.prompts.insert(name, content);
         }
@@ -155,18 +166,23 @@ impl Catalog {
         }
 
         for server_name in selection.mcp_servers {
-            let config = self
+            let entry = self
                 .resources
                 .mcp_servers
                 .get(&server_name)
-                .cloned()
                 .ok_or_else(|| format!("unknown mcp server: {server_name}"))?;
-            let registry = crate::mcp::McpRegistry::start(&[config]).await?;
-            let tools = registry.tools_for(&server_name).unwrap_or_default();
+            let tools = entry
+                .tools
+                .get_or_try_init(|| async {
+                    let registry =
+                        crate::mcp::McpRegistry::start(std::slice::from_ref(&entry.config)).await?;
+                    Ok::<_, String>(registry.tools_for(&server_name).unwrap_or_default())
+                })
+                .await?;
             for tool in tools {
                 ensure_name_is_usable(tool.name(), "mcp tool")?;
                 remember_selected_tool(&mut selected_tool_names, tool.name())?;
-                resources = resources.with_tool(tool);
+                resources = resources.with_tool(tool.clone());
             }
         }
 

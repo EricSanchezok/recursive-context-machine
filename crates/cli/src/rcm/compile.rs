@@ -396,11 +396,11 @@ async fn build_state(
     let policy_name = def.policy.as_deref().unwrap_or("captain");
     let policy = catalog.policy(policy_name)?;
     let resources = catalog
-        .resources_for(ResourceSelection {
+        .build_runtime_resources(ResourceSelection {
             models: def.models.clone(),
             tools: def.tools.clone().unwrap_or_default(),
             mcp_servers: def.mcps.clone().unwrap_or_default(),
-            prompts: match &def.prompts {
+            prompt_texts: match &def.prompts {
                 Some(prompt_sources) => prompt_texts_from_sources(prompt_sources, root)?,
                 None => HashMap::new(),
             },
