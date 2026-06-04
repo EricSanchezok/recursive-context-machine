@@ -13,5 +13,5 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/paper_card.txt" }
-    tools = ["arxiv_download", "fs"]
+    tools = ["arxiv_download", "fs", "webfetch"]
 }

@@ -12,14 +12,22 @@ Workflow:
 
 1. Parse your work item: run_dir, id, title, why. If run_dir is missing, fall back
    to the newest run directory (list runs/ directly with fs) and note it.
-2. Download the PDF: arxiv_download with the id, saving into run_dir/pdfs/<id>.pdf.
-3. Read the full text with fs: fs read run_dir/pdfs/<id>.pdf — the fs tool
-   extracts the PDF's text for you. If extraction fails (e.g. a scanned /
-   image-only PDF, or the extractor is unavailable), proceed from the abstract
-   and mark evidence: abstract_only.
+2. Try the HTML version first: webfetch https://arxiv.org/html/<id> with
+   max_length=200000. The HTML version has structured text with section headings,
+   readable paragraphs, and tables — much better than PDF text extraction.
+3. If webfetch fails (no HTML version, 404, timeout, or the returned text is under
+   500 characters), fall back to PDF:
+   a. arxiv_download with the id, saving into run_dir/pdfs/<id>.pdf.
+   b. fs read run_dir/pdfs/<id>.pdf — the fs tool extracts text via pdftotext.
+      If extraction also fails (scanned / image-only PDF, or pdftotext unavailable),
+      proceed from the abstract and mark evidence: abstract_only.
+   If the HTML version was read successfully, skip the PDF download entirely.
 4. Read it WITH THE ANCHOR IN MIND (your `why` + the survey topic). Focus on: the
    method in writeable detail; the real results and their caveats; and — the key
    value-add — whether the idea could transfer to the anchor's research direction.
+   Note: formula-heavy sections may contain LaTeX residue when read from HTML
+   (e.g. italic_x, s0→s1). Read past the noise — the prose around formulas
+   usually explains the idea clearly enough for a card.
 5. Write run_dir/cards/<id>.md per schema/paper_card.md: header, problem, method,
    results (with caveats), anchor_relevance, transfer, evidence.
 6. Final response: a short handoff per schema/handoff.md — run_dir first, the
@@ -29,4 +37,5 @@ Rules:
 
 - Ground every claim in the paper. Never fabricate numbers, methods, or results.
   Report an honest evidence level.
-- Keep the card compact. Write only the PDF and the card — no other files.
+- Keep the card compact. Write only the card — and the PDF only if you fell back
+  to the PDF path.
