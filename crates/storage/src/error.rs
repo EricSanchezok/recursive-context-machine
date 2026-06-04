@@ -99,6 +99,8 @@ pub mod codes {
     pub const OFFSET_OUT_OF_RANGE: u16 = 3002;
     pub const SEGMENT_NOT_FOUND: u16 = 3003;
     pub const MANIFEST_ERROR: u16 = 4001;
+    pub const CODEC: u16 = 5001;
+    pub const REPLAY_FAILED: u16 = 5002;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -134,6 +136,10 @@ pub enum WalError {
     },
     #[error("invalid input: {detail}")]
     InvalidInput { detail: &'static str },
+    #[error("codec error: {detail}")]
+    Codec { detail: String },
+    #[error("replay failed at offset {offset}: {detail}")]
+    ReplayFailed { offset: u64, detail: String },
 }
 
 impl WalError {
@@ -156,6 +162,8 @@ impl WalError {
             Self::OffsetOutOfRange { .. } => codes::OFFSET_OUT_OF_RANGE,
             Self::SegmentNotFound { .. } => codes::SEGMENT_NOT_FOUND,
             Self::ManifestError { .. } => codes::MANIFEST_ERROR,
+            Self::Codec { .. } => codes::CODEC,
+            Self::ReplayFailed { .. } => codes::REPLAY_FAILED,
         }
     }
 
@@ -167,9 +175,11 @@ impl WalError {
             Self::SegmentCorrupted { .. }
             | Self::SnapshotCorrupted { .. }
             | Self::IndexCorrupted { .. } => Severity::Integrity,
-            Self::ManifestError { .. } | Self::Io { .. } | Self::InvalidInput { .. } => {
-                Severity::Fatal
-            }
+            Self::ManifestError { .. }
+            | Self::Io { .. }
+            | Self::InvalidInput { .. }
+            | Self::Codec { .. }
+            | Self::ReplayFailed { .. } => Severity::Fatal,
         }
     }
 
@@ -201,6 +211,12 @@ impl WalError {
             }
             Self::InvalidInput { .. } => {
                 "The input is too large or malformed. Reduce the payload size and retry."
+            }
+            Self::Codec { .. } => {
+                "Stored data could not be encoded or decoded. Check the storage format version."
+            }
+            Self::ReplayFailed { .. } => {
+                "A recorded machine event could not be applied to the restored state."
             }
         }
     }

@@ -1,4 +1,5 @@
 pub use error::{WalError, WalResult};
+pub use store::{MachineState, Store};
 
 pub mod error;
 pub mod index;
@@ -6,6 +7,7 @@ mod io;
 pub mod manifest;
 pub mod segment;
 pub mod snapshot;
+pub mod store;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

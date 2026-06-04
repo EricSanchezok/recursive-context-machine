@@ -105,8 +105,14 @@ impl Compiler {
 
         match &file.body {
             AcceleratorBodyDef::Primitive(primitive) => {
-                let (state, policy) = build_state(&catalog, primitive, &self.root).await?;
-                Ok(Accelerator::primitive(state, policy, file.name.as_str()))
+                let (state, policy, tool_runtime) =
+                    build_state(&catalog, primitive, &self.root).await?;
+                Ok(Accelerator::primitive(
+                    state,
+                    policy,
+                    tool_runtime,
+                    file.name.as_str(),
+                ))
             }
             AcceleratorBodyDef::Graph(graph_def) => {
                 let graph = self
@@ -131,8 +137,9 @@ impl Compiler {
         for accelerator_def in &graph_def.accelerators {
             let accelerator = match &accelerator_def.source {
                 AcceleratorSourceDef::Inline(primitive) => {
-                    let (state, policy) = build_state(catalog, primitive, &self.root).await?;
-                    Accelerator::primitive(state, policy, accelerator_def.id.as_str())
+                    let (state, policy, tool_runtime) =
+                        build_state(catalog, primitive, &self.root).await?;
+                    Accelerator::primitive(state, policy, tool_runtime, accelerator_def.id.as_str())
                 }
                 AcceleratorSourceDef::Import { alias, .. } => imports
                     .get(alias)
@@ -388,14 +395,14 @@ async fn build_state(
     catalog: &Catalog,
     def: &PrimitiveDef,
     root: &Path,
-) -> Result<(State, Box<dyn Policy>), String> {
+) -> Result<(State, Box<dyn Policy>, machine::ToolRuntime), String> {
     if def.models.is_empty() {
         return Err("accelerator requires at least one model".to_string());
     }
 
     let policy_name = def.policy.as_deref().unwrap_or("captain");
     let policy = catalog.policy(policy_name)?;
-    let resources = catalog
+    let runtime_resources = catalog
         .build_runtime_resources(ResourceSelection {
             models: def.models.clone(),
             tools: def.tools.clone().unwrap_or_default(),
@@ -406,7 +413,7 @@ async fn build_state(
             },
         })
         .await?;
-    let mut resources = resources;
+    let mut resources = runtime_resources.resources;
     resources.deactivate_model();
     resources.deactivate_tools();
 
@@ -418,6 +425,7 @@ async fn build_state(
             ..State::default()
         },
         policy,
+        runtime_resources.tool_runtime,
     ))
 }
 

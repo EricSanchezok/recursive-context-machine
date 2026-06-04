@@ -1,5 +1,5 @@
 use machine::hook;
-use machine::{Action, Fragment, Inbox, Machine, Purpose, Role};
+use machine::{Action, Fragment, Inbox, Machine, Purpose, Role, ToolRuntime};
 use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
@@ -32,12 +32,17 @@ impl Accelerator {
     pub fn primitive(
         state: State,
         policy: Box<dyn machine::Policy>,
+        tool_runtime: ToolRuntime,
         name: impl Into<String>,
     ) -> Self {
         Self {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
-            body: AcceleratorBody::Primitive(PrimitiveAccelerator { state, policy }),
+            body: AcceleratorBody::Primitive(PrimitiveAccelerator {
+                state,
+                policy,
+                tool_runtime,
+            }),
         }
     }
 
@@ -144,6 +149,7 @@ enum AcceleratorBody {
 struct PrimitiveAccelerator {
     state: State,
     policy: Box<dyn machine::Policy>,
+    tool_runtime: ToolRuntime,
 }
 
 impl PrimitiveAccelerator {
@@ -175,6 +181,7 @@ impl PrimitiveAccelerator {
         let mut step = 0u64;
         let mut machine = Machine::new("ephemeral", "ephemeral");
         let policy = self.policy;
+        let tool_runtime = self.tool_runtime;
         let mut reorder_pending = needs_reorder;
 
         hook!(event = "machine_start", purpose = %purpose.text);
@@ -229,17 +236,18 @@ impl PrimitiveAccelerator {
                 }
             }
 
-            if machine
+            let result = machine
                 .apply(
                     action,
                     step,
                     &mut state.ctx,
                     &mut state.env,
                     &mut state.res,
+                    &tool_runtime,
                     &mut inbox,
                 )
-                .await
-            {
+                .await;
+            if result.done {
                 break;
             }
         }
