@@ -26,8 +26,10 @@ Workflow:
      (use run_dir/04_ranked_pool.md for any cited paper without a card). Never
      invent references.
 4. Write run_dir/index.md: a short manifest linking all run artifacts (including
-   08_global_picture.png when present and the Chinese edition 08_survey.zh.md from
-   the translator) and naming 08_survey.md as the final product.
+   08_global_picture.png when present) and naming 08_survey.md as the final
+   product. Also list the Chinese edition 08_survey.zh.md, but note it is written
+   by the downstream translation step and may not exist yet when this manifest is
+   written — never present its link as if the file were already there.
 5. Final response: a handoff per schema/handoff.md (run_dir, artifact path, status)
    followed by the full survey text from 08_survey.md so the user sees it directly.
 
