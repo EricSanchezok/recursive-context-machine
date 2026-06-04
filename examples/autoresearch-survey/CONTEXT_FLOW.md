@@ -44,7 +44,9 @@ Every node ends with a handoff in the shape defined by [`schema/handoff.md`](sch
 | `survey_outline` | image handoff only | `05`, `06`, `cards/` | `00_outline.md` (+ JSON section list) | a JSON array of section specs; its final message is consumed by `section_expand` |
 | `section_expand` (map) | `survey_outline`'s JSON list | each section's `cards/` | `sections/<n>_<slug>.md` per section | gather digest of the per-section handoffs |
 | `survey_assembler` | section handoff | `00_outline.md`, `sections/*`, `08_global_picture.png` if present | `08_survey.md`, `index.md` | `run_dir`, survey path, status, plus the full survey for the user |
-| `survey_writer_zh` | survey assembler handoff only | `08_survey.md` | `08_survey.zh.md` | `run_dir`, zh survey path, status |
+| `zh_frame` | survey assembler handoff | `08_survey.md` | `00_zh_frame.md` (zh title/abstract + glossary) | `run_dir`, frame path, status |
+| `zh_sections` (map) | `zh_frame` handoff | `00_sections.json`, `sections/*`, `00_zh_frame.md` | `sections_zh/<n>_<slug>.md` per section | gather digest of the per-section handoffs |
+| `zh_assemble` | `zh_sections` handoff | `00_zh_frame.md`, `sections_zh/*`, `08_survey.md` (refs) | `08_survey.zh.md` | `run_dir`, zh survey path, status |
 
 `survey_brief` is no longer in the end-to-end pipeline. The writing stage is now three steps: `survey_outline` (a macro skeleton with a clear through-line, plus a JSON section list) → `section_expand` (a `map` that writes one detailed, card-grounded section per element) → `survey_assembler` (stitch the sections, embed the figure, and build one deduped reference list). The brief unit (`survey_brief.rcm`, reading the judge panel and writing `07_survey_brief.md`) is kept for standalone audit runs.
 

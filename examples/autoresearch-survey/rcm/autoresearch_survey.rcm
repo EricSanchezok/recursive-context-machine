@@ -13,7 +13,9 @@ use "./image_planner.rcm" as ImagePlanner
 use "./survey_outline.rcm" as SurveyOutline
 use "./section_expander.rcm" as SectionExpander
 use "./survey_assembler.rcm" as SurveyAssembler
-use "./survey_writer_zh.rcm" as SurveyWriterZh
+use "./zh_frame.rcm" as ZhFrame
+use "./section_translator.rcm" as SectionTranslator
+use "./zh_assemble.rcm" as ZhAssemble
 
 graph {
     accelerator anchor = Anchor
@@ -41,7 +43,15 @@ graph {
         gather  = digest
     }
     accelerator survey_assembler = SurveyAssembler
-    accelerator survey_writer_zh = SurveyWriterZh
+    accelerator zh_frame = ZhFrame
+    // Translate per section, in parallel, using the shared glossary from zh_frame
+    // to keep terminology consistent: run_dir/sections_zh/<n>_<slug>.md.
+    map zh_sections {
+        accelerator = SectionTranslator
+        scatter = file "00_sections.json"
+        gather  = digest
+    }
+    accelerator zh_assemble = ZhAssemble
 
     flux anchor_handoff {
         channel = context
@@ -115,7 +125,19 @@ graph {
         arity = 1
     }
 
-    flux zh_handoff {
+    flux zhframe_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux zhframe_to_sections {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux zhsections_handoff {
         channel = context
         mode = last
         arity = 1
@@ -171,9 +193,17 @@ graph {
     sections_handoff.out -> survey_assembler.context
     section_expand.done -> survey_assembler.trigger
 
-    survey_assembler.context -> zh_handoff.slot(0)
-    zh_handoff.out -> survey_writer_zh.context
-    survey_assembler.done -> survey_writer_zh.trigger
+    survey_assembler.context -> zhframe_handoff.slot(0)
+    zhframe_handoff.out -> zh_frame.context
+    survey_assembler.done -> zh_frame.trigger
+
+    zh_frame.context -> zhframe_to_sections.slot(0)
+    zhframe_to_sections.out -> zh_sections.context
+    zh_frame.done -> zh_sections.trigger
+
+    zh_sections.context -> zhsections_handoff.slot(0)
+    zhsections_handoff.out -> zh_assemble.context
+    zh_sections.done -> zh_assemble.trigger
 
     survey_assembler.done -> output.done
     survey_assembler.context -> output.context
