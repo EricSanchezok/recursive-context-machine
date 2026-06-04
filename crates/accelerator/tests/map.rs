@@ -6,7 +6,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use accelerator::{Accelerator, GatherSpec, ScatterSpec, State};
-use machine::{Action, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources};
+use machine::{
+    Action, Context, Environment, Fragment, Inbox, Policy, Purpose, Resources, ToolRuntime,
+};
 
 /// Halts immediately without calling a model.
 #[derive(Clone)]
@@ -30,7 +32,12 @@ impl Policy for DonePolicy {
 }
 
 fn inner() -> Accelerator {
-    Accelerator::primitive(State::default(), Box::new(DonePolicy), "inner")
+    Accelerator::primitive(
+        State::default(),
+        Box::new(DonePolicy),
+        ToolRuntime::new(),
+        "inner",
+    )
 }
 
 fn block_on(future: impl Future<Output = State>) -> State {
