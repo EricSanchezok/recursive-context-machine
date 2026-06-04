@@ -23,6 +23,7 @@ pub mod model;
 pub mod policy;
 pub mod purpose;
 pub(crate) mod reactor;
+pub mod record;
 pub mod resources;
 pub mod tool;
 
@@ -34,10 +35,11 @@ pub use fragment::{
     Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, ToolResult, Video,
 };
 pub use inbox::Inbox;
-pub use machine::Machine;
+pub use machine::{ApplyContext, ApplyMode, Machine, MachineState};
 pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
 pub use policy::{ACTION_VERBS, Action, Policy};
 pub use purpose::Purpose;
+pub use record::{ActionOutcome, ApplyResult, MachineEvent};
 pub use resources::{LookupResult, ModelNotRegistered, Resources, ToolNotRegistered};
-pub use tool::Tool;
+pub use tool::{Tool, ToolDefinition, ToolRuntime};
 pub use usage::Usage;

@@ -4,11 +4,6 @@ use tonic::Status;
 
 use crate::rcm::{ActionCommand, FragmentContent, ModelSpec};
 
-/// Build a [`Fragment`] from a protobuf [`FragmentContent`].
-///
-/// The `kind` field determines the Fragment variant. When empty (backward
-/// compatible with clients that don't set it), falls through to role-based
-/// mapping: `user` → Fragment::user, anything else → Fragment::system.
 pub fn build_fragment(content: &FragmentContent) -> Fragment {
     let kind = content.kind.as_str();
     let mut fragment = match kind {

@@ -6,59 +6,63 @@ Python gRPC client for RCM (Recursive Context Machine).
 
 ```bash
 cd sdks/python
-pip install grpcio protobuf grpcio-tools
+pip install -e . grpcio-tools
 bash generate.sh
 ```
 
-## Usage — Paper Digest Demo
+Start the RCM gRPC server in another terminal:
 
 ```bash
-# Terminal 1: start the gRPC server
-DEEPSEEK_API_KEY="REDACTED" cargo run --release -p server --bin rcm-server
-
-# Terminal 2: run the Paper Digest demo
-DEEPSEEK_API_KEY="REDACTED" python examples/research-assistant/grpc_demo.py
+cargo run --release -p server --bin rcm-server
 ```
 
-## Usage — Programmatic
+Set an OpenAI-compatible model key. The examples below use DeepSeek:
+
+```bash
+export DEEPSEEK_API_KEY="REDACTED"
+```
+
+## Examples
+
+### Echo Agent
+
+A minimal external Python controller: define a model, select it by name, append a prompt, and let the model repeat the user message.
+
+```bash
+PYTHONPATH=src python examples/echo_agent.py "hello from python"
+```
+
+### MCP Math
+
+A local stdio MCP server exposes `add` and `multiply`. The SDK registers the MCP server definition, selects it with `mcps=["math"]`, activates the discovered tools, and drives the loop from Python.
+
+```bash
+PYTHONPATH=src python examples/mcp_math.py "What is 23 multiplied by 19, plus 7?"
+```
+
+## API Shape
+
+Definitions and selections are separate:
 
 ```python
-from rcm import RCMClient, Model
+from rcm import McpServer, Model, RCMClient
 
-rcm = RCMClient("localhost:50051")
+client = RCMClient("localhost:50051")
+model = Model(name="deepseek-v4-flash", ...)
+math_server = McpServer(label="math", transport=McpServer.Stdio(...))
 
-# Open a new machine
-mid, state, actions = rcm.open(
-    purpose="search for papers",
-    models=[Model(name="deepseek-v4-flash", protocol="openai",
-                  endpoint="https://api.deepseek.com",
-                  credentials=Model.Credentials(env="DEEPSEEK_API_KEY"),
-                  limit=Model.Limit(context=1_000_000, output=393_216))],
-    tools=["shell", "arxiv_search"],
-    prompts={"captain": "You are a research assistant."},
+machine_id, state, actions = client.open(
+    purpose="solve arithmetic",
+    model_definitions=[model],
+    models=["deepseek-v4-flash"],
+    mcp_definitions=[math_server],
+    mcps=["math"],
+    tools=[],
+    prompts={"math": "Use math tools for arithmetic."},
 )
-
-# Setup: append prompts + activate model + tools
-state, _ = rcm.step(mid, ActionCommand(verb="Append", fragment=FragmentContent(role="system", text="...", tag="agent")))
-state, _ = rcm.step(mid, ActionCommand(verb="Append", fragment=FragmentContent(role="user", text="...", tag="purpose")))
-state, _ = rcm.step(mid, ActionCommand(verb="Model", name="deepseek-v4-flash"))
-state, _ = rcm.step(mid, ActionCommand(verb="Activate", name="shell"))
-
-# Policy loop
-for _ in range(max_steps):
-    cmd, label = my_policy(state, actions)
-    state, actions = rcm.step(mid, cmd)
-    if state.done:
-        break
-
-rcm.destroy(mid)
 ```
 
-## API
-
-| Method | Description |
-|--------|-------------|
-| `open(purpose, models, tools, prompts)` | Create machine, returns (machine_id, state, action_space) |
-| `step(machine_id, ActionCommand)` | Execute one action, returns (state, action_space) |
-| `destroy(machine_id)` | Release machine resources |
-| `close()` | Close gRPC channel (call when done using this client) |
+- `model_definitions` and `mcp_definitions` register external resources for this machine.
+- `models`, `tools`, and `mcps` select resources by name.
+- `prompts` registers prompt texts that appear as append actions in the returned action space.
+- `ReactPolicy` is a small external controller for the running loop; setup remains explicit in Python.

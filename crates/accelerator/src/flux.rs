@@ -328,8 +328,11 @@ fn apply_res(flux: &Flux, mut read: impl FnMut(usize) -> Resources) -> Resources
                         result = result.with_model(model.clone());
                     }
                 }
-                for (name, tool) in &res.tools {
-                    result.tools.entry(name.clone()).or_insert(tool.clone());
+                for (name, definition) in &res.tool_definitions {
+                    result
+                        .tool_definitions
+                        .entry(name.clone())
+                        .or_insert(definition.clone());
                 }
                 if result.active_model.is_empty() && !res.active_model.is_empty() {
                     result.active_model.clone_from(&res.active_model);
