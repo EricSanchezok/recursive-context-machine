@@ -1,4 +1,6 @@
-use machine::{Context, Environment, Resources};
+use std::collections::HashMap;
+
+use machine::{Context, Environment, Resources, Usage};
 
 #[derive(Clone)]
 pub struct State {
@@ -6,6 +8,8 @@ pub struct State {
     pub ctx: Context,
     pub env: Environment,
     pub res: Resources,
+    pub usages: Vec<Usage>,
+    pub counts: HashMap<String, u64>,
 }
 
 impl Default for State {
@@ -15,6 +19,8 @@ impl Default for State {
             ctx: Context::new(),
             env: Environment::new("."),
             res: Resources::new(),
+            usages: Vec::new(),
+            counts: HashMap::new(),
         }
     }
 }

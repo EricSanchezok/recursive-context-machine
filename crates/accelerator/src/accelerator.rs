@@ -1,5 +1,7 @@
 use machine::hook;
-use machine::{Action, Fragment, Inbox, Machine, MachineRuntime, Purpose, Role, ToolRuntime};
+use machine::{
+    Action, ApplyContext, ApplyMode, Fragment, Inbox, Machine, Purpose, Role, ToolRuntime,
+};
 use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
@@ -229,12 +231,16 @@ impl PrimitiveAccelerator {
                 .apply(
                     action,
                     step,
-                    MachineRuntime {
+                    ApplyContext {
                         ctx: &mut state.ctx,
                         env: &mut state.env,
                         resources: &mut state.res,
-                        tool_runtime: &tool_runtime,
                         inbox: &mut inbox,
+                        usages: &mut state.usages,
+                        counts: &mut state.counts,
+                    },
+                    ApplyMode::Live {
+                        tool_runtime: &tool_runtime,
                     },
                 )
                 .await;

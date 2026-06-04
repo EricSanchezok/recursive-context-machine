@@ -7,7 +7,6 @@ use crate::rcm;
 
 pub fn build_state(run: &Run) -> rcm::State {
     let counts = run
-        .machine
         .counts
         .iter()
         .map(|(k, v)| (k.to_string(), *v))
@@ -26,7 +25,7 @@ pub fn build_state(run: &Run) -> rcm::State {
         inbox_pending: run.inbox.peek().is_some(),
         inbox_peek: run.inbox.peek().map(fragment_to_proto),
         counts,
-        usages: run.machine.usages.iter().map(usage_to_proto).collect(),
+        usages: run.usages.iter().map(usage_to_proto).collect(),
         tool_profiles: build_tool_profiles(run),
         model_profiles: build_model_profiles(run),
         platform: run.env.platform.clone(),
