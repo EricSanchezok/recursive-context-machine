@@ -14,8 +14,13 @@ fn compile_autoresearch_survey_rcm_files() {
         "examples/autoresearch-survey/rcm/discovery.rcm",
         "examples/autoresearch-survey/rcm/expansion.rcm",
         "examples/autoresearch-survey/rcm/rank_pool.rcm",
+        "examples/autoresearch-survey/rcm/card_plan.rcm",
+        "examples/autoresearch-survey/rcm/paper_card.rcm",
         "examples/autoresearch-survey/rcm/research_map.rcm",
         "examples/autoresearch-survey/rcm/judge_panel.rcm",
+        "examples/autoresearch-survey/rcm/survey_outline.rcm",
+        "examples/autoresearch-survey/rcm/section_expander.rcm",
+        "examples/autoresearch-survey/rcm/survey_assembler.rcm",
         "examples/autoresearch-survey/rcm/survey_brief.rcm",
         "examples/autoresearch-survey/rcm/autoresearch_survey.rcm",
     ];
