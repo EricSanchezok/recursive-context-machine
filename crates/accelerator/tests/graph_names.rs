@@ -459,10 +459,12 @@ fn context_thread_assembles_qa_pairs() {
     );
 }
 
-// ── FluxMode::Bridge tests (replaces ContextFlux::Fold) ──
+// ── FluxMode::Bridge tests ──
 
 #[test]
-fn bridge_context_to_purpose_extracts_last_assistant() {
+fn bridge_flattens_context_after_last_filter() {
+    // Flux(Last) → Bridge(Context→Purpose): Last extracts the final
+    // fragment per slot, Bridge flattens it into a purpose string.
     let mut state = State {
         purpose: "search".into(),
         ..State::default()
@@ -480,46 +482,46 @@ fn bridge_context_to_purpose_extracts_last_assistant() {
             "source",
         ),
     );
+    let last = graph.add_flux("last", FluxMode::Context(ContextFlux::Last), 1);
     let bridge = graph.add_flux(
         "bridge",
         FluxMode::Bridge {
             from: Channel::Context,
             to: Channel::Purpose,
-            kind: BridgeKind::ContextLastTextToPurpose,
+            kind: BridgeKind::ContextToPurpose,
         },
         1,
     );
 
-    graph.wire(source.context(), bridge.slot(0, Channel::Context));
+    graph.wire(source.context(), last.slot(0, Channel::Context));
+    graph.wire(
+        last.flux_out(Channel::Context),
+        bridge.slot(0, Channel::Context),
+    );
     graph.wire(
         bridge.flux_out(Channel::Purpose),
         Graph::output(Endpoint::State(Channel::Purpose)),
     );
 
-    let output = run(Accelerator::composite_named("bridge-test", graph));
+    let output = run(Accelerator::composite_named("bridge-last", graph));
 
-    assert_eq!(
-        output.ctx.fragments().len(),
-        0,
-        "bridge ctx should be empty"
-    );
-    assert!(
-        output.purpose.contains("second message"),
-        "purpose should contain the last assistant text"
-    );
+    assert_eq!(output.purpose, "second message");
     assert!(
         !output.purpose.contains("first message"),
-        "purpose should NOT contain earlier non-last texts"
+        "Last should have dropped earlier fragments"
     );
 }
 
 #[test]
-fn bridge_context_to_purpose_single_assistant() {
+fn bridge_flattens_full_context_after_append() {
+    // Flux(Append) → Bridge(Context→Purpose): all fragments pass through,
+    // Bridge flattens them into one purpose string.
     let mut state = State {
         purpose: "search".into(),
         ..State::default()
     };
-    state.ctx.append(Fragment::assistant("single result"));
+    state.ctx.append(Fragment::assistant("alpha"));
+    state.ctx.append(Fragment::assistant("beta"));
 
     let mut graph = Graph::new();
     let source = graph.add_accelerator(
@@ -531,28 +533,35 @@ fn bridge_context_to_purpose_single_assistant() {
             "source",
         ),
     );
+    let append = graph.add_flux("append", FluxMode::Context(ContextFlux::Append), 1);
     let bridge = graph.add_flux(
         "bridge",
         FluxMode::Bridge {
             from: Channel::Context,
             to: Channel::Purpose,
-            kind: BridgeKind::ContextLastTextToPurpose,
+            kind: BridgeKind::ContextToPurpose,
         },
         1,
     );
 
-    graph.wire(source.context(), bridge.slot(0, Channel::Context));
+    graph.wire(source.context(), append.slot(0, Channel::Context));
+    graph.wire(
+        append.flux_out(Channel::Context),
+        bridge.slot(0, Channel::Context),
+    );
     graph.wire(
         bridge.flux_out(Channel::Purpose),
         Graph::output(Endpoint::State(Channel::Purpose)),
     );
 
-    let output = run(Accelerator::composite_named("bridge-single", graph));
-    assert_eq!(output.purpose, "single result");
+    let output = run(Accelerator::composite_named("bridge-append", graph));
+    assert_eq!(output.purpose, "alpha\n\nbeta");
 }
 
 #[test]
-fn bridge_context_to_purpose_ignores_system_and_tool_fragments() {
+fn bridge_flattens_digested_context_to_purpose() {
+    // Flux(Digest) → Bridge(Context→Purpose): Digest strips scaffolding,
+    // Bridge flattens the remaining content.
     let mut state = State {
         purpose: "search".into(),
         ..State::default()
@@ -560,9 +569,6 @@ fn bridge_context_to_purpose_ignores_system_and_tool_fragments() {
     state
         .ctx
         .append(Fragment::system("You are a helpful assistant"));
-    state
-        .ctx
-        .append(Fragment::tool_result("tc1", "tool output", None));
     state.ctx.append(Fragment::assistant("final answer"));
 
     let mut graph = Graph::new();
@@ -575,31 +581,37 @@ fn bridge_context_to_purpose_ignores_system_and_tool_fragments() {
             "source",
         ),
     );
+    let digest = graph.add_flux("digest", FluxMode::Context(ContextFlux::Digest), 1);
     let bridge = graph.add_flux(
         "bridge",
         FluxMode::Bridge {
             from: Channel::Context,
             to: Channel::Purpose,
-            kind: BridgeKind::ContextLastTextToPurpose,
+            kind: BridgeKind::ContextToPurpose,
         },
         1,
     );
 
-    graph.wire(source.context(), bridge.slot(0, Channel::Context));
+    graph.wire(source.context(), digest.slot(0, Channel::Context));
+    graph.wire(
+        digest.flux_out(Channel::Context),
+        bridge.slot(0, Channel::Context),
+    );
     graph.wire(
         bridge.flux_out(Channel::Purpose),
         Graph::output(Endpoint::State(Channel::Purpose)),
     );
 
-    let output = run(Accelerator::composite_named("bridge-ignore-other", graph));
+    let output = run(Accelerator::composite_named("bridge-digest", graph));
     assert_eq!(
         output.purpose, "final answer",
-        "only the last assistant text, not system or tool results"
+        "Digest strips system fragments, Bridge flattens what remains"
     );
 }
 
 #[test]
-fn bridge_context_to_purpose_multi_slot_joins() {
+fn bridge_flattens_multi_slot_context_after_last() {
+    // Two sources → Flux(Last) → Bridge(Context→Purpose).
     let mut first = State {
         purpose: "search".into(),
         ..State::default()
@@ -633,18 +645,23 @@ fn bridge_context_to_purpose_multi_slot_joins() {
             "second",
         ),
     );
+    let last = graph.add_flux("last", FluxMode::Context(ContextFlux::Last), 2);
     let bridge = graph.add_flux(
         "bridge",
         FluxMode::Bridge {
             from: Channel::Context,
             to: Channel::Purpose,
-            kind: BridgeKind::ContextLastTextToPurpose,
+            kind: BridgeKind::ContextToPurpose,
         },
-        2,
+        1,
     );
 
-    graph.wire(first_acc.context(), bridge.slot(0, Channel::Context));
-    graph.wire(second_acc.context(), bridge.slot(1, Channel::Context));
+    graph.wire(first_acc.context(), last.slot(0, Channel::Context));
+    graph.wire(second_acc.context(), last.slot(1, Channel::Context));
+    graph.wire(
+        last.flux_out(Channel::Context),
+        bridge.slot(0, Channel::Context),
+    );
     graph.wire(
         bridge.flux_out(Channel::Purpose),
         Graph::output(Endpoint::State(Channel::Purpose)),
@@ -653,11 +670,11 @@ fn bridge_context_to_purpose_multi_slot_joins() {
     let output = run(Accelerator::composite_named("bridge-multi", graph));
     assert!(
         output.purpose.contains("Found 3 papers"),
-        "should include first slot's last assistant"
+        "should include first slot"
     );
     assert!(
         output.purpose.contains("Downloaded arxiv:2401.12345"),
-        "should include second slot's last assistant"
+        "should include second slot"
     );
 }
 

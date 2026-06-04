@@ -37,14 +37,16 @@ pub enum ResFlux {
     Merge,
 }
 
-/// Cross-channel data transfer: reads from one channel, transforms, writes to
-/// another. Bridge does not produce output on its input channel — the
-/// transformed data is written exclusively to the output channel.
+/// Cross-channel data transfer: reads from one channel, mechanically converts
+/// to another. Bridge does not apply any extraction, filtering, or business
+/// logic — it purely flattens data from the source channel format into the
+/// target channel format.
 #[derive(Clone, Copy)]
 pub enum BridgeKind {
-    /// For each slot: extract the last assistant text from the context,
-    /// join with "\n\n", and write as a purpose string.
-    ContextLastTextToPurpose,
+    /// Flatten all text fragments from context into a single purpose string.
+    /// Upstream ContextFlux (Last/Append/Digest/Thread) controls what
+    /// fragments reach the Bridge.
+    ContextToPurpose,
 }
 
 #[derive(Clone)]
@@ -96,9 +98,9 @@ impl FluxMode {
             FluxMode::Environment(EnvFlux::Overlay) => "environment_overlay",
             FluxMode::Resources(ResFlux::Merge) => "resources_merge",
             FluxMode::Bridge {
-                kind: BridgeKind::ContextLastTextToPurpose,
+                kind: BridgeKind::ContextToPurpose,
                 ..
-            } => "bridge_context_last_to_purpose",
+            } => "bridge_context_to_purpose",
         }
     }
 }
@@ -135,8 +137,8 @@ impl Flux {
             FluxMode::Environment(_) => state.env = apply_env(self, |slot| slots[slot].env.clone()),
             FluxMode::Resources(_) => state.res = apply_res(self, |slot| slots[slot].res.clone()),
             FluxMode::Bridge { kind, .. } => match kind {
-                BridgeKind::ContextLastTextToPurpose => {
-                    state.purpose = extract_last_assistant_text(slots);
+                BridgeKind::ContextToPurpose => {
+                    state.purpose = flatten_context_to_text(slots);
                 }
             },
         }
@@ -144,22 +146,17 @@ impl Flux {
     }
 }
 
-// ── helper: extract last assistant text from each slot's context ──
+// ── helper: flatten all context text fragments into a single string ──
 
-fn extract_last_assistant_text(slots: &[State]) -> String {
-    let mut parts: Vec<String> = Vec::with_capacity(slots.len());
+fn flatten_context_to_text(slots: &[State]) -> String {
+    let mut parts: Vec<String> = Vec::new();
     for slot in slots {
-        if let Some(text) = slot
-            .ctx
-            .fragments()
-            .iter()
-            .rev()
-            .find(|f| f.role == Role::Assistant)
-            .and_then(|f| f.as_text())
-        {
-            let trimmed = text.trim();
-            if !trimmed.is_empty() {
-                parts.push(trimmed.to_string());
+        for frag in slot.ctx.fragments().iter() {
+            if let Some(text) = frag.as_text() {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    parts.push(trimmed.to_string());
+                }
             }
         }
     }
