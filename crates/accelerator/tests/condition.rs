@@ -4,7 +4,7 @@ use accelerator::{
     Accelerator, Channel, ConditionBranch, ContextFlux, ContextPredicate, Endpoint,
     EnvironmentPredicate, FluxMode, Graph, Predicate, PurposePredicate, ResourcesPredicate, State,
 };
-use machine::Fragment;
+use machine::{Fragment, ToolRuntime};
 
 fn state_with_purpose(purpose: &str) -> State {
     State {
@@ -23,7 +23,12 @@ fn state_with_context(text: &str) -> State {
 }
 
 fn primitive_with_context(text: &str) -> Accelerator {
-    Accelerator::primitive(state_with_context(text), Box::new(common::DonePolicy), text)
+    Accelerator::primitive(
+        state_with_context(text),
+        Box::new(common::DonePolicy),
+        ToolRuntime::new(),
+        text,
+    )
 }
 
 fn run(graph: Graph) -> State {
