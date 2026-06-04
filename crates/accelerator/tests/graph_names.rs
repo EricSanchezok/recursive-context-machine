@@ -180,8 +180,8 @@ fn resource_flux_preserves_model_order_and_tool_pool() {
     let output = run(Accelerator::composite_named("resources", graph));
 
     assert_eq!(output.res.model_order, vec!["fast", "careful"]);
-    assert!(output.res.tools.contains_key("find"));
-    assert!(output.res.tools.contains_key("shell"));
+    assert!(output.res.tool_definitions.contains_key("find"));
+    assert!(output.res.tool_definitions.contains_key("shell"));
 }
 
 #[test]

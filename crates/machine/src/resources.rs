@@ -11,7 +11,7 @@ use crate::tool::ToolDefinition;
 pub struct Resources {
     id: ResourcesId,
     pub name: Name,
-    pub tools: HashMap<String, ToolDefinition>,
+    pub tool_definitions: HashMap<String, ToolDefinition>,
     pub models: HashMap<String, Model>,
     pub model_order: Vec<String>,
     pub active_model: String,
@@ -38,7 +38,7 @@ impl Resources {
         Self {
             id: ResourcesId::new(),
             name: Name::new(name).expect("resources name must be valid"),
-            tools: HashMap::new(),
+            tool_definitions: HashMap::new(),
             models: HashMap::new(),
             model_order: Vec::new(),
             active_model: String::new(),
@@ -48,7 +48,8 @@ impl Resources {
     }
 
     pub fn with_tool_definition(mut self, definition: ToolDefinition) -> Self {
-        self.tools.insert(definition.name.clone(), definition);
+        self.tool_definitions
+            .insert(definition.name.clone(), definition);
         self
     }
 
@@ -57,17 +58,6 @@ impl Resources {
             self.model_order.push(model.name.clone());
         }
         self.models.insert(model.name.clone(), model);
-        self
-    }
-
-    pub fn replace_tool_definitions(mut self, tools: HashMap<String, ToolDefinition>) -> Self {
-        self.active_tools.retain(|name| tools.contains_key(name));
-        self.tools = tools;
-        self
-    }
-
-    pub fn replace_prompts(mut self, prompts: HashMap<String, String>) -> Self {
-        self.prompts = prompts;
         self
     }
 
@@ -81,7 +71,7 @@ impl Resources {
 
     pub fn enable(&mut self, name: impl Into<String>) -> Result<(), ToolNotRegistered> {
         let name = name.into();
-        if self.tools.contains_key(&name) {
+        if self.tool_definitions.contains_key(&name) {
             self.active_tools.insert(name);
             Ok(())
         } else {
@@ -110,12 +100,12 @@ impl Resources {
     pub fn active_tool_definitions(&self) -> Vec<&ToolDefinition> {
         self.active_tools
             .iter()
-            .filter_map(|name| self.tools.get(name))
+            .filter_map(|name| self.tool_definitions.get(name))
             .collect()
     }
 
     pub fn lookup(&self, name: &str) -> LookupResult {
-        if !self.tools.contains_key(name) {
+        if !self.tool_definitions.contains_key(name) {
             LookupResult::NotFound
         } else if self.active_tools.contains(name) {
             LookupResult::Active
@@ -125,7 +115,7 @@ impl Resources {
     }
 
     pub fn tool_definition(&self, name: &str) -> Option<&ToolDefinition> {
-        self.tools.get(name)
+        self.tool_definitions.get(name)
     }
 }
 

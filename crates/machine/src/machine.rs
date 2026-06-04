@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::context::Context;
 use crate::env::Environment;
 use crate::event::{content_kind, preview, role_name};
-use crate::fragment::{Fragment, Role};
+use crate::fragment::Fragment;
 use crate::hook;
 use crate::inbox::Inbox;
 use crate::policy::Action;
@@ -43,6 +43,7 @@ impl Machine {
     ) -> ApplyResult {
         *self.counts.entry(action.name().to_string()).or_default() += 1;
         let machine_id = self.id.to_string();
+        let mut inbox_fragments = Vec::new();
 
         if let Action::Halt = &action {
             let model_name = resources
@@ -105,23 +106,13 @@ impl Machine {
                     false
                 }
                 Err(error) => {
-                    inbox.push(Fragment::hitch(
-                        error.to_string(),
-                        None,
-                        Role::System,
-                        None::<&str>,
-                    ));
+                    push_system_hitch(inbox, &mut inbox_fragments, error.to_string());
                     false
                 }
             },
             Action::Replace { id, fragment } => {
                 if let Err(error) = ctx.replace(*id, fragment.clone()) {
-                    inbox.push(Fragment::hitch(
-                        error.to_string(),
-                        None,
-                        Role::System,
-                        None::<&str>,
-                    ));
+                    push_system_hitch(inbox, &mut inbox_fragments, error.to_string());
                 } else {
                     let fragment = ctx.get(*id).expect("just replaced");
                     hook!(
@@ -139,12 +130,7 @@ impl Machine {
             }
             Action::Remove(id) => {
                 if let Err(error) = ctx.remove(*id) {
-                    inbox.push(Fragment::hitch(
-                        error.to_string(),
-                        None,
-                        Role::System,
-                        None::<&str>,
-                    ));
+                    push_system_hitch(inbox, &mut inbox_fragments, error.to_string());
                 } else {
                     hook!(event = "removed", machine_id = machine_id, id, step);
                 }
@@ -152,12 +138,7 @@ impl Machine {
             }
             Action::Swap(first_id, second_id) => {
                 if let Err(error) = ctx.swap(*first_id, *second_id) {
-                    inbox.push(Fragment::hitch(
-                        error.to_string(),
-                        None,
-                        Role::System,
-                        None::<&str>,
-                    ));
+                    push_system_hitch(inbox, &mut inbox_fragments, error.to_string());
                 } else {
                     hook!(
                         event = "swapped",
@@ -171,12 +152,7 @@ impl Machine {
             }
             Action::Model(name) => {
                 if let Err(error) = resources.use_model(name) {
-                    inbox.push(Fragment::hitch(
-                        error.to_string(),
-                        None,
-                        Role::System,
-                        None::<&str>,
-                    ));
+                    push_system_hitch(inbox, &mut inbox_fragments, error.to_string());
                 } else {
                     hook!(
                         event = "model",
@@ -189,12 +165,7 @@ impl Machine {
             }
             Action::Activate(name) => {
                 if let Err(error) = resources.enable(name) {
-                    inbox.push(Fragment::hitch(
-                        error.to_string(),
-                        None,
-                        Role::System,
-                        None::<&str>,
-                    ));
+                    push_system_hitch(inbox, &mut inbox_fragments, error.to_string());
                 } else {
                     hook!(
                         event = "activate",
@@ -221,6 +192,7 @@ impl Machine {
                     if let Some(usage) = self.usages.last_mut() {
                         usage.fragment_ids.push(id)
                     }
+
                     let fragment = ctx.get(id).expect("just taken");
                     hook!(
                         event = "taken",
@@ -244,7 +216,13 @@ impl Machine {
 
         ApplyResult {
             done,
-            event: MachineEvent::state_only(step, action),
+            event: MachineEvent::state(step, action, inbox_fragments),
         }
     }
+}
+
+fn push_system_hitch(inbox: &mut Inbox, recorded: &mut Vec<Fragment>, message: String) {
+    let fragment = Fragment::hitch(message, None, crate::fragment::Role::System, None::<&str>);
+    inbox.push(fragment.clone());
+    recorded.push(fragment);
 }

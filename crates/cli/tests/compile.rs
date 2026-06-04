@@ -142,9 +142,9 @@ fn compile_selects_resource_pools_without_initial_activation() {
         state.res.prompts.get("captain").map(String::as_str),
         Some("Custom captain")
     );
-    assert_eq!(state.res.tools.len(), 2);
-    assert!(state.res.tools.contains_key("fs"));
-    assert!(state.res.tools.contains_key("shell"));
+    assert_eq!(state.res.tool_definitions.len(), 2);
+    assert!(state.res.tool_definitions.contains_key("fs"));
+    assert!(state.res.tool_definitions.contains_key("shell"));
     assert!(state.res.active_tools.is_empty());
 }
 
@@ -169,7 +169,7 @@ fn compile_keeps_no_tools_when_only_prompts_are_supplied() {
     let state = primitive_state(&accelerator);
 
     assert!(state.res.prompts.contains_key("captain"));
-    assert!(state.res.tools.is_empty());
+    assert!(state.res.tool_definitions.is_empty());
     assert!(state.res.active_tools.is_empty());
 }
 
@@ -223,8 +223,8 @@ fn compile_accepts_external_catalog_tools() {
     let accelerator = compile_path_with_catalog(&path, catalog).unwrap();
     let state = primitive_state(&accelerator);
 
-    assert!(state.res.tools.contains_key("external_tool"));
-    assert_eq!(state.res.tools.len(), 1);
+    assert!(state.res.tool_definitions.contains_key("external_tool"));
+    assert_eq!(state.res.tool_definitions.len(), 1);
 }
 
 #[test]
@@ -303,8 +303,14 @@ fn compile_does_not_start_unselected_mcp_servers() {
 
     let accelerator = compile_result(source).unwrap();
     let state = primitive_state(&accelerator);
-    assert!(state.res.tools.contains_key("fs"));
-    assert!(!state.res.tools.keys().any(|name| name.starts_with("docs.")));
+    assert!(state.res.tool_definitions.contains_key("fs"));
+    assert!(
+        !state
+            .res
+            .tool_definitions
+            .keys()
+            .any(|name| name.starts_with("docs."))
+    );
 }
 
 #[test]

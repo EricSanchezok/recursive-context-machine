@@ -21,7 +21,7 @@ pub fn build_state(run: &Run) -> rcm::State {
         active_model: run.resources.active_model.clone(),
         active_tools: run.resources.active_tools.iter().cloned().collect(),
         available_models: run.resources.model_order.clone(),
-        available_tools: run.resources.tools.keys().cloned().collect(),
+        available_tools: run.resources.tool_definitions.keys().cloned().collect(),
         done: run.done,
         inbox_pending: run.inbox.peek().is_some(),
         inbox_peek: run.inbox.peek().map(fragment_to_proto),
@@ -40,7 +40,7 @@ pub fn build_state(run: &Run) -> rcm::State {
 
 fn build_tool_profiles(run: &Run) -> Vec<rcm::ToolProfile> {
     run.resources
-        .tools
+        .tool_definitions
         .iter()
         .map(|(name, tool)| rcm::ToolProfile {
             name: name.clone(),

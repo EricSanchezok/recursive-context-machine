@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use machine::{
-    Action, ActionOutcome, Context, Environment, Fragment, Inbox, MachineEvent, Resources,
-};
+use machine::{Action, ActionOutcome, Context, Environment, Inbox, MachineEvent, Resources};
 use serde::{Deserialize, Serialize};
 
 use crate::{Wal, WalError, WalResult};
@@ -99,41 +97,42 @@ fn apply_event(state: &mut MachineState, event: &MachineEvent) -> Result<(), Str
             state.context.append(fragment.clone());
         }
         Action::Insert { after, fragment } => {
-            state
-                .context
-                .insert(*after, fragment.clone())
-                .map_err(|error| error.to_string())?;
+            if let Err(error) = state.context.insert(*after, fragment.clone()) {
+                recover_state_outcome(state, &event.outcome, error.to_string())?;
+                return Ok(());
+            }
         }
         Action::Replace { id, fragment } => {
-            state
-                .context
-                .replace(*id, fragment.clone())
-                .map_err(|error| error.to_string())?;
+            if let Err(error) = state.context.replace(*id, fragment.clone()) {
+                recover_state_outcome(state, &event.outcome, error.to_string())?;
+                return Ok(());
+            }
         }
         Action::Remove(id) => {
-            state
-                .context
-                .remove(*id)
-                .map_err(|error| error.to_string())?;
+            if let Err(error) = state.context.remove(*id) {
+                recover_state_outcome(state, &event.outcome, error.to_string())?;
+                return Ok(());
+            }
         }
         Action::Swap(first_id, second_id) => {
-            state
-                .context
-                .swap(*first_id, *second_id)
-                .map_err(|error| error.to_string())?;
+            if let Err(error) = state.context.swap(*first_id, *second_id) {
+                recover_state_outcome(state, &event.outcome, error.to_string())?;
+                return Ok(());
+            }
         }
         Action::Model(name) => {
-            state
-                .resources
-                .use_model(name)
-                .map_err(|error| error.to_string())?;
+            if let Err(error) = state.resources.use_model(name) {
+                recover_state_outcome(state, &event.outcome, error.to_string())?;
+                return Ok(());
+            }
         }
         Action::Activate(name) => {
-            state
-                .resources
-                .enable(name)
-                .map_err(|error| error.to_string())?;
+            if let Err(error) = state.resources.enable(name) {
+                recover_state_outcome(state, &event.outcome, error.to_string())?;
+                return Ok(());
+            }
         }
+
         Action::Deactivate(name) => {
             state.resources.disable(name);
         }
@@ -146,7 +145,7 @@ fn apply_event(state: &mut MachineState, event: &MachineEvent) -> Result<(), Str
             ActionOutcome::Reactor { fragments, .. } => {
                 state.inbox.extend(fragments.iter().cloned());
             }
-            ActionOutcome::StateOnly => {
+            ActionOutcome::State { .. } => {
                 return Err("halt event is missing reactor output".to_string());
             }
         },
@@ -155,43 +154,23 @@ fn apply_event(state: &mut MachineState, event: &MachineEvent) -> Result<(), Str
         }
     }
 
-    if !matches!(event.action, Action::Halt) && !matches!(event.outcome, ActionOutcome::StateOnly) {
-        apply_outcome(state, &event.outcome)?;
+    if let ActionOutcome::State { inbox } = &event.outcome {
+        state.inbox.extend(inbox.iter().cloned());
     }
 
     Ok(())
 }
 
-fn apply_outcome(state: &mut MachineState, outcome: &ActionOutcome) -> Result<(), String> {
+fn recover_state_outcome(
+    state: &mut MachineState,
+    outcome: &ActionOutcome,
+    fallback_error: String,
+) -> Result<(), String> {
     match outcome {
-        ActionOutcome::StateOnly => Ok(()),
-        ActionOutcome::Reactor { fragments, .. } => {
-            for fragment in fragments {
-                state.inbox.push(fragment.clone());
-            }
+        ActionOutcome::State { inbox } if !inbox.is_empty() => {
+            state.inbox.extend(inbox.iter().cloned());
             Ok(())
         }
+        _ => Err(fallback_error),
     }
-}
-
-pub fn state_from_parts(
-    context: Context,
-    environment: Environment,
-    resources: Resources,
-    inbox: Inbox,
-    step: u64,
-    done: bool,
-) -> MachineState {
-    MachineState {
-        context,
-        environment,
-        resources,
-        inbox,
-        step,
-        done,
-    }
-}
-
-pub fn inbox_from_fragments(fragments: impl IntoIterator<Item = Fragment>) -> Inbox {
-    fragments.into_iter().collect()
 }
