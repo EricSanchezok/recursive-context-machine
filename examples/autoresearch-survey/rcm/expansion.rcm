@@ -22,7 +22,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/reference_expander.txt" }
-        tools = ["arxiv_download", "arxiv_search", "fs", "shell"]
+        tools = ["arxiv_download", "arxiv_search", "fs"]
     }
 
     accelerator semantic_expander {
