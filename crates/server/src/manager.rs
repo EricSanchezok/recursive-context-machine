@@ -1,4 +1,4 @@
-use machine::{Context, Environment, Inbox, Machine, Resources};
+use machine::{Context, Environment, Inbox, Machine, Resources, ToolRuntime, Usage};
 use std::collections::HashMap;
 use utils::MachineId;
 
@@ -8,13 +8,22 @@ pub struct Run {
     pub ctx: Context,
     pub env: Environment,
     pub resources: Resources,
+    pub tool_runtime: ToolRuntime,
     pub inbox: Inbox,
+    pub usages: Vec<Usage>,
+    pub counts: HashMap<String, u64>,
     pub step: u64,
     pub done: bool,
 }
 
 pub struct MachineManager {
     machines: HashMap<MachineId, Run>,
+}
+
+impl Default for MachineManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MachineManager {

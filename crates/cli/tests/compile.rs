@@ -1,14 +1,50 @@
 use std::fs;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use accelerator::Accelerator;
+use accelerator::{Accelerator, Catalog};
+use machine::{Environment, Tool, ToolResult};
+use serde_json::Value;
 
 static FILE_SEQ: AtomicU64 = AtomicU64::new(0);
 
+struct ExternalTool;
+
+impl Tool for ExternalTool {
+    fn name(&self) -> &str {
+        "external_tool"
+    }
+
+    fn description(&self) -> &str {
+        "External test tool"
+    }
+
+    fn parameters(&self) -> Value {
+        serde_json::json!({ "type": "object", "properties": {} })
+    }
+
+    fn execute<'a>(
+        &'a self,
+        _args: Value,
+        _env: &'a Environment,
+    ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
+        Box::pin(async {
+            Ok(ToolResult {
+                call_id: String::new(),
+                content: "ok".to_string(),
+                title: None,
+            })
+        })
+    }
+}
+
 fn unique_path(name: &str, extension: &str) -> PathBuf {
-    let seq = FILE_SEQ.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("rcm-{}-{}.{}", name, seq, extension))
+    let process_id = std::process::id();
+    let sequence = FILE_SEQ.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("rcm-{name}-{process_id}-{sequence}.{extension}"))
 }
 
 fn write_rcm(name: &str, source: &str) -> PathBuf {
@@ -27,15 +63,14 @@ fn write_rcm_near(name: &str, source: &str, prompt_name: &str, prompt: &str) -> 
 }
 
 fn remove_compile_path(path: &Path) {
-    if let Some(parent) = path.parent() {
-        if parent
+    if let Some(parent) = path.parent()
+        && parent
             .file_name()
             .and_then(|name| name.to_str())
             .is_some_and(|name| name.starts_with("rcm-") && name.ends_with(".dir"))
-        {
-            let _ = fs::remove_dir_all(parent);
-            return;
-        }
+    {
+        let _ = fs::remove_dir_all(parent);
+        return;
     }
     let _ = fs::remove_file(path);
 }
@@ -46,6 +81,16 @@ fn compile_path(path: &Path) -> Result<Accelerator, String> {
         .build()
         .unwrap();
     let result = runtime.block_on(cli::rcm::compile::compile_file(path));
+    remove_compile_path(path);
+    result
+}
+
+fn compile_path_with_catalog(path: &Path, catalog: Catalog) -> Result<Accelerator, String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let result = runtime.block_on(cli::rcm::compile::compile_file_with_catalog(path, catalog));
     remove_compile_path(path);
     result
 }
@@ -97,14 +142,14 @@ fn compile_selects_resource_pools_without_initial_activation() {
         state.res.prompts.get("captain").map(String::as_str),
         Some("Custom captain")
     );
-    assert_eq!(state.res.tools.len(), 2);
-    assert!(state.res.tools.contains_key("fs"));
-    assert!(state.res.tools.contains_key("shell"));
+    assert_eq!(state.res.tool_definitions.len(), 2);
+    assert!(state.res.tool_definitions.contains_key("fs"));
+    assert!(state.res.tool_definitions.contains_key("shell"));
     assert!(state.res.active_tools.is_empty());
 }
 
 #[test]
-fn compile_keeps_default_tools_when_only_prompts_are_supplied() {
+fn compile_keeps_no_tools_when_only_prompts_are_supplied() {
     let source = r#"
         name = "prompt only"
         model gpt {
@@ -124,13 +169,7 @@ fn compile_keeps_default_tools_when_only_prompts_are_supplied() {
     let state = primitive_state(&accelerator);
 
     assert!(state.res.prompts.contains_key("captain"));
-    assert!(state.res.tools.contains_key("arxiv_search"));
-    assert!(state.res.tools.contains_key("arxiv_download"));
-    assert!(state.res.tools.contains_key("find"));
-    assert!(state.res.tools.contains_key("fs"));
-    assert!(state.res.tools.contains_key("lsp"));
-    assert!(state.res.tools.contains_key("shell"));
-    assert!(state.res.tools.contains_key("wait"));
+    assert!(state.res.tool_definitions.is_empty());
     assert!(state.res.active_tools.is_empty());
 }
 
@@ -159,6 +198,33 @@ fn compile_reads_prompt_files_relative_to_rcm_file() {
         state.res.prompts.get("captain").map(String::as_str),
         Some("File captain")
     );
+}
+
+#[test]
+fn compile_accepts_external_catalog_tools() {
+    let source = r#"
+        name = "external tool"
+        model gpt {
+            protocol = "openai"
+            credentials = { key = "REDACTED" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            purpose = "inspect"
+            models = ["gpt"]
+            tools = ["external_tool"]
+        }
+    "#;
+    let path = write_rcm("external-tool", source);
+    let mut catalog = Catalog::new();
+    catalog.register_tool(Arc::new(ExternalTool)).unwrap();
+
+    let accelerator = compile_path_with_catalog(&path, catalog).unwrap();
+    let state = primitive_state(&accelerator);
+
+    assert!(state.res.tool_definitions.contains_key("external_tool"));
+    assert_eq!(state.res.tool_definitions.len(), 1);
 }
 
 #[test]
@@ -237,8 +303,14 @@ fn compile_does_not_start_unselected_mcp_servers() {
 
     let accelerator = compile_result(source).unwrap();
     let state = primitive_state(&accelerator);
-    assert!(state.res.tools.contains_key("fs"));
-    assert!(!state.res.tools.keys().any(|name| name.starts_with("docs.")));
+    assert!(state.res.tool_definitions.contains_key("fs"));
+    assert!(
+        !state
+            .res
+            .tool_definitions
+            .keys()
+            .any(|name| name.starts_with("docs."))
+    );
 }
 
 #[test]

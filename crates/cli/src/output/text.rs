@@ -53,11 +53,15 @@ fn final_message(ctx: &Context) -> Option<&str> {
 }
 
 fn print_fragment(role: Role, content: &Content) {
-    let tag = match role {
-        Role::System => "system",
-        Role::User => "user",
-        Role::Assistant => "assistant",
-        Role::Tool => "tool",
+    let tag = match content {
+        Content::ToolCall(_) => "tool_call",
+        Content::ToolResult(_) => "tool_result",
+        _ => match role {
+            Role::System => "system",
+            Role::User => "user",
+            Role::Assistant => "assistant",
+            Role::Tool => "tool",
+        },
     };
 
     match content {

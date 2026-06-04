@@ -4,11 +4,6 @@ use tonic::Status;
 
 use crate::rcm::{ActionCommand, FragmentContent, ModelSpec};
 
-/// Build a [`Fragment`] from a protobuf [`FragmentContent`].
-///
-/// The `kind` field determines the Fragment variant. When empty (backward
-/// compatible with clients that don't set it), falls through to role-based
-/// mapping: `user` → Fragment::user, anything else → Fragment::system.
 pub fn build_fragment(content: &FragmentContent) -> Fragment {
     let kind = content.kind.as_str();
     let mut fragment = match kind {
@@ -30,35 +25,31 @@ pub fn build_fragment(content: &FragmentContent) -> Fragment {
     if let Some(tag) = &content.tag {
         fragment.tag = tag.clone();
     }
-    if let Some(media_source) = &content.media_source {
-        if let Some(source) = &media_source.source {
-            let data_source = match source {
-                crate::rcm::media_source::Source::Url(url) => {
-                    machine::fragment::DataSource::Url(url.clone())
-                }
-                crate::rcm::media_source::Source::Base64(data) => {
-                    machine::fragment::DataSource::Base64(data.clone())
-                }
-            };
-            match content.kind.as_str() {
-                "image" => {
-                    fragment =
-                        machine::Fragment::image(data_source, media_source.media_type.clone())
-                }
-                "audio" => {
-                    fragment =
-                        machine::Fragment::audio(data_source, media_source.media_type.clone())
-                }
-                "video" => {
-                    fragment =
-                        machine::Fragment::video(data_source, media_source.media_type.clone())
-                }
-                "document" => {
-                    fragment =
-                        machine::Fragment::document(data_source, media_source.media_type.clone())
-                }
-                _ => {}
+    if let Some(media_source) = &content.media_source
+        && let Some(source) = &media_source.source
+    {
+        let data_source = match source {
+            crate::rcm::media_source::Source::Url(url) => {
+                machine::fragment::DataSource::Url(url.clone())
             }
+            crate::rcm::media_source::Source::Base64(data) => {
+                machine::fragment::DataSource::Base64(data.clone())
+            }
+        };
+        match content.kind.as_str() {
+            "image" => {
+                fragment = machine::Fragment::image(data_source, media_source.media_type.clone())
+            }
+            "audio" => {
+                fragment = machine::Fragment::audio(data_source, media_source.media_type.clone())
+            }
+            "video" => {
+                fragment = machine::Fragment::video(data_source, media_source.media_type.clone())
+            }
+            "document" => {
+                fragment = machine::Fragment::document(data_source, media_source.media_type.clone())
+            }
+            _ => {}
         }
     }
     fragment

@@ -6,9 +6,9 @@ use crate::context::Context;
 use crate::env::Environment;
 use crate::fragment::{Content, Fragment, Role};
 use crate::hook;
-use crate::inbox::Inbox;
-use crate::resources::Resources;
-use crate::usage::Usage;
+use crate::record::ActionOutcome;
+use crate::resources::{LookupResult, Resources};
+use crate::tool::ToolRuntime;
 use futures_util::future::join_all;
 use tokio::time::{Duration, timeout};
 use tracing::{debug, info, warn};
@@ -18,9 +18,9 @@ pub async fn react(
     ctx: &Context,
     env: &Environment,
     resources: &Resources,
-    inbox: &mut Inbox,
-) -> Usage {
-    let t0 = Instant::now();
+    tool_runtime: &ToolRuntime,
+) -> ActionOutcome {
+    let started_at = Instant::now();
 
     hook!(event = "completion_start", machine_id);
 
@@ -29,7 +29,7 @@ pub async fn react(
     hook!(
         event = "completion_end",
         machine_id,
-        duration = %humantime(t0.elapsed()),
+        duration = %humantime(started_at.elapsed()),
         fragments = fragments.len(),
         input_tokens = usage.input_tokens,
         output_tokens = usage.output_tokens,
@@ -38,12 +38,11 @@ pub async fn react(
         cache_creation_input_tokens = usage.cache_creation_input_tokens,
     );
 
-    // ── Phase 1: partition ──
-    // Text fragments → inbox immediately.
-    // Tool calls → collect call_id + tool_name + fragment, spawn future.
+    let mut output = Vec::new();
     let mut tool_call_ids: Vec<String> = Vec::new();
     let mut tool_names: Vec<String> = Vec::new();
     let mut tool_fragments: Vec<Fragment> = Vec::new();
+    #[allow(clippy::type_complexity)]
     let mut tool_futures: Vec<
         std::pin::Pin<
             Box<
@@ -54,40 +53,37 @@ pub async fn react(
         >,
     > = Vec::new();
 
-    for frag in fragments {
-        let tc_meta = match frag.content {
-            Content::ToolCall(ref tc) => {
-                Some((tc.id.clone(), tc.name.clone(), tc.arguments.clone()))
-            }
+    for fragment in fragments {
+        let tool_call = match fragment.content {
+            Content::ToolCall(ref tool_call) => Some((
+                tool_call.id.clone(),
+                tool_call.name.clone(),
+                tool_call.arguments.clone(),
+            )),
             _ => None,
         };
-        let Some((call_id, tool_name, args)) = tc_meta else {
-            inbox.push(frag);
+        let Some((call_id, tool_name, arguments)) = tool_call else {
+            output.push(fragment);
             continue;
         };
 
-        debug!(tool = tool_name, args = %args, "tool call");
+        debug!(tool = tool_name, args = %arguments, "tool call");
 
         hook!(
             event = "tool_call",
             machine_id,
             call_id,
             tool = tool_name,
-            arguments = %args,
+            arguments = %arguments,
         );
 
-        use crate::resources::LookupResult;
         match resources.lookup(&tool_name) {
             LookupResult::NotFound => {
-                // Name the available tools so a model that hallucinated a tool
-                // (e.g. `write` instead of `fs` with action="write") can correct
-                // itself on retry instead of repeating the same bad call until the
-                // retry budget is exhausted.
                 let mut available: Vec<&str> =
                     resources.active_tools.iter().map(String::as_str).collect();
                 available.sort_unstable();
-                inbox.push(frag);
-                inbox.push(Fragment::hitch(
+                output.push(fragment);
+                output.push(Fragment::hitch(
                     format!(
                         "tool '{}' not found. Available tools: {}",
                         tool_name,
@@ -99,8 +95,8 @@ pub async fn react(
                 ));
             }
             LookupResult::Inactive => {
-                inbox.push(frag);
-                inbox.push(Fragment::hitch(
+                output.push(fragment);
+                output.push(Fragment::hitch(
                     format!("tool '{}' is disabled — activate it before use", tool_name),
                     None,
                     Role::Tool,
@@ -108,22 +104,25 @@ pub async fn react(
                 ));
             }
             LookupResult::Active => {
-                // Safe: lookup() returned Active, so get() is guaranteed Some.
-                let tool = resources.get(&tool_name).expect("lookup returned Active");
-                let tool_arc = resources
-                    .tools
-                    .get(&tool_name)
-                    .expect("lookup returned Active")
-                    .clone();
+                let Some(tool_arc) = tool_runtime.get_arc(&tool_name) else {
+                    output.push(fragment);
+                    output.push(Fragment::hitch(
+                        format!("tool '{}' has no runtime executor", tool_name),
+                        None,
+                        Role::Tool,
+                        Some(call_id),
+                    ));
+                    continue;
+                };
+                let deadline = Duration::from_secs(tool_arc.timeout().as_secs());
                 let env_arc = Arc::new(env.clone());
-                let deadline = Duration::from_secs(tool.timeout().as_secs());
 
                 tool_call_ids.push(call_id.clone());
                 tool_names.push(tool_name.clone());
                 tool_futures.push(Box::pin(async move {
                     let started_at = Instant::now();
                     let handle = tokio::spawn(async move {
-                        timeout(deadline, tool_arc.execute(args, &env_arc)).await
+                        timeout(deadline, tool_arc.execute(arguments, &env_arc)).await
                     });
                     let result = handle.await;
                     let elapsed = started_at.elapsed();
@@ -143,9 +142,9 @@ pub async fn react(
                                 elapsed,
                             ))
                         }
-                        Ok(Ok(Err(msg))) => {
-                            warn!(tool = tool_name, msg, "tool failed");
-                            Err((format!("tool '{}' error: {}", tool_name, msg), elapsed))
+                        Ok(Ok(Err(message))) => {
+                            warn!(tool = tool_name, message, "tool failed");
+                            Err((format!("tool '{}' error: {}", tool_name, message), elapsed))
                         }
                         Ok(Err(_)) => {
                             warn!(
@@ -162,78 +161,84 @@ pub async fn react(
                                 elapsed,
                             ))
                         }
-                        Err(join_err) => {
-                            let msg = if join_err.is_panic() {
-                                let payload = join_err.into_panic();
+                        Err(join_error) => {
+                            let message = if join_error.is_panic() {
+                                let payload = join_error.into_panic();
                                 payload
                                     .downcast_ref::<&str>()
-                                    .map(|s| format!("tool '{}' panicked: {}", tool_name, s))
+                                    .map(|panic_message| {
+                                        format!("tool '{}' panicked: {}", tool_name, panic_message)
+                                    })
                                     .or_else(|| {
-                                        payload.downcast_ref::<String>().map(|s| {
-                                            format!("tool '{}' panicked: {}", tool_name, s)
+                                        payload.downcast_ref::<String>().map(|panic_message| {
+                                            format!(
+                                                "tool '{}' panicked: {}",
+                                                tool_name, panic_message
+                                            )
                                         })
                                     })
                                     .unwrap_or_else(|| format!("tool '{}' panicked", tool_name))
                             } else {
                                 format!("tool '{}' cancelled", tool_name)
                             };
-                            warn!("{}", msg);
-                            Err((msg, elapsed))
+                            warn!(message);
+                            Err((message, elapsed))
                         }
                     }
                 }));
-                tool_fragments.push(frag);
+                tool_fragments.push(fragment);
             }
         }
     }
 
-    // ── Phase 2: execute all tool calls concurrently ──
     let results = join_all(tool_futures).await;
 
-    // ── Phase 3: push results, indexed by position ──
-    for (((frag, call_id), tool_name), result) in tool_fragments
+    for (((fragment, call_id), tool_name), result) in tool_fragments
         .into_iter()
         .zip(tool_call_ids)
         .zip(tool_names)
         .zip(results)
     {
-        inbox.push(frag);
+        output.push(fragment);
 
         match result {
-            Ok((result_frag, duration)) => {
+            Ok((result_fragment, duration)) => {
                 hook!(
                     event = "tool_result",
                     machine_id,
                     call_id,
                     tool = tool_name,
-                    result = %result_frag.content_as_text(),
+                    result = %result_fragment.content_as_text(),
                     duration = %humantime(duration),
                 );
-                inbox.push(result_frag);
+                output.push(result_fragment);
             }
-            Err((msg, duration)) => {
-                warn!(tool = tool_name, msg, "tool failed");
+            Err((message, duration)) => {
+                warn!(tool = tool_name, message, "tool failed");
                 hook!(
                     event = "tool_error",
                     machine_id,
                     call_id,
                     tool = tool_name,
-                    error = %msg,
+                    error = %message,
                     duration = %humantime(duration),
                 );
-                inbox.push(Fragment::hitch(msg, None, Role::Tool, Some(call_id)));
+                output.push(Fragment::hitch(message, None, Role::Tool, Some(call_id)));
             }
         }
     }
 
-    usage
+    ActionOutcome::Reactor {
+        fragments: output,
+        usage,
+    }
 }
 
-fn humantime(d: Duration) -> String {
-    let ms = d.as_millis();
-    if ms < 1000 {
-        format!("{}ms", ms)
+fn humantime(duration: Duration) -> String {
+    let milliseconds = duration.as_millis();
+    if milliseconds < 1000 {
+        format!("{}ms", milliseconds)
     } else {
-        format!("{:.1}s", ms as f64 / 1000.0)
+        format!("{:.1}s", milliseconds as f64 / 1000.0)
     }
 }

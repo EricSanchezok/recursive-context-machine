@@ -112,6 +112,18 @@ impl Graph {
         GraphRun::new(self, input).run().await
     }
 
+    /// Run with specific per-component initial inputs (by component id), on top of
+    /// any boundary-input wiring. Used by a `Map` to seed each dynamically-added
+    /// worker with its own item before execution.
+    pub async fn run_seeded(self, input: State, seeds: Vec<(ComponentId, State)>) -> State {
+        self.validate().expect("invalid graph");
+        let mut run = GraphRun::new(self, input);
+        for (id, state) in seeds {
+            run.inputs[id.index()] = state;
+        }
+        run.run().await
+    }
+
     fn validate_flux_inputs(&self) -> Result<(), String> {
         let mut filled_slots = self
             .components
@@ -612,7 +624,10 @@ fn state_with_channel(channel: Channel, source: &State) -> State {
     let mut state = State::default();
     match channel {
         Channel::Purpose => state.purpose.clone_from(&source.purpose),
-        Channel::Context => state.ctx = source.ctx.clone(),
+        Channel::Context => {
+            state.ctx = source.ctx.clone();
+            state.fold_payload.clone_from(&source.fold_payload);
+        }
         Channel::Environment => state.env = source.env.clone(),
         Channel::Resources => state.res = source.res.clone(),
         Channel::Pulse => {}
@@ -623,7 +638,10 @@ fn state_with_channel(channel: Channel, source: &State) -> State {
 fn set_channel(target: &mut State, channel: Channel, source: State) {
     match channel {
         Channel::Purpose => target.purpose = source.purpose,
-        Channel::Context => target.ctx = source.ctx,
+        Channel::Context => {
+            target.ctx = source.ctx;
+            target.fold_payload = source.fold_payload;
+        }
         Channel::Environment => target.env = source.env,
         Channel::Resources => target.res = source.res,
         Channel::Pulse => {}
