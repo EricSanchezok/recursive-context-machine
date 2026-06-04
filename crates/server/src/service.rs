@@ -46,12 +46,6 @@ impl Rcm for RcmService {
                 .map_err(Status::invalid_argument)?;
         }
 
-        if !req.policy.is_empty() {
-            catalog
-                .policy(&req.policy)
-                .map_err(Status::invalid_argument)?;
-        }
-
         let environment_name = if req.environment.is_empty() {
             "local"
         } else {
@@ -61,11 +55,11 @@ impl Rcm for RcmService {
             .environment(environment_name)
             .map_err(Status::invalid_argument)?;
         let resources = catalog
-            .resources_for(ResourceSelection {
+            .build_runtime_resources(ResourceSelection {
                 models: req.models,
                 tools: req.tools,
                 mcp_servers: req.mcps,
-                prompts: req.prompts,
+                prompt_texts: req.prompts,
             })
             .await
             .map_err(Status::invalid_argument)?;

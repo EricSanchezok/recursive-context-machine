@@ -19,8 +19,7 @@ message OpenRequest {
   map<string, string> prompts = 5;
   repeated string models = 6;
   repeated string mcps = 7;
-  string policy = 8;
-  string environment = 9;
+  string environment = 8;
 }
 
 message ModelSpec {
