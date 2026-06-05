@@ -8,7 +8,6 @@ use machine::{
 use utils::{AcceleratorId, Name};
 
 use crate::graph::Graph;
-use crate::wire::{Channel, Endpoint, Port};
 
 fn is_scaffolding(fragment: &Fragment) -> bool {
     fragment.role == Role::System
@@ -246,7 +245,7 @@ fn reorder_context_before_first_halt(state: &mut RunState, base_purpose: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use machine::{Fragment, Role};
+    use machine::Fragment;
 
     fn state_with_assistant(text: &str) -> RunState {
         let mut state = RunState::default();

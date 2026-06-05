@@ -9,11 +9,10 @@
 use std::pin::Pin;
 use std::time::Duration;
 
-use machine::{Environment, ToolResult};
+use machine::{Environment, RunState, ToolResult};
 use serde_json::Value;
 
 use crate::accelerator::Accelerator;
-use crate::state::State;
 
 /// Tool that spawns many worker accelerator instances concurrently.
 ///
@@ -50,9 +49,9 @@ impl SpawnTool {
     /// Try to extract a status line from a worker's output.
     /// Scans context fragments first, then falls back to the purpose field
     /// (status text set in the worker's base purpose survives merge_input).
-    fn extract_status(output: &State) -> &'static str {
-        // 1. Check ctx text fragments (handoff messages from real workers).
-        for fragment in output.ctx.fragments() {
+    fn extract_status(output: &RunState) -> &'static str {
+        // 1. Check context text fragments (handoff messages from real workers).
+        for fragment in output.context.fragments() {
             let Some(text) = fragment.as_text() else {
                 continue;
             };
@@ -74,7 +73,7 @@ impl SpawnTool {
         }
         // 2. Fallback: scan the purpose (workers with halt-only policies
         //    may encode status in purpose, which survives merge_input).
-        for line in output.purpose.lines() {
+        for line in output.purpose.text.lines() {
             let line = line.trim();
             if line == "status: ok" {
                 return "ok";
@@ -171,11 +170,11 @@ impl machine::Tool for SpawnTool {
                         let worker = self.worker.clone();
                         let item_text =
                             serde_json::to_string_pretty(item).unwrap_or_else(|_| item.to_string());
-                        let mut worker_state = State {
-                            env: env.clone(),
-                            ..State::default()
+                        let mut worker_state = RunState {
+                            environment: env.clone(),
+                            ..RunState::default()
                         };
-                        worker_state.ctx.append(
+                        worker_state.context.append(
                             machine::Fragment::user(format!(
                                 "Your assigned work item:\n{item_text}"
                             ))

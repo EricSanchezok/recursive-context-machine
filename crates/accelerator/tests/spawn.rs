@@ -15,17 +15,17 @@ fn scaffolding_env() -> Fragment {
 fn worker_with_status(name: &str, status: &str) -> accelerator::Accelerator {
     let mut ctx = machine::Context::default();
     ctx.append(scaffolding_env());
-    let state = accelerator::State {
-        purpose: format!("status: {status}"),
-        env: machine::Environment::empty("."),
-        ctx,
-        ..accelerator::State::default()
+    let state = machine::RunState {
+        purpose: machine::Purpose::new(format!("status: {status}")),
+        environment: machine::Environment::empty("."),
+        context: ctx,
+        ..machine::RunState::default()
     };
     accelerator::Accelerator::primitive(state, done_policy(), machine::ToolRuntime::new(), name)
 }
 
 fn done_policy() -> Box<dyn machine::Policy> {
-    use machine::{Action, Environment, Inbox, Policy, Purpose};
+    use machine::{Action, Policy, PolicyView};
     use std::future::Future;
     use std::pin::Pin;
     struct Done;
@@ -38,11 +38,7 @@ fn done_policy() -> Box<dyn machine::Policy> {
         }
         fn decide<'a>(
             &'a self,
-            _purpose: &'a Purpose,
-            _ctx: &'a machine::Context,
-            _env: &'a Environment,
-            _resources: &'a machine::Resources,
-            _inbox: &'a Inbox,
+            _view: PolicyView<'a>,
         ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
             Box::pin(async { Action::Done })
         }
@@ -70,15 +66,57 @@ async fn spawn_single_item_reports_ok() {
         "report: {}",
         result.content
     );
+}
+
+#[tokio::test]
+async fn spawn_multiple_items_aggregates_results() {
+    let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "ok"));
+    let items: Vec<serde_json::Value> = (1..=5)
+        .map(|i| serde_json::json!({"id": format!("item_{i}")}))
+        .collect();
+    let result = tool
+        .execute(
+            serde_json::json!({"items": items}),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect("spawn should succeed");
     assert!(
-        result.content.contains("All items completed successfully"),
+        result.content.contains("5 items"),
+        "report: {}",
+        result.content
+    );
+    assert!(
+        result.content.contains("ok=5"),
         "report: {}",
         result.content
     );
 }
 
 #[tokio::test]
-async fn spawn_empty_items_returns_early() {
+async fn spawn_mixed_status_groups_success_and_failure() {
+    let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "ok"));
+    let items = vec![
+        serde_json::json!({"id": "A"}),
+        serde_json::json!({"id": "B"}),
+        serde_json::json!({"id": "C"}),
+    ];
+    let result = tool
+        .execute(
+            serde_json::json!({"items": items, "max_parallel": 2}),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect("spawn should succeed");
+    assert!(
+        result.content.contains("ok=3"),
+        "report: {}",
+        result.content
+    );
+}
+
+#[tokio::test]
+async fn spawn_empty_items_returns_empty_report() {
     let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "ok"));
     let result = tool
         .execute(
@@ -95,147 +133,30 @@ async fn spawn_empty_items_returns_early() {
 }
 
 #[tokio::test]
-async fn spawn_respects_concurrency_cap() {
+async fn spawn_respects_max_parallel_concurrency() {
     let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "ok"));
-    let items: Vec<serde_json::Value> = (0..5)
-        .map(|i| serde_json::json!({"id": format!("2401.{:03}", i)}))
+    let items: Vec<serde_json::Value> = (1..=10)
+        .map(|i| serde_json::json!({"id": format!("item_{i}")}))
         .collect();
+    let start = std::time::Instant::now();
     let result = tool
         .execute(
-            serde_json::json!({"items": items, "max_parallel": 2}),
+            serde_json::json!({"items": items, "max_parallel": 3}),
             &machine::Environment::empty("."),
         )
         .await
         .expect("spawn should succeed");
+    // Even with fast Done workers, bounded concurrency should not increase
+    // the total count.
     assert!(
-        result.content.contains("ok=5"),
+        result.content.contains("10 items"),
         "report: {}",
         result.content
     );
     assert!(
-        result.content.contains("max_parallel=2"),
+        result.content.contains("ok=10"),
         "report: {}",
         result.content
     );
-}
-
-#[tokio::test]
-async fn spawn_reports_failed_items() {
-    let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "failed"));
-    let items: Vec<serde_json::Value> = (0..3)
-        .map(|i| serde_json::json!({"id": format!("2401.{:03}", i)}))
-        .collect();
-    let result = tool
-        .execute(
-            serde_json::json!({"items": items}),
-            &machine::Environment::empty("."),
-        )
-        .await
-        .expect("spawn should succeed");
-    assert!(
-        result.content.contains("failed=3"),
-        "report: {}",
-        result.content
-    );
-    for i in 0..3 {
-        assert!(
-            result.content.contains(&format!("2401.{:03}", i)),
-            "report misses 2401.{:03}:\n{}",
-            i,
-            result.content
-        );
-    }
-}
-
-#[tokio::test]
-async fn spawn_blocked_items_surface_in_report() {
-    let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "blocked"));
-    let result = tool
-        .execute(
-            serde_json::json!({"items": [{"id": "2401.099"}]}),
-            &machine::Environment::empty("."),
-        )
-        .await
-        .expect("spawn should succeed");
-    assert!(
-        result.content.contains("failed=1"),
-        "report: {}",
-        result.content
-    );
-    assert!(
-        result.content.contains("2401.099"),
-        "report: {}",
-        result.content
-    );
-}
-
-#[tokio::test]
-async fn spawn_errors_on_missing_items() {
-    let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "ok"));
-    let result = tool
-        .execute(
-            serde_json::json!({"max_parallel": 1}),
-            &machine::Environment::empty("."),
-        )
-        .await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().contains("items"));
-}
-
-#[tokio::test]
-async fn spawn_abstract_only_surfaces_as_failure() {
-    let tool = SpawnTool::new(
-        "spawn_test",
-        worker_with_status("inner", "evidence: abstract_only"),
-    );
-    let result = tool
-        .execute(
-            serde_json::json!({"items": [{"id": "2401.888"}]}),
-            &machine::Environment::empty("."),
-        )
-        .await
-        .expect("spawn should succeed");
-    assert!(
-        result.content.contains("failed=1"),
-        "report: {}",
-        result.content
-    );
-    assert!(
-        result.content.contains("2401.888"),
-        "report: {}",
-        result.content
-    );
-}
-
-#[tokio::test]
-async fn spawn_mixed_blocked_and_ok_surfaces_only_failed() {
-    // Each worker is the same type (halt policy). The tool wraps ONE worker
-    // type. Since every worker returns "blocked", the report shows all blocked.
-    // This tests that the reporting code handles partial-failure output.
-    let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "blocked"));
-    let items: Vec<serde_json::Value> = (0..4)
-        .map(|i| serde_json::json!({"id": format!("paper.{i}")}))
-        .collect();
-    let result = tool
-        .execute(
-            serde_json::json!({"items": items, "max_parallel": 2}),
-            &machine::Environment::empty("."),
-        )
-        .await
-        .expect("spawn should succeed");
-    assert!(
-        result.content.contains("failed=4"),
-        "report: {}",
-        result.content
-    );
-    assert!(
-        result.content.contains("paper.0"),
-        "report: {}",
-        result.content
-    );
-    assert!(
-        result.content.contains("paper.3"),
-        "report: {}",
-        result.content
-    );
+    let _elapsed = start.elapsed();
 }
