@@ -120,14 +120,9 @@ impl Captain {
         }
     }
 
-    fn respond(&self, ctx: &Context, env: &Environment) -> Action {
-        match moves::env::refresh(ctx, env) {
-            Step::Emit(action) => action,
-            Step::Ready => {
-                self.enter(Phase::Running);
-                Action::Halt
-            }
-        }
+    fn respond(&self) -> Action {
+        self.enter(Phase::Running);
+        Action::Halt
     }
 }
 
@@ -154,14 +149,14 @@ impl Policy for Captain {
             }
 
             if self.phase() == Phase::Respond {
-                return self.respond(ctx, env);
+                return self.respond();
             }
 
             match moves::react::decide(ctx, inbox, &self.retry).await {
                 ReactDecision::Action(action) => action,
                 ReactDecision::Respond => {
                     self.enter(Phase::Respond);
-                    self.respond(ctx, env)
+                    self.respond()
                 }
             }
         })
