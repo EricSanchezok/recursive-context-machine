@@ -106,12 +106,14 @@ impl Compiler {
 
         match &file.body {
             AcceleratorBodyDef::Primitive(primitive) => {
-                let (mut state, policy, tool_runtime) =
+                let (state, policy, tool_runtime) =
                     build_state(&catalog, primitive, &self.root).await?;
-                let mut acc =
-                    Accelerator::primitive(state.clone(), policy, tool_runtime, file.name.as_str());
-                inject_spawns(&primitive.spawns, &imports, &mut acc).await?;
-                Ok(acc)
+                Ok(Accelerator::primitive(
+                    state,
+                    policy,
+                    tool_runtime,
+                    file.name.as_str(),
+                ))
             }
             AcceleratorBodyDef::Graph(graph_def) => {
                 let graph = self
@@ -455,18 +457,16 @@ fn prompt_texts_from_sources(
 
 /// Inject `spawn_<alias>` tools into a planner accelerator for each name in
 /// `spawn_names`. Each tool wraps the imported worker accelerator.
-/// Aliases not found in `imports` are silently skipped (the standalone
-/// compilation of a primitive file has no import context — spawns are
-/// injected when the composite graph wires everything together).
+/// Aliases not found in `imports` produce a compile error.
 async fn inject_spawns(
     spawn_names: &[String],
     imports: &HashMap<String, Accelerator>,
     planner: &mut Accelerator,
 ) -> Result<(), String> {
     for alias in spawn_names {
-        let Some(worker) = imports.get(alias) else {
-            continue;
-        };
+        let worker = imports
+            .get(alias)
+            .ok_or_else(|| format!("spawns references unknown accelerator import: {alias}"))?;
         let tool = Arc::new(SpawnTool::new(format!("spawn_{alias}"), worker.clone()));
         planner.inject_tool(tool);
     }

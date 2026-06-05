@@ -7,14 +7,10 @@
 //! that it can use to retry failed items.
 
 use std::pin::Pin;
-use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::StreamExt;
-use futures_util::stream::FuturesUnordered;
-use machine::ToolResult;
+use machine::{Environment, ToolResult};
 use serde_json::Value;
-use tokio::sync::Semaphore;
 
 use crate::accelerator::Accelerator;
 use crate::state::State;
@@ -50,25 +46,43 @@ impl SpawnTool {
             worker,
         }
     }
-}
 
-impl SpawnTool {
-    /// Extract the status from a worker's output state by scanning handoff text.
+    /// Try to extract a status line from a worker's output.
+    /// Scans context fragments first, then falls back to the purpose field
+    /// (status text set in the worker's base purpose survives merge_input).
     fn extract_status(output: &State) -> &'static str {
+        // 1. Check ctx text fragments (handoff messages from real workers).
         for fragment in output.ctx.fragments() {
             let Some(text) = fragment.as_text() else {
                 continue;
             };
-            if text.contains("status: ok") {
+            for line in text.lines() {
+                let line = line.trim();
+                if line == "status: ok" {
+                    return "ok";
+                }
+                if line == "status: blocked" {
+                    return "blocked";
+                }
+                if line == "status: failed" {
+                    return "failed";
+                }
+                if line.contains("evidence: abstract_only") {
+                    return "abstract_only";
+                }
+            }
+        }
+        // 2. Fallback: scan the purpose (workers with halt-only policies
+        //    may encode status in purpose, which survives merge_input).
+        for line in output.purpose.lines() {
+            let line = line.trim();
+            if line == "status: ok" {
                 return "ok";
             }
-            if text.contains("evidence: abstract_only") {
-                return "abstract_only";
-            }
-            if text.contains("blocked") {
+            if line == "status: blocked" {
                 return "blocked";
             }
-            if text.contains("status: failed") {
+            if line == "status: failed" {
                 return "failed";
             }
         }
@@ -111,7 +125,7 @@ impl machine::Tool for SpawnTool {
     fn execute<'a>(
         &'a self,
         args: Value,
-        _env: &'a machine::Environment,
+        env: &'a Environment,
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
         Box::pin(async move {
             let items = args
@@ -124,8 +138,14 @@ impl machine::Tool for SpawnTool {
                 .unwrap_or(5)
                 .max(1) as usize;
 
-            let semaphore = Arc::new(Semaphore::new(max_parallel));
             let total = items.len();
+            if total == 0 {
+                return Ok(ToolResult {
+                    content: "spawn called with empty items list, nothing to do.".into(),
+                    call_id: String::new(),
+                    title: Some("spawn: empty".into()),
+                });
+            }
 
             // Pre-extract item IDs for the summary report.
             let item_ids: Vec<String> = items
@@ -138,48 +158,54 @@ impl machine::Tool for SpawnTool {
                 })
                 .collect();
 
-            // Fire each worker as a spawned task, bounded by the semaphore.
-            let mut futures: FuturesUnordered<_> = FuturesUnordered::new();
-            for (i, item) in items.iter().enumerate() {
-                let permit = semaphore
-                    .clone()
-                    .acquire_owned()
-                    .await
-                    .map_err(|_| "spawn concurrency interrupted".to_string())?;
-                let worker = self.worker.clone();
-                let item_text =
-                    serde_json::to_string_pretty(item).unwrap_or_else(|_| item.to_string());
-                let mut worker_state = State::default();
-                worker_state.ctx.append(
-                    machine::Fragment::user(format!("Your assigned work item:\n{item_text}"))
-                        .with_tag("item"),
-                );
-
-                futures.push(tokio::spawn(async move {
-                    let _permit = permit;
-                    let output = worker.run_with(worker_state).await;
-                    let status = SpawnTool::extract_status(&output);
-                    (i, status.to_string())
-                }));
-            }
-
-            // Collect all outcomes.
-            let mut outcomes = Vec::with_capacity(total);
-            while let Some(result) = futures.next().await {
-                match result {
-                    Ok((i, status)) => outcomes.push((i, status)),
-                    Err(e) => outcomes.push((total, format!("task_panic: {e}"))),
+            // Run workers in bounded waves. Use chunks so we never run more
+            // than max_parallel futures concurrently. join_all works on any
+            // tokio runtime (no tokio::spawn needed).
+            let mut outcomes = vec![None; total];
+            let mut start = 0;
+            for chunk in items.chunks(max_parallel) {
+                let wave: Vec<_> = chunk
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, item)| {
+                        let worker = self.worker.clone();
+                        let item_text =
+                            serde_json::to_string_pretty(item).unwrap_or_else(|_| item.to_string());
+                        let mut worker_state = State {
+                            env: env.clone(),
+                            ..State::default()
+                        };
+                        worker_state.ctx.append(
+                            machine::Fragment::user(format!(
+                                "Your assigned work item:\n{item_text}"
+                            ))
+                            .with_tag("item"),
+                        );
+                        let idx = start + offset;
+                        async move {
+                            let output = worker.run_with(worker_state).await;
+                            let status = SpawnTool::extract_status(&output);
+                            (idx, status.to_string())
+                        }
+                    })
+                    .collect();
+                for (idx, status) in futures_util::future::join_all(wave).await {
+                    outcomes[idx] = Some(status);
                 }
+                start += chunk.len();
             }
 
             // Build summary report.
             let mut ok = 0u32;
             let mut failures = Vec::new();
-            for (i, status) in &outcomes {
-                if status == "ok" {
-                    ok += 1;
-                } else if let Some(id) = item_ids.get(*i) {
-                    failures.push(id.clone());
+            for (i, slot) in outcomes.iter().enumerate() {
+                match slot.as_deref() {
+                    Some("ok") => ok += 1,
+                    _ => {
+                        if let Some(id) = item_ids.get(i) {
+                            failures.push(id.clone());
+                        }
+                    }
                 }
             }
 
@@ -202,7 +228,7 @@ impl machine::Tool for SpawnTool {
             Ok(ToolResult {
                 content: report,
                 call_id: String::new(),
-                title: Some(format!("spawn_{tool_name}: {ok}/{} ok", outcomes.len())),
+                title: Some(format!("spawn_{tool_name}: {ok}/{} ok", total)),
             })
         })
     }
