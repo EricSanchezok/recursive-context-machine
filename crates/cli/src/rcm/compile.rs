@@ -2,13 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::Arc;
 
 use accelerator::mcp::{McpServerConfig, McpTransportConfig};
+use accelerator::tools::SpawnTool;
 use accelerator::{
     Accelerator, BridgeKind, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate,
-    Endpoint, EnvFlux, EnvironmentPredicate, FluxMode, GatherSpec, Graph, Port,
-    Predicate as AccelPredicate, PurposeFlux, PurposePredicate, ResFlux, ResourceSelection,
-    ResourcesPredicate, ScatterSpec, State,
+    Endpoint, EnvFlux, EnvironmentPredicate, FluxMode, Graph, Port, Predicate as AccelPredicate,
+    PurposeFlux, PurposePredicate, ResFlux, ResourceSelection, ResourcesPredicate, State,
 };
 use machine::{Limit, Modalities, Modality, Model, Policy, Protocol};
 
@@ -105,14 +106,12 @@ impl Compiler {
 
         match &file.body {
             AcceleratorBodyDef::Primitive(primitive) => {
-                let (state, policy, tool_runtime) =
+                let (mut state, policy, tool_runtime) =
                     build_state(&catalog, primitive, &self.root).await?;
-                Ok(Accelerator::primitive(
-                    state,
-                    policy,
-                    tool_runtime,
-                    file.name.as_str(),
-                ))
+                let mut acc =
+                    Accelerator::primitive(state.clone(), policy, tool_runtime, file.name.as_str());
+                inject_spawns(&primitive.spawns, &imports, &mut acc).await?;
+                Ok(acc)
             }
             AcceleratorBodyDef::Graph(graph_def) => {
                 let graph = self
@@ -139,7 +138,14 @@ impl Compiler {
                 AcceleratorSourceDef::Inline(primitive) => {
                     let (state, policy, tool_runtime) =
                         build_state(catalog, primitive, &self.root).await?;
-                    Accelerator::primitive(state, policy, tool_runtime, accelerator_def.id.as_str())
+                    let mut acc = Accelerator::primitive(
+                        state,
+                        policy,
+                        tool_runtime,
+                        accelerator_def.id.as_str(),
+                    );
+                    inject_spawns(&primitive.spawns, imports, &mut acc).await?;
+                    acc
                 }
                 AcceleratorSourceDef::Import { alias, .. } => imports
                     .get(alias)
@@ -149,21 +155,6 @@ impl Compiler {
             let component = graph.add_accelerator(accelerator_def.id.as_str(), accelerator);
             insert_symbol(&mut symbols, accelerator_def.id.as_str(), component)?;
             component_kinds.insert(accelerator_def.id.clone(), ComponentTag::Accelerator);
-        }
-
-        for map_def in &graph_def.maps {
-            let inner = imports
-                .get(&map_def.inner_alias)
-                .ok_or_else(|| format!("unknown map accelerator import: {}", map_def.inner_alias))?
-                .clone();
-            let scatter = resolve_scatter(&map_def.scatter, map_def.scatter_file.as_deref())?;
-            let gather = resolve_gather(&map_def.gather)?;
-            let accelerator = Accelerator::map_named(map_def.id.as_str(), inner, scatter, gather);
-            // A Map wires exactly like an accelerator node (one context in/out,
-            // trigger, done), so it is tagged Accelerator for port resolution.
-            let component = graph.add_accelerator(map_def.id.as_str(), accelerator);
-            insert_symbol(&mut symbols, map_def.id.as_str(), component)?;
-            component_kinds.insert(map_def.id.clone(), ComponentTag::Accelerator);
         }
 
         for flux_def in &graph_def.fluxes {
@@ -458,21 +449,21 @@ fn prompt_texts_from_sources(
     Ok(prompts)
 }
 
-fn resolve_scatter(kind: &str, file: Option<&str>) -> Result<ScatterSpec, String> {
-    match kind {
-        "json" => Ok(ScatterSpec::Json),
-        "file" => file
-            .map(|name| ScatterSpec::File(name.to_string()))
-            .ok_or_else(|| "map scatter = file requires a filename".to_string()),
-        other => Err(format!("unknown map scatter: {}", other)),
+/// Inject `spawn_<alias>` tools into a planner accelerator for each name in
+/// `spawn_names`. Each tool wraps the imported worker accelerator.
+async fn inject_spawns(
+    spawn_names: &[String],
+    imports: &HashMap<String, Accelerator>,
+    planner: &mut Accelerator,
+) -> Result<(), String> {
+    for alias in spawn_names {
+        let worker = imports
+            .get(alias)
+            .ok_or_else(|| format!("spawns references unknown accelerator import: {alias}"))?;
+        let tool = Arc::new(SpawnTool::new(format!("spawn_{alias}"), worker.clone()));
+        planner.inject_tool(tool);
     }
-}
-
-fn resolve_gather(name: &str) -> Result<GatherSpec, String> {
-    match name {
-        "digest" => Ok(GatherSpec::Digest),
-        other => Err(format!("unknown map gather: {}", other)),
-    }
+    Ok(())
 }
 
 fn flux_mode_from_def(def: &ast::FluxDef) -> Result<FluxMode, String> {

@@ -37,31 +37,17 @@ pub struct PrimitiveDef {
     pub mcps: Option<Vec<String>>,
     pub policy: Option<String>,
     pub environment: Option<String>,
+    /// Aliases of `use`-imported accelerators to expose as `spawn_<alias>` tools.
+    /// The planner LLM calls these tools to dispatch parallel workers.
+    pub spawns: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GraphDef {
     pub accelerators: Vec<GraphAcceleratorDef>,
-    pub maps: Vec<MapDef>,
     pub fluxes: Vec<FluxDef>,
     pub conditions: Vec<ConditionDef>,
     pub wires: Vec<WireDef>,
-}
-
-/// A `map` node: fans an imported accelerator out over a runtime-sized list.
-/// Wires like an ordinary accelerator; the fan-out happens inside the engine.
-#[derive(Debug, Clone, Serialize)]
-pub struct MapDef {
-    pub id: String,
-    /// Alias of a `use`-imported accelerator to run per item.
-    pub inner_alias: String,
-    /// How to split the input into items: `json` (parse the last message) or
-    /// `file` (read a JSON array from `<run_dir>/<scatter_file>`).
-    pub scatter: String,
-    /// For `scatter = file "<name>"`: the work-list filename, relative to run_dir.
-    pub scatter_file: Option<String>,
-    /// How to merge per-item outputs (e.g. `digest`).
-    pub gather: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

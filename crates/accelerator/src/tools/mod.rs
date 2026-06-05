@@ -7,6 +7,7 @@ mod git;
 mod image_gen;
 mod lsp;
 pub mod shell;
+mod spawn;
 mod wait;
 mod webfetch;
 
@@ -17,6 +18,7 @@ pub use git::{GitTool, check_safety as check_git_safety, tokenize as tokenize_gi
 pub use image_gen::ImageGenTool;
 pub use lsp::LspTool;
 pub use shell::{OUTPUT_CAP_BYTES, ShellTool, build_result, collect_output};
+pub use spawn::SpawnTool;
 pub use wait::WaitTool;
 pub use webfetch::WebFetchTool;
 
