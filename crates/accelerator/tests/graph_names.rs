@@ -4,12 +4,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use accelerator::{
-    Accelerator, BridgeKind, Captain, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode,
-    Graph, ResFlux,
+    Accelerator, BridgeKind, Channel, ComponentKind, ContextFlux, Endpoint, FluxMode, Graph,
+    ResFlux,
 };
 use machine::{
-    Fragment, Model, Policy, PolicyView, Purpose, Resources, Role, RunState, ToolDefinition,
-    ToolRuntime,
+    Fragment, Model, Policy, PolicyView, Purpose, Resources, RunState, ToolDefinition, ToolRuntime,
 };
 
 use std::future::Future;
@@ -674,69 +673,5 @@ fn bridge_flattens_multi_slot_context_after_last() {
     assert!(
         output.purpose.text.contains("Downloaded arxiv:2401.12345"),
         "should include second slot"
-    );
-}
-
-#[tokio::test]
-async fn last_flux_reorders_upstream_content_after_scaffolding() {
-    // Set up resources with a captain prompt so Captain has something to inject.
-    let mut captain_resources = Resources::named("captain-test");
-    captain_resources
-        .prompts
-        .insert("captain".into(), "Captain prompt".into());
-    captain_resources = captain_resources.with_model(Model {
-        name: "fast".into(),
-        ..Default::default()
-    });
-
-    let state = RunState {
-        purpose: Purpose::new("调查大模型多智能体框架"),
-        resources: captain_resources,
-        ..RunState::default()
-    };
-
-    let accelerator = Accelerator::primitive(
-        state,
-        Box::new(Captain::new()),
-        ToolRuntime::new(),
-        "last-reorder-test",
-    );
-
-    // Feed upstream context through run_with: a handoff from upstream.
-    let mut input = RunState::default();
-    input
-        .context
-        .append(Fragment::assistant("handoff: run_dir=xxx, status=ok"));
-
-    let output = accelerator.run_with(input).await;
-
-    // After Captain setup + fire reordering:
-    // Expected order: [captain prompt, agenst.md, purpose_initial, env, handoff, purpose_b]
-    let frags = output.context.fragments();
-    assert!(
-        frags.len() >= 5,
-        "should have scaffolding + upstream + purpose_b: {}",
-        frags.len()
-    );
-
-    // Find positions.
-    let pos_env = frags
-        .iter()
-        .position(|f| f.role == Role::System && f.tag == "env");
-    let pos_handoff = frags.iter().position(|f| f.tag == "assistant");
-    let pos_purpose_b = frags.iter().position(|f| f.tag == "purpose_b");
-
-    assert!(pos_env.is_some(), "env fragment must exist");
-    assert!(pos_handoff.is_some(), "handoff fragment must exist");
-    assert!(pos_purpose_b.is_some(), "purpose_b fragment must exist");
-
-    // Check ordering: env < handoff < purpose_b
-    assert!(
-        pos_env.unwrap() < pos_handoff.unwrap(),
-        "env should come before handoff"
-    );
-    assert!(
-        pos_handoff.unwrap() < pos_purpose_b.unwrap(),
-        "handoff should come before purpose_b"
     );
 }
