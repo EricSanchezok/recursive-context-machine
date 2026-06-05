@@ -247,7 +247,7 @@ impl Machine {
             }
         }
 
-        self.apply_effects(state, &effects);
+        self.apply_live_effects(state, &effects);
         let done = state.frame.status.is_done();
         StepResult {
             done,
@@ -255,18 +255,28 @@ impl Machine {
         }
     }
 
-    pub fn apply_effects(&self, state: &mut MachineState, effects: &[Effect]) {
+    pub fn replay_effects(&self, state: &mut MachineState, effects: &[Effect]) {
+        self.apply_effects(state, effects, HookMode::Suppress);
+    }
+
+    fn apply_live_effects(&self, state: &mut MachineState, effects: &[Effect]) {
+        self.apply_effects(state, effects, HookMode::Emit);
+    }
+
+    fn apply_effects(&self, state: &mut MachineState, effects: &[Effect], hook_mode: HookMode) {
         for effect in effects {
-            self.apply_effect(state, effect);
+            self.apply_effect(state, effect, hook_mode);
         }
     }
 
-    fn apply_effect(&self, state: &mut MachineState, effect: &Effect) {
+    fn apply_effect(&self, state: &mut MachineState, effect: &Effect, hook_mode: HookMode) {
         match effect {
             Effect::ActionCounted { action } => state.run.telemetry.count_action(action.clone()),
             Effect::ContextAppended { id, fragment } => {
                 state.run.context.append_with_id(*id, fragment.clone());
-                self.hook_fragment("appended", state.frame.step, *id, &state.run.context);
+                if hook_mode.emits() {
+                    self.hook_fragment("appended", state.frame.step, *id, &state.run.context);
+                }
             }
             Effect::ContextInserted {
                 id,
@@ -277,62 +287,76 @@ impl Machine {
                     .run
                     .context
                     .insert_with_id(*after, *id, fragment.clone());
-                self.hook_fragment("inserted", state.frame.step, *id, &state.run.context);
+                if hook_mode.emits() {
+                    self.hook_fragment("inserted", state.frame.step, *id, &state.run.context);
+                }
             }
             Effect::ContextReplaced { id, fragment } => {
                 let _ = state.run.context.replace(*id, fragment.clone());
-                self.hook_fragment("replaced", state.frame.step, *id, &state.run.context);
+                if hook_mode.emits() {
+                    self.hook_fragment("replaced", state.frame.step, *id, &state.run.context);
+                }
             }
             Effect::ContextRemoved { id } => {
                 let _ = state.run.context.remove(*id);
-                let machine_id = self.id.to_string();
-                hook!(
-                    event = "removed",
-                    machine_id = machine_id,
-                    id,
-                    step = state.frame.step
-                );
+                if hook_mode.emits() {
+                    let machine_id = self.id.to_string();
+                    hook!(
+                        event = "removed",
+                        machine_id = machine_id,
+                        id,
+                        step = state.frame.step
+                    );
+                }
             }
             Effect::ContextSwapped { first, second } => {
                 let _ = state.run.context.swap(*first, *second);
-                let machine_id = self.id.to_string();
-                hook!(
-                    event = "swapped",
-                    machine_id = machine_id,
-                    id1 = first,
-                    id2 = second,
-                    step = state.frame.step
-                );
+                if hook_mode.emits() {
+                    let machine_id = self.id.to_string();
+                    hook!(
+                        event = "swapped",
+                        machine_id = machine_id,
+                        id1 = first,
+                        id2 = second,
+                        step = state.frame.step
+                    );
+                }
             }
             Effect::ModelSelected { name } => {
                 let _ = state.run.resources.use_model(name);
-                let machine_id = self.id.to_string();
-                hook!(
-                    event = "model",
-                    machine_id = machine_id,
-                    name = name.as_str(),
-                    step = state.frame.step
-                );
+                if hook_mode.emits() {
+                    let machine_id = self.id.to_string();
+                    hook!(
+                        event = "model",
+                        machine_id = machine_id,
+                        name = name.as_str(),
+                        step = state.frame.step
+                    );
+                }
             }
             Effect::ToolActivated { name } => {
                 let _ = state.run.resources.enable(name);
-                let machine_id = self.id.to_string();
-                hook!(
-                    event = "activate",
-                    machine_id = machine_id,
-                    name = name.as_str(),
-                    step = state.frame.step
-                );
+                if hook_mode.emits() {
+                    let machine_id = self.id.to_string();
+                    hook!(
+                        event = "activate",
+                        machine_id = machine_id,
+                        name = name.as_str(),
+                        step = state.frame.step
+                    );
+                }
             }
             Effect::ToolDeactivated { name } => {
                 state.run.resources.disable(name);
-                let machine_id = self.id.to_string();
-                hook!(
-                    event = "deactivate",
-                    machine_id = machine_id,
-                    name = name.as_str(),
-                    step = state.frame.step
-                );
+                if hook_mode.emits() {
+                    let machine_id = self.id.to_string();
+                    hook!(
+                        event = "deactivate",
+                        machine_id = machine_id,
+                        name = name.as_str(),
+                        step = state.frame.step
+                    );
+                }
             }
             Effect::InboxPushed { item } => state.frame.inbox.push_item(item.clone()),
             Effect::CompletionRecorded {
@@ -357,12 +381,19 @@ impl Machine {
                             .telemetry
                             .record_output_fragment(*completion_id, *fragment_id);
                     }
-                    self.hook_fragment("taken", state.frame.step, *fragment_id, &state.run.context);
+                    if hook_mode.emits() {
+                        self.hook_fragment(
+                            "taken",
+                            state.frame.step,
+                            *fragment_id,
+                            &state.run.context,
+                        );
+                    }
                 }
             }
             Effect::StatusChanged { status } => {
                 state.frame.status = *status;
-                if status.is_done() {
+                if status.is_done() && hook_mode.emits() {
                     let machine_id = self.id.to_string();
                     hook!(
                         event = "done",
@@ -389,6 +420,18 @@ impl Machine {
             tag = fragment.tag.as_str(),
             preview = %preview(fragment),
         );
+    }
+}
+
+#[derive(Clone, Copy)]
+enum HookMode {
+    Emit,
+    Suppress,
+}
+
+impl HookMode {
+    fn emits(self) -> bool {
+        matches!(self, Self::Emit)
     }
 }
 

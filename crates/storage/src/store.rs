@@ -39,7 +39,7 @@ impl Store {
             let (_, payload) = item?;
             let event = decode::<StoredEvent>(&payload)?;
             state.frame.step = event.step;
-            machine.apply_effects(&mut state, &event.effects);
+            machine.replay_effects(&mut state, &event.effects);
             applied_event = true;
         }
 
