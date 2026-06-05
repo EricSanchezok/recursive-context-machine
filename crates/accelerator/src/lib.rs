@@ -10,7 +10,6 @@ pub mod lsp;
 pub mod mcp;
 pub mod policy;
 pub mod prompts;
-pub mod state;
 pub mod tools;
 pub mod wire;
 
@@ -22,7 +21,7 @@ pub use condition::{
 };
 pub use flux::{BridgeKind, ContextFlux, EnvFlux, Flux, FluxMode, PurposeFlux, ResFlux};
 pub use graph::{Component, ComponentKind, Graph};
+pub use machine::RunState;
 pub use policy::Captain;
-pub use state::State;
 pub use tools::SpawnTool;
 pub use wire::{Channel, ComponentId, ComponentRef, Endpoint, Port, PortOwner, Wire};

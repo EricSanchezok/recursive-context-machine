@@ -9,9 +9,9 @@ use accelerator::tools::SpawnTool;
 use accelerator::{
     Accelerator, BridgeKind, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate,
     Endpoint, EnvFlux, EnvironmentPredicate, FluxMode, Graph, Port, Predicate as AccelPredicate,
-    PurposeFlux, PurposePredicate, ResFlux, ResourceSelection, ResourcesPredicate, State,
+    PurposeFlux, PurposePredicate, ResFlux, ResourceSelection, ResourcesPredicate,
 };
-use machine::{Limit, Modalities, Modality, Model, Policy, Protocol};
+use machine::{Limit, Modalities, Modality, Model, Policy, Protocol, Purpose, RunState};
 
 use super::ast::{
     self, AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, McpTransportDef, McpValueDef,
@@ -401,7 +401,7 @@ async fn build_state(
     catalog: &Catalog,
     def: &PrimitiveDef,
     root: &Path,
-) -> Result<(State, Box<dyn Policy>, machine::ToolRuntime), String> {
+) -> Result<(RunState, Box<dyn Policy>, machine::ToolRuntime), String> {
     if def.models.is_empty() {
         return Err("accelerator requires at least one model".to_string());
     }
@@ -424,11 +424,11 @@ async fn build_state(
     resources.deactivate_tools();
 
     Ok((
-        State {
-            purpose: def.purpose.clone().unwrap_or_default(),
-            env: catalog.environment(def.environment.as_deref().unwrap_or("local"))?,
-            res: resources,
-            ..State::default()
+        RunState {
+            purpose: Purpose::new(def.purpose.clone().unwrap_or_default()),
+            environment: catalog.environment(def.environment.as_deref().unwrap_or("local"))?,
+            resources,
+            ..RunState::default()
         },
         policy,
         runtime_resources.tool_runtime,

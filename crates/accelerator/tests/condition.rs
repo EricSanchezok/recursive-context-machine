@@ -2,23 +2,23 @@ mod common;
 
 use accelerator::{
     Accelerator, Channel, ConditionBranch, ContextFlux, ContextPredicate, Endpoint,
-    EnvironmentPredicate, FluxMode, Graph, Predicate, PurposePredicate, ResourcesPredicate, State,
+    EnvironmentPredicate, FluxMode, Graph, Predicate, PurposePredicate, ResourcesPredicate,
 };
-use machine::{Fragment, ToolRuntime};
+use machine::{Fragment, Purpose, RunState, ToolRuntime};
 
-fn state_with_purpose(purpose: &str) -> State {
-    State {
-        purpose: purpose.to_string(),
-        ..State::default()
+fn state_with_purpose(purpose: &str) -> RunState {
+    RunState {
+        purpose: Purpose::new(purpose),
+        ..RunState::default()
     }
 }
 
-fn state_with_context(text: &str) -> State {
-    let mut state = State {
-        purpose: text.to_string(),
-        ..State::default()
+fn state_with_context(text: &str) -> RunState {
+    let mut state = RunState {
+        purpose: Purpose::new(text),
+        ..RunState::default()
     };
-    state.ctx.append(Fragment::assistant(text));
+    state.context.append(Fragment::assistant(text));
     state
 }
 
@@ -31,14 +31,14 @@ fn primitive_with_context(text: &str) -> Accelerator {
     )
 }
 
-fn run(graph: Graph) -> State {
+fn run(graph: Graph) -> RunState {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
     runtime.block_on(async {
         Accelerator::composite(graph)
-            .run_with(State::default())
+            .run_with(RunState::default())
             .await
     })
 }
@@ -46,7 +46,7 @@ fn run(graph: Graph) -> State {
 #[test]
 fn predicate_composition_reads_purpose_and_environment() {
     let mut state = state_with_purpose("done: ready");
-    state.env.vars.insert("READY".into(), "yes".into());
+    state.environment.vars.insert("READY".into(), "yes".into());
 
     let predicate = Predicate::All(vec![
         Predicate::Purpose(PurposePredicate::Contains("done".into())),
@@ -63,9 +63,9 @@ fn predicate_composition_reads_purpose_and_environment() {
 fn context_and_resources_predicates_cover_common_cases() {
     let mut state = state_with_purpose("irrelevant");
     state
-        .ctx
+        .context
         .append(Fragment::assistant("research complete").with_tag("research"));
-    state.res.prompts.insert("judge".into(), "...".into());
+    state.resources.prompts.insert("judge".into(), "...".into());
 
     assert!(Predicate::Context(ContextPredicate::HasTag("research".into())).evaluate(&state));
     assert!(Predicate::Context(ContextPredicate::Contains("complete".into())).evaluate(&state));
@@ -102,7 +102,7 @@ fn condition_routes_true_branch() {
     );
 
     let output = run(graph);
-    assert_eq!(output.purpose, "true-target");
+    assert_eq!(output.purpose.text, "true-target");
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn condition_routes_false_branch() {
     );
 
     let output = run(graph);
-    assert_eq!(output.purpose, "false-target");
+    assert_eq!(output.purpose.text, "false-target");
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn selected_branch_can_rejoin_after_unselected_branch_is_skipped() {
     );
 
     let output = run(graph);
-    assert_eq!(output.purpose, "joined");
+    assert_eq!(output.purpose.text, "joined");
 }
 
 #[test]
@@ -199,5 +199,5 @@ fn skipped_branch_contributes_empty_flux_slot() {
     );
 
     let output = run(graph);
-    assert_eq!(output.ctx.fragments().len(), 1);
+    assert_eq!(output.context.fragments().len(), 1);
 }
