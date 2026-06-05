@@ -33,23 +33,40 @@ impl Context {
         }
     }
 
-    pub fn append(&mut self, mut fragment: Fragment) -> u64 {
-        let id = self.assign_id(&mut fragment);
-        self.cells.push(fragment);
+    pub fn append(&mut self, fragment: Fragment) -> u64 {
+        let id = self.next_id;
+        self.append_with_id(id, fragment);
         id
     }
 
-    pub fn insert(&mut self, after: u64, mut fragment: Fragment) -> Result<u64, ContextIdNotFound> {
-        let position = self.position_of(after).ok_or(ContextIdNotFound(after))?;
-        let new_id = self.assign_id(&mut fragment);
-        self.cells.insert(position + 1, fragment);
+    pub fn append_with_id(&mut self, id: u64, mut fragment: Fragment) {
+        self.assign_specific_id(id, &mut fragment);
+        self.cells.push(fragment);
+    }
+
+    pub fn insert(&mut self, after: u64, fragment: Fragment) -> Result<u64, ContextIdNotFound> {
+        let new_id = self.next_id;
+        self.insert_with_id(after, new_id, fragment)?;
         Ok(new_id)
+    }
+
+    pub fn insert_with_id(
+        &mut self,
+        after: u64,
+        id: u64,
+        mut fragment: Fragment,
+    ) -> Result<(), ContextIdNotFound> {
+        let position = self.position_of(after).ok_or(ContextIdNotFound(after))?;
+        self.assign_specific_id(id, &mut fragment);
+        self.cells.insert(position + 1, fragment);
+        Ok(())
     }
 
     pub fn replace(&mut self, id: u64, mut fragment: Fragment) -> Result<(), ContextIdNotFound> {
         let position = self.position_of(id).ok_or(ContextIdNotFound(id))?;
         fragment.id = id;
         self.cells[position] = fragment;
+        self.next_id = self.next_id.max(id + 1);
         Ok(())
     }
 
@@ -102,10 +119,8 @@ impl Context {
         self.next_id
     }
 
-    fn assign_id(&mut self, fragment: &mut Fragment) -> u64 {
-        let id = self.next_id;
+    fn assign_specific_id(&mut self, id: u64, fragment: &mut Fragment) {
         fragment.id = id;
-        self.next_id += 1;
-        id
+        self.next_id = self.next_id.max(id + 1);
     }
 }
