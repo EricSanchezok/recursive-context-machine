@@ -99,3 +99,41 @@ fn map_without_an_array_runs_once() {
         "single fallback run should pass the item through; got: {text}"
     );
 }
+
+#[test]
+fn map_fans_out_from_a_json_file_on_disk() {
+    use std::io::Write;
+    // The robust path: the upstream writes a JSON file and ends with a handoff;
+    // the map recovers run_dir from the handoff and reads the file.
+    let dir = std::env::temp_dir().join("rcm_map_file_e2e");
+    let run = dir.join("runs/RUN1");
+    std::fs::create_dir_all(&run).unwrap();
+    write!(
+        std::fs::File::create(run.join("items.json")).unwrap(),
+        r#"["alpha", "beta", "gamma"]"#
+    )
+    .unwrap();
+
+    let map = Accelerator::map_named(
+        "fan",
+        inner(),
+        ScatterSpec::File("items.json".into()),
+        GatherSpec::Digest,
+    );
+    let mut input = State::default();
+    input.env.cwd = dir.clone();
+    input
+        .ctx
+        .append(Fragment::assistant("run_dir: runs/RUN1\nstatus: ok"));
+
+    let out = block_on(map.run_with(input));
+
+    let text = all_text(&out);
+    for name in ["alpha", "beta", "gamma"] {
+        assert!(
+            text.contains(name),
+            "file-scatter should run a worker per element; missing {name} in: {text}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

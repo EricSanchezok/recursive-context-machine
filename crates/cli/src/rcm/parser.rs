@@ -102,13 +102,21 @@ impl Parser {
         self.expect(Token::LBrace)?;
         let mut inner_alias = None;
         let mut scatter = None;
+        let mut scatter_file = None;
         let mut gather = None;
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
             self.expect(Token::Equals)?;
             match key.as_str() {
                 "accelerator" => inner_alias = Some(self.expect_ident_any()?),
-                "scatter" => scatter = Some(self.expect_ident_any()?),
+                "scatter" => {
+                    // `scatter = json` or `scatter = file "<name>"`.
+                    let kind = self.expect_ident_any()?;
+                    if kind == "file" {
+                        scatter_file = Some(self.expect_string()?);
+                    }
+                    scatter = Some(kind);
+                }
                 "gather" => gather = Some(self.expect_ident_any()?),
                 _ => return Err(format!("unknown map field: {}", key)),
             }
@@ -117,6 +125,7 @@ impl Parser {
             id,
             inner_alias: inner_alias.ok_or_else(|| "map requires accelerator".to_string())?,
             scatter: scatter.ok_or_else(|| "map requires scatter".to_string())?,
+            scatter_file,
             gather: gather.ok_or_else(|| "map requires gather".to_string())?,
         })
     }
@@ -319,6 +328,7 @@ impl Parser {
         let mut modalities_output = Vec::new();
         let mut headers = std::collections::HashMap::new();
         let mut thinking = false;
+        let mut timeout = None;
 
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
@@ -347,6 +357,12 @@ impl Parser {
                             format!("thinking must be \"true\" or \"false\", got: {}", value)
                         })?;
                     }
+                    "timeout" => {
+                        let value = self.expect_string()?;
+                        timeout = Some(value.parse().map_err(|_| {
+                            format!("timeout must be a number of seconds, got: {}", value)
+                        })?);
+                    }
                     other => return Err(format!("unknown model field: {}", other)),
                 }
             }
@@ -369,6 +385,7 @@ impl Parser {
             modalities_output,
             headers,
             thinking,
+            timeout,
         })
     }
 

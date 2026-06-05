@@ -10,6 +10,13 @@ use crate::flux::{Flux, FluxMode};
 use crate::state::State;
 use crate::wire::{Channel, ComponentId, ComponentRef, Endpoint, Port, PortOwner, Wire};
 
+/// Maximum number of components executed concurrently within a single frontier.
+/// Bounds a wide `map` fan-out (one worker per item over a runtime-sized list) so
+/// it does not launch hundreds of model / arXiv calls at once, while still
+/// allowing healthy parallelism. Ordinary frontiers — sequential pipelines, the
+/// handful of parallel scouts/judges — are smaller than this and run unaffected.
+const FRONTIER_CONCURRENCY: usize = 16;
+
 #[derive(Clone)]
 pub struct Graph {
     id: GraphId,
@@ -375,78 +382,83 @@ impl GraphRun {
             frontier = frontier_id,
             count = frontier.len()
         );
-        let mut tasks = tokio::task::JoinSet::new();
-        for index in frontier {
-            let component = self.graph.components[index].clone();
-            let input = self.inputs[index].clone();
-            let flux_slots = self.flux_slots[index].clone();
-            let condition_input = self.condition_inputs[index].clone();
-            let graph_name = self.graph.name.to_string();
-            let component_name = component.name.to_string();
-            let component_kind = component.kind.name();
-            let span = tracing::trace_span!(
-                target: "hook",
-                "component",
-                graph = graph_name.as_str(),
-                frontier = frontier_id,
-                component = component_name.as_str(),
-                component_index = index,
-                component_kind
-            );
-            tasks.spawn(
-                async move {
-                    hook!(
-                        event = "component_start",
-                        graph = graph_name.as_str(),
-                        frontier = frontier_id,
-                        component = component_name.as_str(),
-                        component_index = index,
-                        component_kind
-                    );
-                    let (state, branch) = match component.kind {
-                        ComponentKind::Accelerator(accelerator) => {
-                            (accelerator.run_with(input).await, None)
-                        }
-                        ComponentKind::Flux(flux) => {
-                            let slots = flux_slots
-                                .into_iter()
-                                .map(|slot| slot.unwrap_or_default())
-                                .collect::<Vec<_>>();
-                            (flux.apply(&slots), None)
-                        }
-                        ComponentKind::Condition(condition) => {
-                            let state = condition_input.unwrap_or_default();
-                            let branch = condition.route(&state);
-                            (state, Some(branch))
-                        }
-                    };
-                    hook!(
-                        event = "component_done",
-                        graph = graph_name.as_str(),
-                        frontier = frontier_id,
-                        component = component_name.as_str(),
-                        component_index = index,
-                        component_kind
-                    );
-                    (index, state, branch)
-                }
-                .instrument(span),
-            );
-        }
-
         let mut completed = Vec::new();
-        while let Some(result) = tasks.join_next().await {
-            let Ok((index, state, branch)) = result else {
-                if let Err(error) = result {
-                    warn!(?error, "graph component task panicked");
-                }
-                continue;
-            };
-            if let Some(branch) = branch {
-                self.branches[index] = Some(branch);
+        // Run the frontier in bounded waves so a wide `map` fan-out cannot launch
+        // hundreds of model/arXiv calls at once. Each wave is fully awaited before
+        // the next starts.
+        for chunk in frontier.chunks(FRONTIER_CONCURRENCY) {
+            let mut tasks = tokio::task::JoinSet::new();
+            for &index in chunk {
+                let component = self.graph.components[index].clone();
+                let input = self.inputs[index].clone();
+                let flux_slots = self.flux_slots[index].clone();
+                let condition_input = self.condition_inputs[index].clone();
+                let graph_name = self.graph.name.to_string();
+                let component_name = component.name.to_string();
+                let component_kind = component.kind.name();
+                let span = tracing::trace_span!(
+                    target: "hook",
+                    "component",
+                    graph = graph_name.as_str(),
+                    frontier = frontier_id,
+                    component = component_name.as_str(),
+                    component_index = index,
+                    component_kind
+                );
+                tasks.spawn(
+                    async move {
+                        hook!(
+                            event = "component_start",
+                            graph = graph_name.as_str(),
+                            frontier = frontier_id,
+                            component = component_name.as_str(),
+                            component_index = index,
+                            component_kind
+                        );
+                        let (state, branch) = match component.kind {
+                            ComponentKind::Accelerator(accelerator) => {
+                                (accelerator.run_with(input).await, None)
+                            }
+                            ComponentKind::Flux(flux) => {
+                                let slots = flux_slots
+                                    .into_iter()
+                                    .map(|slot| slot.unwrap_or_default())
+                                    .collect::<Vec<_>>();
+                                (flux.apply(&slots), None)
+                            }
+                            ComponentKind::Condition(condition) => {
+                                let state = condition_input.unwrap_or_default();
+                                let branch = condition.route(&state);
+                                (state, Some(branch))
+                            }
+                        };
+                        hook!(
+                            event = "component_done",
+                            graph = graph_name.as_str(),
+                            frontier = frontier_id,
+                            component = component_name.as_str(),
+                            component_index = index,
+                            component_kind
+                        );
+                        (index, state, branch)
+                    }
+                    .instrument(span),
+                );
             }
-            self.outputs[index] = Some(state);
-            completed.push(index);
+
+            while let Some(result) = tasks.join_next().await {
+                let Ok((index, state, branch)) = result else {
+                    if let Err(error) = result {
+                        warn!(?error, "graph component task panicked");
+                    }
+                    continue;
+                };
+                if let Some(branch) = branch {
+                    self.branches[index] = Some(branch);
+                }
+                self.outputs[index] = Some(state);
+                completed.push(index);
+            }
         }
         hook!(
             event = "frontier_done",

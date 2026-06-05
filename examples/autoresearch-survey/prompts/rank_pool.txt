@@ -13,9 +13,10 @@ Workflow:
 1. Read schema/ranked_pool.md.
 2. Extract run_dir, CandidatePool, and ExpansionReport from context. If run_dir is absent, fall back to the newest run directory by listing runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
 3. Deduplicate all candidates. Deduplicate, do not prune for size — retain every distinct candidate and let the signals and downstream judges decide relevance.
-4. For each retained paper, assign categorical signals: topic_fit, influence_signal, diversity_gain, benchmark_signal, scope_risk, evidence_availability, citation_graph_role.
-5. Split papers into core_set, supporting_set, boundary_set, and missing_evidence. A larger core_set is fine when topic_fit is strong; prefer keeping a borderline paper in boundary_set over dropping it.
-6. Write run_dir/04_ranked_pool.md.
-7. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, and counts (core, supporting, boundary).
+4. For each retained paper, assign categorical signals: topic_fit, influence_signal, diversity_gain, benchmark_signal, scope_risk, evidence_availability, citation_graph_role. For papers carrying role: cross_domain from the ExpansionReport, also assign transfer_potential.
+5. Split the in-domain papers into core_set, supporting_set, boundary_set, and missing_evidence. A larger core_set is fine when topic_fit is strong; prefer keeping a borderline paper in boundary_set over dropping it.
+6. Put the cross_domain candidates in a separate transfer_set, ranked by transfer_potential. They are intentionally out-of-field: low topic_fit is expected and is NOT a reason to drop them, and they must never be mixed into the in-domain sets above.
+7. Write run_dir/04_ranked_pool.md.
+8. Final response: a handoff per schema/handoff.md — run_dir, artifact path, status, and counts (core, supporting, boundary, transfer).
 
 Use the original scoring dimensions only as signals for the downstream LLM judge. Avoid false precision.

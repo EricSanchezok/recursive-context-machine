@@ -54,6 +54,23 @@ pub(crate) fn execute<'a>(
             if BINARY_EXTENSIONS.contains(&lower.as_str()) {
                 return Err(format!("Cannot read binary file: {}", resolved.display()));
             }
+            if lower == "pdf" {
+                // PDFs are read by extracting text with a safe pdftotext wrapper
+                // (no shell is exposed to the model).
+                let text = super::pdf::extract_pdf_text(&resolved).await?;
+                let offset = args["offset"].as_u64().unwrap_or(0) as usize;
+                let limit = args["limit"].as_u64().unwrap_or(DEFAULT_READ_LIMIT as u64) as usize;
+                let path_str = relative_path(&resolved, &env.cwd);
+                let mut output = stat_header(&metadata, &path_str);
+                output.push('\n');
+                output.push_str(&format_lines(&text, offset, limit, &path_str));
+                guard::mark_read(env.name.as_str(), &resolved);
+                return Ok(ToolResult {
+                    call_id: String::new(),
+                    content: output,
+                    title: Some(path_str),
+                });
+            }
             if DOCUMENT_EXTENSIONS.contains(&lower.as_str()) {
                 return Err(format!(
                     "Cannot read document file: {}. {} files require external extraction.",

@@ -1,4 +1,4 @@
-name = "Autoresearch Survey Writer (Chinese)"
+name = "Autoresearch Section Translator"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -6,13 +6,13 @@ model deepseek-v4-flash {
     credentials = { env = "DEEPSEEK_API_KEY" }
     limit = { context = "1000000", output = "393216" }
     modalities = { input = ["text"], output = ["text"] }
-    timeout = "600"
+    timeout = "300"
 }
 
 accelerator {
-    purpose = "autoresearch survey writer zh"
+    purpose = "autoresearch section translator"
     models = ["deepseek-v4-flash"]
     policy = "captain"
-    prompts = { captain = file "../prompts/survey_writer_zh.txt" }
+    prompts = { captain = file "../prompts/section_translator.txt" }
     tools = ["fs"]
 }
