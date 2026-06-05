@@ -37,11 +37,11 @@ impl Accelerator {
         Self {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
-            body: AcceleratorBody::Primitive(PrimitiveAccelerator {
+            body: AcceleratorBody::Primitive(Box::new(PrimitiveAccelerator {
                 state,
                 policy,
                 tool_runtime,
-            }),
+            })),
         }
     }
 
@@ -133,7 +133,7 @@ impl Accelerator {
 
 #[derive(Clone)]
 enum AcceleratorBody {
-    Primitive(PrimitiveAccelerator),
+    Primitive(Box<PrimitiveAccelerator>),
     Composite(Graph),
 }
 
