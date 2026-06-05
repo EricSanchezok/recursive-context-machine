@@ -1,5 +1,5 @@
 use machine::{
-    Action, ActionOutcome, Environment, Fragment, MachineEvent, MachineState, Model, Resources,
+    Action, Effect, Fragment, InboxItem, MachineState, Model, Resources, StoredEvent,
     ToolDefinition,
 };
 use serde_json::json;
@@ -25,11 +25,14 @@ fn state_with_resources() -> MachineState {
     let resources = Resources::new()
         .with_model(model("fast"))
         .with_tool_definition(tool_definition("search"));
-    MachineState {
-        environment: Environment::empty("/tmp"),
-        resources,
-        ..MachineState::default()
-    }
+    let mut state = MachineState::default();
+    state.run.environment = machine::Environment::empty("/tmp");
+    state.run.resources = resources;
+    state
+}
+
+fn event(step: u64, action: Action, effects: Vec<Effect>) -> StoredEvent {
+    StoredEvent::new(step, action, effects)
 }
 
 #[tokio::test]
@@ -45,25 +48,41 @@ async fn record_and_restore_context_actions() {
     let mut store = Store::open(dir.path()).unwrap();
 
     store
-        .record(&MachineEvent::state(
+        .record(&event(
             1,
             Action::Append(Fragment::user("hello")),
-            Vec::new(),
+            vec![
+                Effect::ActionCounted {
+                    action: "append".into(),
+                },
+                Effect::ContextAppended {
+                    id: 1,
+                    fragment: Fragment::user("hello"),
+                },
+            ],
         ))
         .unwrap();
     store
-        .record(&MachineEvent::state(
+        .record(&event(
             2,
             Action::Append(Fragment::assistant("world")),
-            Vec::new(),
+            vec![
+                Effect::ActionCounted {
+                    action: "append".into(),
+                },
+                Effect::ContextAppended {
+                    id: 2,
+                    fragment: Fragment::assistant("world"),
+                },
+            ],
         ))
         .unwrap();
 
     let restored = store.restore().await.unwrap().unwrap();
-    assert_eq!(restored.context.fragments().len(), 2);
-    assert_eq!(restored.context.fragments()[0].as_text(), Some("hello"));
-    assert_eq!(restored.context.fragments()[1].as_text(), Some("world"));
-    assert_eq!(restored.step, 2);
+    assert_eq!(restored.run.context.fragments().len(), 2);
+    assert_eq!(restored.run.context.fragments()[0].as_text(), Some("hello"));
+    assert_eq!(restored.run.context.fragments()[1].as_text(), Some("world"));
+    assert_eq!(restored.frame.step, 2);
 }
 
 #[tokio::test]
@@ -74,42 +93,63 @@ async fn restore_replays_runtime_resource_actions() {
     store.checkpoint(&state).unwrap();
 
     store
-        .record(&MachineEvent::state(
+        .record(&event(
             1,
             Action::Model("fast".into()),
-            Vec::new(),
+            vec![
+                Effect::ActionCounted {
+                    action: "model".into(),
+                },
+                Effect::ModelSelected {
+                    name: "fast".into(),
+                },
+            ],
         ))
         .unwrap();
     store
-        .record(&MachineEvent::state(
+        .record(&event(
             2,
             Action::Activate("search".into()),
-            Vec::new(),
+            vec![
+                Effect::ActionCounted {
+                    action: "activate".into(),
+                },
+                Effect::ToolActivated {
+                    name: "search".into(),
+                },
+            ],
         ))
         .unwrap();
     store
-        .record(&MachineEvent::state(
+        .record(&event(
             3,
             Action::Deactivate("search".into()),
-            Vec::new(),
+            vec![
+                Effect::ActionCounted {
+                    action: "deactivate".into(),
+                },
+                Effect::ToolDeactivated {
+                    name: "search".into(),
+                },
+            ],
         ))
         .unwrap();
 
     let restored = store.restore().await.unwrap().unwrap();
-    assert_eq!(restored.resources.active_model, "fast");
-    assert!(!restored.resources.active_tools.contains("search"));
-    assert_eq!(restored.step, 3);
+    assert_eq!(restored.run.resources.active_model, "fast");
+    assert!(!restored.run.resources.active_tools.contains("search"));
+    assert_eq!(restored.frame.step, 3);
 
-    state.resources.use_model("fast").unwrap();
-    state.resources.enable("search").unwrap();
-    state.resources.disable("search");
+    state.run.resources.use_model("fast").unwrap();
+    state.run.resources.enable("search").unwrap();
+    state.run.resources.disable("search");
     assert_eq!(
-        restored.resources.active_model,
-        state.resources.active_model
+        restored.run.resources.active_model,
+        state.run.resources.active_model
     );
     assert_eq!(
-        restored.resources.active_tools,
-        state.resources.active_tools
+        restored.run.resources.active_tools,
+        state.run.resources.active_tools
     );
 }
 
@@ -125,54 +165,100 @@ async fn failed_action_replays_recorded_inbox_hitch() {
     );
 
     store
-        .record(&MachineEvent::state(1, Action::Remove(999), vec![hitch]))
+        .record(&event(
+            1,
+            Action::Remove(999),
+            vec![
+                Effect::ActionCounted {
+                    action: "remove".into(),
+                },
+                Effect::InboxPushed {
+                    item: InboxItem::new(hitch, None),
+                },
+            ],
+        ))
         .unwrap();
 
     let restored = store.restore().await.unwrap().unwrap();
-    assert_eq!(restored.context.fragments().len(), 0);
-    assert_eq!(restored.inbox.len(), 1);
+    assert_eq!(restored.run.context.fragments().len(), 0);
+    assert_eq!(restored.frame.inbox.len(), 1);
     assert!(
         restored
+            .frame
             .inbox
             .peek()
             .unwrap()
+            .fragment
             .content_as_text()
             .contains("fragment id 999 not found")
     );
 }
 
 #[tokio::test]
-async fn halt_output_replays_through_inbox_and_take() {
+async fn completion_output_replays_through_inbox_and_take() {
     let dir = TempDir::new().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
+    let completion_id = machine::CompletionId(1);
 
     store
-        .record(&MachineEvent {
-            step: 1,
-            action: Action::Halt,
-            outcome: ActionOutcome::Reactor {
-                fragments: vec![Fragment::assistant("answer")],
-                usage: machine::Usage {
-                    input_tokens: 1,
-                    output_tokens: 1,
-                    total_tokens: 2,
-                    cached_input_tokens: 0,
-                    cache_creation_input_tokens: 0,
-                    fragment_ids: Vec::new(),
+        .record(&event(
+            1,
+            Action::Halt,
+            vec![
+                Effect::ActionCounted {
+                    action: "halt".into(),
                 },
-            },
-        })
+                Effect::CompletionRecorded {
+                    record: machine::CompletionRecord {
+                        id: completion_id,
+                        step: 1,
+                        model: Some("fast".into()),
+                        tokens: machine::TokenUsage {
+                            input_tokens: 1,
+                            output_tokens: 1,
+                            total_tokens: 2,
+                            cached_input_tokens: 0,
+                            cache_creation_input_tokens: 0,
+                        },
+                        output_fragment_ids: Vec::new(),
+                    },
+                    inbox_items: vec![InboxItem::new(
+                        Fragment::assistant("answer"),
+                        Some(completion_id),
+                    )],
+                },
+            ],
+        ))
         .unwrap();
     store
-        .record(&MachineEvent::state(2, Action::Take, Vec::new()))
+        .record(&event(
+            2,
+            Action::Take,
+            vec![
+                Effect::ActionCounted {
+                    action: "take".into(),
+                },
+                Effect::InboxTaken {
+                    source_completion: Some(completion_id),
+                    fragment_id: 1,
+                },
+            ],
+        ))
         .unwrap();
 
     let restored = store.restore().await.unwrap().unwrap();
-    assert_eq!(restored.context.fragments().len(), 1);
-    assert_eq!(restored.context.fragments()[0].as_text(), Some("answer"));
-    assert!(restored.inbox.is_empty());
-    assert_eq!(restored.usages.len(), 1);
-    assert_eq!(restored.usages[0].total_tokens, 2);
+    assert_eq!(restored.run.context.fragments().len(), 1);
+    assert_eq!(
+        restored.run.context.fragments()[0].as_text(),
+        Some("answer")
+    );
+    assert!(restored.frame.inbox.is_empty());
+    assert_eq!(restored.run.telemetry.completions.len(), 1);
+    assert_eq!(restored.run.telemetry.completions[0].tokens.total_tokens, 2);
+    assert_eq!(
+        restored.run.telemetry.completions[0].output_fragment_ids,
+        [1]
+    );
 }
 
 #[tokio::test]
@@ -181,29 +267,45 @@ async fn checkpoint_skips_replaying_old_events() {
     let mut store = Store::open(dir.path()).unwrap();
 
     store
-        .record(&MachineEvent::state(
+        .record(&event(
             1,
             Action::Append(Fragment::user("before")),
-            Vec::new(),
+            vec![
+                Effect::ActionCounted {
+                    action: "append".into(),
+                },
+                Effect::ContextAppended {
+                    id: 1,
+                    fragment: Fragment::user("before"),
+                },
+            ],
         ))
         .unwrap();
     let mut checkpoint = MachineState::default();
-    checkpoint.context.append(Fragment::user("checkpoint"));
-    checkpoint.step = 1;
+    checkpoint.run.context.append(Fragment::user("checkpoint"));
+    checkpoint.frame.step = 1;
     store.checkpoint(&checkpoint).unwrap();
     store
-        .record(&MachineEvent::state(
+        .record(&event(
             2,
             Action::Append(Fragment::assistant("after")),
-            Vec::new(),
+            vec![
+                Effect::ActionCounted {
+                    action: "append".into(),
+                },
+                Effect::ContextAppended {
+                    id: 2,
+                    fragment: Fragment::assistant("after"),
+                },
+            ],
         ))
         .unwrap();
 
     let restored = store.restore().await.unwrap().unwrap();
-    assert_eq!(restored.context.fragments().len(), 2);
+    assert_eq!(restored.run.context.fragments().len(), 2);
     assert_eq!(
-        restored.context.fragments()[0].as_text(),
+        restored.run.context.fragments()[0].as_text(),
         Some("checkpoint")
     );
-    assert_eq!(restored.context.fragments()[1].as_text(), Some("after"));
+    assert_eq!(restored.run.context.fragments()[1].as_text(), Some("after"));
 }

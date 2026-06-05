@@ -1,4 +1,4 @@
-//! Core primitives for the Context Machine.
+//! Core primitives for the Recursive Context Machine.
 //!
 //! | Component | Role |
 //! |-----------|------|
@@ -9,7 +9,7 @@
 //! | [`Resources`] | Available pool |
 //! | [`Inbox`] | Pending queue |
 //! | [`Policy`] | Owned by caller |
-//! | [`Machine`] | Pure interpreter — applies actions to the tape |
+//! | [`Machine`] | Interpreter that turns actions into recorded effects |
 
 pub mod completion;
 pub mod context;
@@ -26,7 +26,6 @@ pub(crate) mod reactor;
 pub mod record;
 pub mod resources;
 pub mod tool;
-
 pub mod usage;
 
 pub use context::{Context, ContextIdNotFound};
@@ -34,12 +33,12 @@ pub use env::Environment;
 pub use fragment::{
     Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, ToolResult, Video,
 };
-pub use inbox::Inbox;
-pub use machine::{ApplyContext, ApplyMode, Machine, MachineState};
+pub use inbox::{Inbox, InboxItem};
+pub use machine::{ExecutionMode, Machine, MachineFrame, MachineState, MachineStatus, RunState};
 pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
-pub use policy::{ACTION_VERBS, Action, Policy};
+pub use policy::{ACTION_VERBS, Action, Policy, PolicyView};
 pub use purpose::Purpose;
-pub use record::{ActionOutcome, ApplyResult, MachineEvent};
+pub use record::{Effect, StepResult, StoredEvent};
 pub use resources::{LookupResult, ModelNotRegistered, Resources, ToolNotRegistered};
 pub use tool::{Tool, ToolDefinition, ToolRuntime};
-pub use usage::Usage;
+pub use usage::{CompletionId, CompletionRecord, Telemetry, TokenUsage};

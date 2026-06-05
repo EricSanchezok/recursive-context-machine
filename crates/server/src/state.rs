@@ -1,56 +1,79 @@
-use machine::Usage;
 use machine::event;
-use machine::{Content, Fragment};
+use machine::{Content, Fragment, MachineStatus};
 
 use crate::manager::Run;
 use crate::rcm;
 
 pub fn build_state(run: &Run) -> rcm::State {
-    let counts = run
-        .counts
+    let state = &run.state;
+    let run_state = &state.run;
+    let counts = run_state
+        .telemetry
+        .action_counts
         .iter()
-        .map(|(k, v)| (k.to_string(), *v))
+        .map(|(action, count)| (action.to_string(), *count))
         .collect();
     rcm::State {
-        purpose: run.purpose.clone(),
+        purpose: run_state.purpose.text.clone(),
         machine_id: run.machine.id.to_string(),
-        fragments: run.ctx.fragments().iter().map(fragment_to_proto).collect(),
-        workdir: run.env.cwd.to_string_lossy().into_owned(),
-        env_vars: run.env.vars.clone(),
-        active_model: run.resources.active_model.clone(),
-        active_tools: run.resources.active_tools.iter().cloned().collect(),
-        available_models: run.resources.model_order.clone(),
-        available_tools: run.resources.tool_definitions.keys().cloned().collect(),
-        done: run.done,
-        inbox_pending: run.inbox.peek().is_some(),
-        inbox_peek: run.inbox.peek().map(fragment_to_proto),
+        fragments: run_state
+            .context
+            .fragments()
+            .iter()
+            .map(fragment_to_proto)
+            .collect(),
+        workdir: run_state.environment.cwd.to_string_lossy().into_owned(),
+        env_vars: run_state.environment.vars.clone(),
+        active_model: run_state.resources.active_model.clone(),
+        active_tools: run_state.resources.active_tools.iter().cloned().collect(),
+        available_models: run_state.resources.model_order.clone(),
+        available_tools: run_state
+            .resources
+            .tool_definitions
+            .keys()
+            .cloned()
+            .collect(),
+        done: state.frame.status == MachineStatus::Done,
+        inbox_pending: state.frame.inbox.peek().is_some(),
+        inbox_peek: state
+            .frame
+            .inbox
+            .peek()
+            .map(|item| fragment_to_proto(&item.fragment)),
         counts,
-        usages: run.usages.iter().map(usage_to_proto).collect(),
+        usages: run_state
+            .telemetry
+            .completions
+            .iter()
+            .map(completion_to_proto)
+            .collect(),
         tool_profiles: build_tool_profiles(run),
         model_profiles: build_model_profiles(run),
-        platform: run.env.platform.clone(),
-        root: run
-            .env
+        platform: run_state.environment.platform.clone(),
+        root: run_state
+            .environment
             .root
             .as_ref()
-            .map(|p| p.to_string_lossy().into_owned()),
+            .map(|path| path.to_string_lossy().into_owned()),
     }
 }
 
 fn build_tool_profiles(run: &Run) -> Vec<rcm::ToolProfile> {
-    run.resources
+    let resources = &run.state.run.resources;
+    resources
         .tool_definitions
         .iter()
         .map(|(name, tool)| rcm::ToolProfile {
             name: name.clone(),
             description: tool.description.clone(),
-            active: run.resources.active_tools.contains(name),
+            active: resources.active_tools.contains(name),
         })
         .collect()
 }
 
 fn build_model_profiles(run: &Run) -> Vec<rcm::ModelProfile> {
-    run.resources
+    let resources = &run.state.run.resources;
+    resources
         .models
         .iter()
         .map(|(name, model)| rcm::ModelProfile {
@@ -61,29 +84,29 @@ fn build_model_profiles(run: &Run) -> Vec<rcm::ModelProfile> {
                 input: limit.input,
                 output: limit.output,
             }),
-            active: run.resources.active_model == *name,
+            active: resources.active_model == *name,
         })
         .collect()
 }
 
-fn usage_to_proto(usage: &Usage) -> rcm::Usage {
+fn completion_to_proto(record: &machine::CompletionRecord) -> rcm::Usage {
     rcm::Usage {
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
-        total_tokens: usage.total_tokens,
-        cached_input_tokens: usage.cached_input_tokens,
-        cache_creation_input_tokens: usage.cache_creation_input_tokens,
-        fragment_ids: usage.fragment_ids.clone(),
+        input_tokens: record.tokens.input_tokens,
+        output_tokens: record.tokens.output_tokens,
+        total_tokens: record.tokens.total_tokens,
+        cached_input_tokens: record.tokens.cached_input_tokens,
+        cache_creation_input_tokens: record.tokens.cache_creation_input_tokens,
+        fragment_ids: record.output_fragment_ids.clone(),
     }
 }
 
 fn media_source_from_content(content: &machine::Content) -> Option<rcm::MediaSource> {
     use machine::fragment::DataSource;
     let source = match content {
-        Content::Image(img) => &img.source,
-        Content::Audio(a) => &a.source,
-        Content::Video(v) => &v.source,
-        Content::Document(d) => &d.source,
+        Content::Image(image) => &image.source,
+        Content::Audio(audio) => &audio.source,
+        Content::Video(video) => &video.source,
+        Content::Document(document) => &document.source,
         _ => return None,
     };
     let source = match source {
@@ -122,16 +145,18 @@ fn fragment_to_proto(fragment: &Fragment) -> rcm::Fragment {
 
 fn clip(fragment: &Fragment) -> String {
     let full = match &fragment.content {
-        Content::Text(t) => t.text.clone(),
+        Content::Text(text) => text.text.clone(),
         Content::Hitch { message, .. } => message.clone(),
-        Content::ToolCall(tc) => format!("tool_call: {}", tc.name),
-        Content::ToolResult(tr) => format!("tool_result: {}", tr.title.as_deref().unwrap_or("")),
+        Content::ToolCall(tool_call) => format!("tool_call: {}", tool_call.name),
+        Content::ToolResult(result) => {
+            format!("tool_result: {}", result.title.as_deref().unwrap_or(""))
+        }
         _ => String::new(),
     };
     if full.len() <= 200 {
         full
     } else {
-        let mut clipped: String = full.chars().take(200).collect();
+        let mut clipped = full.chars().take(200).collect::<String>();
         clipped.push_str("...");
         clipped
     }

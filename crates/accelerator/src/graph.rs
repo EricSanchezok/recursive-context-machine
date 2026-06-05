@@ -7,8 +7,8 @@ use utils::{GraphId, Name};
 use crate::accelerator::Accelerator;
 use crate::condition::{Condition, ConditionBranch};
 use crate::flux::{Flux, FluxMode};
-use crate::state::State;
 use crate::wire::{Channel, ComponentId, ComponentRef, Endpoint, Port, PortOwner, Wire};
+use machine::RunState;
 
 /// Maximum number of components executed concurrently within a single frontier.
 /// Bounds a wide `map` fan-out (one worker per item over a runtime-sized list) so
@@ -114,7 +114,7 @@ impl Graph {
         Port::output(endpoint)
     }
 
-    pub async fn run(self, input: State) -> State {
+    pub async fn run(self, input: RunState) -> RunState {
         self.validate().expect("invalid graph");
         GraphRun::new(self, input).run().await
     }
@@ -122,7 +122,11 @@ impl Graph {
     /// Run with specific per-component initial inputs (by component id), on top of
     /// any boundary-input wiring. Used by a `Map` to seed each dynamically-added
     /// worker with its own item before execution.
-    pub async fn run_seeded(self, input: State, seeds: Vec<(ComponentId, State)>) -> State {
+    pub async fn run_seeded(
+        self,
+        input: RunState,
+        seeds: Vec<(ComponentId, RunState)>,
+    ) -> RunState {
         self.validate().expect("invalid graph");
         let mut run = GraphRun::new(self, input);
         for (id, state) in seeds {
@@ -287,35 +291,35 @@ impl ComponentKind {
 
 struct GraphRun {
     graph: Graph,
-    inputs: Vec<State>,
-    outputs: Vec<Option<State>>,
-    flux_slots: Vec<Vec<Option<State>>>,
-    condition_inputs: Vec<Option<State>>,
+    inputs: Vec<RunState>,
+    outputs: Vec<Option<RunState>>,
+    flux_slots: Vec<Vec<Option<RunState>>>,
+    condition_inputs: Vec<Option<RunState>>,
     branches: Vec<Option<ConditionBranch>>,
     remaining_deps: Vec<usize>,
     active_incoming: Vec<usize>,
     skipped: Vec<bool>,
-    result: State,
+    result: RunState,
     next_frontier: u64,
 }
 
 impl GraphRun {
-    fn new(graph: Graph, input: State) -> Self {
+    fn new(graph: Graph, input: RunState) -> Self {
         let mut inputs = Vec::with_capacity(graph.components.len());
         let mut flux_slots = Vec::with_capacity(graph.components.len());
 
         for component in &graph.components {
             match &component.kind {
                 ComponentKind::Accelerator(_) => {
-                    inputs.push(State::default());
+                    inputs.push(RunState::default());
                     flux_slots.push(Vec::new());
                 }
                 ComponentKind::Flux(flux) => {
-                    inputs.push(State::default());
+                    inputs.push(RunState::default());
                     flux_slots.push(vec![None; flux.arity]);
                 }
                 ComponentKind::Condition(_) => {
-                    inputs.push(State::default());
+                    inputs.push(RunState::default());
                     flux_slots.push(Vec::new());
                 }
             }
@@ -332,7 +336,7 @@ impl GraphRun {
             remaining_deps: vec![0; component_count],
             active_incoming: vec![0; component_count],
             skipped: vec![false; component_count],
-            result: State::default(),
+            result: RunState::default(),
             next_frontier: 1,
         };
 
@@ -341,7 +345,7 @@ impl GraphRun {
         run
     }
 
-    async fn run(mut self) -> State {
+    async fn run(mut self) -> RunState {
         hook!(event = "graph_start", graph = self.graph.name.as_str());
         let mut queue = VecDeque::new();
         for (index, count) in self.remaining_deps.iter().enumerate() {
@@ -484,7 +488,7 @@ impl GraphRun {
         }
     }
 
-    fn apply_boundary_input(&mut self, input: &State) {
+    fn apply_boundary_input(&mut self, input: &RunState) {
         let wire_indices = self
             .graph
             .wires
@@ -556,7 +560,7 @@ impl GraphRun {
         }
     }
 
-    fn source_state(&self, source: usize, endpoint: &Endpoint) -> State {
+    fn source_state(&self, source: usize, endpoint: &Endpoint) -> RunState {
         match endpoint {
             Endpoint::ConditionOut(_) => self.outputs[source].clone().unwrap_or_default(),
             _ => self.outputs[source]
@@ -565,7 +569,7 @@ impl GraphRun {
         }
     }
 
-    fn apply_wire(&mut self, wire: &Wire, state: &State) {
+    fn apply_wire(&mut self, wire: &Wire, state: &RunState) {
         match (&wire.to.owner, wire.to.endpoint) {
             (PortOwner::Component(component), Endpoint::State(channel)) => {
                 set_channel(
@@ -632,24 +636,24 @@ fn component_id(port: &Port) -> Option<ComponentId> {
     }
 }
 
-fn state_with_channel(channel: Channel, source: &State) -> State {
-    let mut state = State::default();
+fn state_with_channel(channel: Channel, source: &RunState) -> RunState {
+    let mut state = RunState::default();
     match channel {
         Channel::Purpose => state.purpose.clone_from(&source.purpose),
-        Channel::Context => state.ctx = source.ctx.clone(),
-        Channel::Environment => state.env = source.env.clone(),
-        Channel::Resources => state.res = source.res.clone(),
+        Channel::Context => state.context = source.context.clone(),
+        Channel::Environment => state.environment = source.environment.clone(),
+        Channel::Resources => state.resources = source.resources.clone(),
         Channel::Pulse => {}
     }
     state
 }
 
-fn set_channel(target: &mut State, channel: Channel, source: State) {
+fn set_channel(target: &mut RunState, channel: Channel, source: RunState) {
     match channel {
         Channel::Purpose => target.purpose = source.purpose,
-        Channel::Context => target.ctx = source.ctx,
-        Channel::Environment => target.env = source.env,
-        Channel::Resources => target.res = source.res,
+        Channel::Context => target.context = source.context,
+        Channel::Environment => target.environment = source.environment,
+        Channel::Resources => target.resources = source.resources,
         Channel::Pulse => {}
     }
 }

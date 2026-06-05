@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use machine::{ApplyMode, Machine, MachineEvent, MachineState};
+use machine::{Machine, MachineState, StoredEvent};
 use serde::{Deserialize, Serialize};
 
 use crate::{Wal, WalError, WalResult};
@@ -16,7 +16,7 @@ impl Store {
         })
     }
 
-    pub fn record(&mut self, event: &MachineEvent) -> WalResult<u64> {
+    pub fn record(&mut self, event: &StoredEvent) -> WalResult<u64> {
         let payload = encode(event)?;
         let (offset, _) = self.wal.append(&payload)?;
         Ok(offset)
@@ -33,34 +33,13 @@ impl Store {
             None => (0, MachineState::default(), false),
         };
 
+        let machine = Machine::new("recovered", "recovered");
         let mut applied_event = false;
-        let mut machine = Machine::new("recovered", "recovered");
         for item in self.wal.replay(start_offset)? {
-            let (offset, payload) = item?;
-            let event = decode::<MachineEvent>(&payload)?;
-
-            let action = event.action.clone();
-            let replay_outcome = event.outcome.clone();
-
-            let result = machine
-                .apply_state(
-                    action,
-                    &mut state,
-                    ApplyMode::Replay {
-                        cached_outcome: replay_outcome,
-                    },
-                )
-                .await;
-            if result.done != event.action.is_done() {
-                return Err(WalError::ReplayFailed {
-                    offset,
-                    detail: format!(
-                        "replay done mismatch: apply returned {}, event has {}",
-                        result.done,
-                        event.action.is_done()
-                    ),
-                });
-            }
+            let (_, payload) = item?;
+            let event = decode::<StoredEvent>(&payload)?;
+            state.frame.step = event.step;
+            machine.replay_effects(&mut state, &event.effects);
             applied_event = true;
         }
 
