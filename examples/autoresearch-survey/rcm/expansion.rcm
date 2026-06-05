@@ -22,7 +22,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/reference_expander.txt" }
-        tools = ["arxiv_download", "arxiv_search", "fs", "shell"]
+        tools = ["arxiv_download", "arxiv_search", "fs"]
     }
 
     accelerator semantic_expander {
@@ -30,6 +30,14 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/semantic_expander.txt" }
+        tools = ["arxiv_search", "fs"]
+    }
+
+    accelerator cross_domain_expander {
+        purpose = "autoresearch cross-domain expander"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/cross_domain_expander.txt" }
         tools = ["arxiv_search", "fs"]
     }
 
@@ -42,7 +50,7 @@ graph {
     flux expansion_merge {
         channel = context
         mode = last
-        arity = 3
+        arity = 4
     }
 
     accelerator expansion_merger {
@@ -62,9 +70,13 @@ graph {
     seed_handoff.out -> semantic_expander.context
     citation_seed_selector.done -> semantic_expander.trigger
 
+    seed_handoff.out -> cross_domain_expander.context
+    citation_seed_selector.done -> cross_domain_expander.trigger
+
     citation_seed_selector.context -> expansion_merge.slot(0)
     reference_expander.context -> expansion_merge.slot(1)
     semantic_expander.context -> expansion_merge.slot(2)
+    cross_domain_expander.context -> expansion_merge.slot(3)
 
     expansion_merge.out -> expansion_merger.context
 

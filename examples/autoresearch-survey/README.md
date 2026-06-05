@@ -57,27 +57,30 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
    并行运行 method、benchmark、survey、frontier scouts，产出初始 candidate pool。
 
 4. `expansion.rcm`  
-   执行 citation graph expansion 和 semantic neighbor expansion。
+   三条并行支路:citation graph expansion、semantic neighbor expansion,以及 **cross-domain transfer mining**——把已发现方法抽象成领域无关的 pattern,拿去搜**其它领域**(优先邻域)里共享这些 pattern、可能带来迁移 insight 的论文,以 `role: cross_domain` 入池(单独的 transfer lane,不混进本域池)。
 
 5. `rank_pool.rcm`  
    只列 signals，不给总分，筛出核心论文和边界论文。
 
-6. `research_map.rcm`  
-   生成 taxonomy、method families、benchmark matrix、comparison readiness、gap evidence。
+6. `card_plan.rcm` → `paper_cards`（map）  
+   `card_plan` 从 ranked pool 选出最该精读的论文，产出一个 JSON 工作清单；`paper_cards` 是一个 `map` 节点，对清单里每篇论文**并行**下载 PDF、读**全文**，**带着 anchor 目标**提炼出紧凑 paper card（含 cross-domain transfer 判断）写入 `cards/<id>.md`。这一步用全文取代"只看摘要"。
 
-7. `judge_panel.rcm`  
+7. `research_map.rcm`  
+   基于 `cards/` 的全文卡片生成 taxonomy、method families、benchmark matrix、comparison readiness、gap evidence。
+
+8. `judge_panel.rcm`  
    并行 coverage、scope、benchmark、gap judges，最后汇总裁决。
 
-8. `image_planner.rcm`  
-   读 research map，调用 `image_gen` 工具（gpt-image-2）生成领域全景图 `08_global_picture.png`。需要 `OPENAI_API_KEY`；缺失时报 blocked，writer 会跳过插图继续。
+9. `image_planner.rcm`  
+   读 research map，调用 `image_gen` 工具（gpt-image-2）生成领域全景图 `08_global_picture.png`。需要 `OPENAI_API_KEY`；缺失时报 blocked，后续会跳过插图继续。
 
-9. `survey_writer.rcm`  
-   把 research map 和 judge panel 投影成最终的分节叙事长文 survey，开头插入全景图，并打印给用户。
+10. `survey_outline.rcm` → `section_expand`（map）→ `survey_assembler.rcm`  
+    撰写分三步：`survey_outline` 先定**宏观骨架**（清晰脉络 + 每节的 thesis / 引用卡片 / transfer 角度），并产出一个 JSON 章节清单；`section_expand` 是一个 `map` 节点，对每个章节**并行**地基于卡片写出**足够细致**的一节到 `sections/<n>_<slug>.md`；`survey_assembler` 把各节拼接、插入全景图、并汇成单一去重的参考文献表，产出 `08_survey.md` 与 `index.md`。
 
-10. `survey_writer_zh.rcm`  
-   接在 `survey_writer` 之后，把英文成稿 `08_survey.md` 忠实翻译成中文 `08_survey.zh.md`（旁支落盘，不改变图的正式输出仍是英文版）。
+11. `zh_frame.rcm` → `zh_sections`（map）→ `zh_assemble.rcm`  
+    中文版分三步(旁支,正式输出仍是英文):`zh_frame` 先翻译标题/摘要并建立**术语表**(保留 Transformer、ImageNet、方法名等专有名词为英文,统一可译术语的中文);`zh_sections` 是一个 `map`,**并行**按节翻译(以术语表为参照,避免术语漂移、行文更顺),写 `sections_zh/<n>_<slug>.md`;`zh_assemble` 把各节中文**拼接**(不重译)成 `08_survey.zh.md`。`survey_writer_zh.rcm` 仍作为可单跑的一次性翻译单元保留。
 
-`survey_brief.rcm` 仍保留为一个可单跑的单元（生成凝练的可审计简报），但已不在 end-to-end 管线中；管线由 `judge_panel` 直接进入 `survey_writer`。
+`survey_brief.rcm` 仍保留为一个可单跑的单元（生成凝练的可审计简报），但已不在 end-to-end 管线中。
 
 ## Run Artifacts
 
@@ -88,9 +91,12 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 - `02_candidate_pool.md`
 - `03_expansion.md`
 - `04_ranked_pool.md`
+- `cards/<arxiv_id>.md`（每篇精读论文的全文卡片）
 - `05_research_map.md`
 - `06_judge_panel.md`
 - `08_global_picture.png`（需要 `OPENAI_API_KEY`；缺失时跳过）
+- `00_outline.md`（survey 宏观骨架）
+- `sections/<n>_<slug>.md`（每节扩写）
 - `08_survey.md`
 - `08_survey.zh.md`（中文版）
 - `index.md`
