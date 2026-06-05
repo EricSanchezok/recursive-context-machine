@@ -147,10 +147,14 @@ impl Compiler {
                     inject_spawns(&primitive.spawns, imports, &mut acc).await?;
                     acc
                 }
-                AcceleratorSourceDef::Import { alias, .. } => imports
-                    .get(alias)
-                    .ok_or_else(|| format!("unknown accelerator import: {}", alias))?
-                    .clone(),
+                AcceleratorSourceDef::Import { alias, overrides } => {
+                    let mut acc = imports
+                        .get(alias)
+                        .ok_or_else(|| format!("unknown accelerator import: {}", alias))?
+                        .clone();
+                    inject_spawns(&overrides.spawns, imports, &mut acc).await?;
+                    acc
+                }
             };
             let component = graph.add_accelerator(accelerator_def.id.as_str(), accelerator);
             insert_symbol(&mut symbols, accelerator_def.id.as_str(), component)?;
@@ -451,15 +455,18 @@ fn prompt_texts_from_sources(
 
 /// Inject `spawn_<alias>` tools into a planner accelerator for each name in
 /// `spawn_names`. Each tool wraps the imported worker accelerator.
+/// Aliases not found in `imports` are silently skipped (the standalone
+/// compilation of a primitive file has no import context — spawns are
+/// injected when the composite graph wires everything together).
 async fn inject_spawns(
     spawn_names: &[String],
     imports: &HashMap<String, Accelerator>,
     planner: &mut Accelerator,
 ) -> Result<(), String> {
     for alias in spawn_names {
-        let worker = imports
-            .get(alias)
-            .ok_or_else(|| format!("spawns references unknown accelerator import: {alias}"))?;
+        let Some(worker) = imports.get(alias) else {
+            continue;
+        };
         let tool = Arc::new(SpawnTool::new(format!("spawn_{alias}"), worker.clone()));
         planner.inject_tool(tool);
     }
