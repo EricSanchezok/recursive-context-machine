@@ -44,11 +44,11 @@ use crate::context::Context;
 use crate::fragment::{Content, Fragment, Role};
 use crate::model::{Model, Protocol};
 use crate::resources::Resources;
-use crate::usage::Usage;
+use crate::usage::TokenUsage;
 use tracing::{debug, warn};
 
 /// Call the active LLM and return the response fragments or an error.
-pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, Usage) {
+pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, TokenUsage) {
     let Some(model) = resources.active_model() else {
         warn!("completion requested but no active model is set");
         let hitch = Fragment::hitch(
@@ -57,17 +57,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, U
             Role::System,
             None::<&str>,
         );
-        return (
-            vec![hitch],
-            Usage {
-                input_tokens: 0,
-                output_tokens: 0,
-                total_tokens: 0,
-                cached_input_tokens: 0,
-                cache_creation_input_tokens: 0,
-                fragment_ids: Vec::new(),
-            },
-        );
+        return (vec![hitch], TokenUsage::empty());
     };
 
     let messages: Vec<Message> = ctx
@@ -150,17 +140,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, U
         }
         Err(hitch) => {
             warn!(?hitch, "completion failed");
-            (
-                vec![hitch],
-                Usage {
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    total_tokens: 0,
-                    cached_input_tokens: 0,
-                    cache_creation_input_tokens: 0,
-                    fragment_ids: Vec::new(),
-                },
-            )
+            (vec![hitch], TokenUsage::empty())
         }
     }
 }
@@ -170,7 +150,7 @@ async fn send(
     model: &Model,
     messages: &[Message],
     tools: &[RigToolDefinition],
-) -> Result<(OneOrMany<AssistantContent>, Usage), Fragment> {
+) -> Result<(OneOrMany<AssistantContent>, TokenUsage), Fragment> {
     let request = build_request(messages, tools, model)?;
 
     match timeout(
@@ -181,13 +161,12 @@ async fn send(
     {
         Ok(Ok(response)) => Ok((
             response.choice,
-            Usage {
+            TokenUsage {
                 input_tokens: response.usage.input_tokens,
                 output_tokens: response.usage.output_tokens,
                 total_tokens: response.usage.total_tokens,
                 cached_input_tokens: response.usage.cached_input_tokens,
                 cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
-                fragment_ids: Vec::new(),
             },
         )),
         Ok(Err(error)) => {

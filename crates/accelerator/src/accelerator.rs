@@ -1,26 +1,24 @@
+use std::sync::Arc;
+
 use machine::hook;
 use machine::{
-    Action, ApplyContext, ApplyMode, Fragment, Inbox, Machine, Purpose, Role, ToolRuntime,
+    Action, ExecutionMode, Fragment, Machine, MachineFrame, MachineState, PolicyView, Role,
+    RunState, Tool, ToolRuntime,
 };
-use serde_json::Value;
-use std::future::Future;
-use std::pin::Pin;
 use utils::{AcceleratorId, Name};
 
-use crate::flux::{ContextFlux, FluxMode};
 use crate::graph::Graph;
-use crate::state::State;
-use crate::wire::{Channel, ComponentId, Endpoint, Port};
 
-/// Scaffolding tags that Captain injects/replaces during setup.
-fn is_scaffolding(f: &Fragment) -> bool {
-    f.role == Role::System && (f.tag == "agent" || f.tag == "instruction" || f.tag == "env")
+fn is_scaffolding(fragment: &Fragment) -> bool {
+    fragment.role == Role::System
+        && (fragment.tag == "agent" || fragment.tag == "instruction" || fragment.tag == "env")
 }
 
-/// Purpose tags injected by Captain or `fire()`.
-fn is_purpose_tag(f: &Fragment) -> bool {
-    f.role == Role::User
-        && (f.tag == "purpose" || f.tag == "purpose_initial" || f.tag == "purpose_b")
+fn is_purpose_tag(fragment: &Fragment) -> bool {
+    fragment.role == Role::User
+        && (fragment.tag == "purpose"
+            || fragment.tag == "purpose_initial"
+            || fragment.tag == "purpose_b")
 }
 
 #[derive(Clone)]
@@ -32,7 +30,7 @@ pub struct Accelerator {
 
 impl Accelerator {
     pub fn primitive(
-        state: State,
+        state: RunState,
         policy: Box<dyn machine::Policy>,
         tool_runtime: ToolRuntime,
         name: impl Into<String>,
@@ -40,11 +38,11 @@ impl Accelerator {
         Self {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
-            body: AcceleratorBody::Primitive(PrimitiveAccelerator {
+            body: AcceleratorBody::Primitive(Box::new(PrimitiveAccelerator {
                 state,
                 policy,
                 tool_runtime,
-            }),
+            })),
         }
     }
 
@@ -61,25 +59,18 @@ impl Accelerator {
         }
     }
 
-    /// A `Map` accelerator: fans out an inner accelerator over a runtime-sized
-    /// list of items derived from the input, runs them concurrently, and gathers
-    /// the results into one output. From the enclosing graph's perspective it is
-    /// an ordinary accelerator node (one input, one output); the dynamic fan-out
-    /// happens entirely inside [`Accelerator::run_with`].
-    pub fn map_named(
-        name: impl Into<String>,
-        inner: Accelerator,
-        scatter: ScatterSpec,
-        gather: GatherSpec,
-    ) -> Self {
-        Self {
-            id: AcceleratorId::new(),
-            name: Name::new(name).expect("accelerator name must be valid"),
-            body: AcceleratorBody::Map(MapAccelerator {
-                inner: Box::new(inner),
-                scatter,
-                gather,
-            }),
+    /// Inject a tool into this accelerator's tool runtime and tool definitions.
+    /// Used by the DSL compiler to wire spawn tools into a planner.
+    pub fn inject_tool(&mut self, tool: Arc<dyn Tool>) {
+        if let AcceleratorBody::Primitive(ref mut primitive) = self.body {
+            let name = tool.name().to_string();
+            primitive
+                .state
+                .resources
+                .tool_definitions
+                .entry(name.clone())
+                .or_insert_with(|| machine::ToolDefinition::from_tool(tool.as_ref()));
+            primitive.tool_runtime.insert(tool);
         }
     }
 
@@ -87,159 +78,123 @@ impl Accelerator {
         &self.id
     }
 
-    pub fn run_with(self, input: State) -> Pin<Box<dyn Future<Output = State> + Send>> {
+    pub fn run_with(
+        self,
+        input: RunState,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = RunState> + Send>> {
         Box::pin(async move {
             let input = self.merge_input(input);
             match self.body {
                 AcceleratorBody::Primitive(primitive) => primitive.fire(input).await,
                 AcceleratorBody::Composite(graph) => graph.run(input).await,
-                AcceleratorBody::Map(map) => map.run(input).await,
             }
         })
     }
 
-    pub fn internal_state(&self) -> Option<&State> {
+    pub fn internal_state(&self) -> Option<&RunState> {
         match &self.body {
             AcceleratorBody::Primitive(primitive) => Some(&primitive.state),
             AcceleratorBody::Composite(_) => None,
-            AcceleratorBody::Map(_) => None,
         }
     }
 
-    fn merge_input(&self, input: State) -> State {
+    fn merge_input(&self, input: RunState) -> RunState {
         let mut state = input;
         if let AcceleratorBody::Primitive(primitive) = &self.body {
             let base = &primitive.state;
-            // Concatenate wired purpose with the accelerator's base purpose.
-            let base_purpose = base.purpose.clone();
+            let base_purpose = base.purpose.text.clone();
             if !state.purpose.is_empty()
                 && !base_purpose.is_empty()
-                && state.purpose != base_purpose
+                && state.purpose.text != base_purpose
             {
-                state.purpose = format!("{}\n\n{}", state.purpose, base_purpose);
+                state.purpose.text = format!("{}\n\n{}", state.purpose.text, base_purpose);
             } else if state.purpose.is_empty() {
-                state.purpose.clone_from(&base_purpose);
+                state.purpose.text.clone_from(&base_purpose);
             }
-            if state.ctx.is_empty() {
-                state.ctx = base.ctx.clone();
+            if state.context.is_empty() {
+                state.context = base.context.clone();
             }
-            if state.env.cwd.as_os_str().is_empty() {
-                state.env = base.env.clone();
+            if state.environment.cwd.as_os_str().is_empty() {
+                state.environment = base.environment.clone();
             }
-            state.res.models.clone_from(&base.res.models);
-            state.res.model_order.clone_from(&base.res.model_order);
+            state.resources.models.clone_from(&base.resources.models);
             state
-                .res
+                .resources
+                .model_order
+                .clone_from(&base.resources.model_order);
+            state
+                .resources
                 .tool_definitions
-                .clone_from(&base.res.tool_definitions);
-            state.res.prompts.clone_from(&base.res.prompts);
-            state.res.active_model.clone_from(&base.res.active_model);
-            state.res.active_tools.clone_from(&base.res.active_tools);
+                .clone_from(&base.resources.tool_definitions);
+            state.resources.prompts.clone_from(&base.resources.prompts);
+            state
+                .resources
+                .active_model
+                .clone_from(&base.resources.active_model);
+            state
+                .resources
+                .active_tools
+                .clone_from(&base.resources.active_tools);
         }
         state
     }
 }
 
 #[derive(Clone)]
-// Graph is inherently larger than PrimitiveAccelerator; boxing the
-// Composite variant would add a pointer traversal at every match site
-// with no measurable performance benefit for this enum.
 #[allow(clippy::large_enum_variant)]
 enum AcceleratorBody {
-    Primitive(PrimitiveAccelerator),
+    Primitive(Box<PrimitiveAccelerator>),
     Composite(Graph),
-    Map(MapAccelerator),
 }
 
 #[derive(Clone)]
 struct PrimitiveAccelerator {
-    state: State,
+    state: RunState,
     policy: Box<dyn machine::Policy>,
     tool_runtime: ToolRuntime,
 }
 
 impl PrimitiveAccelerator {
-    async fn fire(self, mut state: State) -> State {
-        let base_purpose = state.purpose.clone();
-        let purpose = Purpose::new(&base_purpose);
-
-        // Reorder non-scaffolding context content on first Halt.
-        let needs_reorder = state
-            .ctx
+    async fn fire(self, state: RunState) -> RunState {
+        let mut machine_state = MachineState {
+            run: state,
+            frame: MachineFrame::default(),
+        };
+        let base_purpose = machine_state.run.purpose.text.clone();
+        let needs_reorder = machine_state
+            .run
+            .context
             .fragments()
             .iter()
-            .any(|f| !is_scaffolding(f) && !is_purpose_tag(f));
+            .any(|fragment| !is_scaffolding(fragment) && !is_purpose_tag(fragment));
 
-        let mut inbox = Inbox::new();
-        let mut step = 0u64;
         let mut machine = Machine::new("ephemeral", "ephemeral");
         let policy = self.policy;
         let tool_runtime = self.tool_runtime;
         let mut reorder_pending = needs_reorder;
 
-        hook!(event = "machine_start", purpose = %purpose.text);
+        hook!(event = "machine_start", purpose = %machine_state.run.purpose.text);
 
         loop {
-            step += 1;
             let action = policy
-                .decide(&purpose, &state.ctx, &state.env, &state.res, &inbox)
+                .decide(PolicyView {
+                    run: &machine_state.run,
+                    inbox: &machine_state.frame.inbox,
+                    step: machine_state.frame.step,
+                    status: machine_state.frame.status,
+                })
                 .await;
 
-            // Intercept the first Halt to reorder and inject purpose_b.
             if matches!(&action, Action::Halt) && reorder_pending {
                 reorder_pending = false;
-                let env_pos = state
-                    .ctx
-                    .fragments()
-                    .iter()
-                    .position(|f| is_scaffolding(f) && f.tag == "env");
-                if let Some(env_pos) = env_pos {
-                    let env_id = state.ctx.fragments()[env_pos].id();
-
-                    // Collect non-scaffolding, non-purpose fragments before env.
-                    let before_env: Vec<(u64, Fragment)> = state.ctx.fragments()[..env_pos]
-                        .iter()
-                        .filter(|f| !is_scaffolding(f) && !is_purpose_tag(f))
-                        .map(|f| (f.id(), f.clone()))
-                        .collect();
-
-                    if !before_env.is_empty() {
-                        // Remove them.
-                        for (id, _) in &before_env {
-                            let _ = state.ctx.remove(*id);
-                        }
-                        // Re-insert after env.
-                        let mut cursor = env_id;
-                        for (_, frag) in &before_env {
-                            if let Ok(nid) = state.ctx.insert(cursor, frag.clone()) {
-                                cursor = nid;
-                            }
-                        }
-
-                        // Insert purpose_b after the last re-inserted fragment.
-                        if !base_purpose.is_empty() {
-                            let _ = state.ctx.insert(
-                                cursor,
-                                Fragment::user(&base_purpose).with_tag("purpose_b"),
-                            );
-                        }
-                    }
-                }
+                reorder_context_before_first_halt(&mut machine_state.run, &base_purpose);
             }
 
             let result = machine
                 .apply(
                     action,
-                    step,
-                    ApplyContext {
-                        ctx: &mut state.ctx,
-                        env: &mut state.env,
-                        resources: &mut state.res,
-                        inbox: &mut inbox,
-                        usages: &mut state.usages,
-                        counts: &mut state.counts,
-                    },
-                    ApplyMode::Live {
+                    &mut machine_state,
+                    ExecutionMode::Live {
                         tool_runtime: &tool_runtime,
                     },
                 )
@@ -249,228 +204,53 @@ impl PrimitiveAccelerator {
             }
         }
 
-        state
+        machine_state.run
     }
 }
 
-/// How a [`MapAccelerator`] splits one input [`State`] into per-item states.
-#[derive(Clone)]
-pub enum ScatterSpec {
-    /// Parse the input context's last assistant message as a JSON array; each
-    /// element becomes one item. Fragile if the upstream wraps the array in
-    /// prose/fences or ends with a handoff — prefer [`ScatterSpec::File`] when the
-    /// upstream can write the list to disk.
-    Json,
-    /// Read a JSON array from `<run_dir>/<file>` on disk, with `run_dir` recovered
-    /// from the incoming handoff. Each element becomes one item. Robust: the
-    /// upstream writes a clean file (which models do reliably) and ends with an
-    /// ordinary handoff, instead of having to emit bare JSON as its last message.
-    File(String),
-}
-
-/// How a [`MapAccelerator`] merges per-item output states into one output. The
-/// merge is performed by an ordinary k-arity [`Flux`](crate::flux::Flux) in the
-/// inner graph — see [`merge_mode`].
-#[derive(Clone, Copy)]
-pub enum GatherSpec {
-    /// Digest each item's output context into one compact roll-up
-    /// ([`ContextFlux::Digest`]). Per-item artifacts live on disk, so the
-    /// gathered context is a summary, not the full bodies.
-    Digest,
-}
-
-/// Tag for the per-item fragment a Map injects into each inner run's context.
-const ITEM_TAG: &str = "item";
-
-#[derive(Clone)]
-struct MapAccelerator {
-    inner: Box<Accelerator>,
-    scatter: ScatterSpec,
-    gather: GatherSpec,
-}
-
-impl MapAccelerator {
-    /// Fan out by building an inner graph at run time and running it with the
-    /// ordinary [`GraphRun`](crate::graph): `k` seeded workers (clones of the
-    /// inner accelerator, one per scattered item) run concurrently as a single
-    /// frontier, then a k-arity merge [`Flux`](crate::flux::Flux) gathers them.
-    /// Externally the Map is one node; its children are added dynamically here.
-    async fn run(self, input: State) -> State {
-        let items = scatter(&self.scatter, &input);
-        let k = items.len();
-        hook!(event = "map_start", items = k);
-
-        let mut graph = Graph::named("map");
-        let merge = graph.add_flux("merge", merge_mode(self.gather), k);
-        let mut seeds: Vec<(ComponentId, State)> = Vec::with_capacity(k);
-        for (index, item) in items.into_iter().enumerate() {
-            let worker = graph.add_accelerator(format!("item_{index}"), (*self.inner).clone());
-            graph.wire(worker.context(), merge.slot(index, Channel::Context));
-            seeds.push((worker.id(), item));
-        }
-        graph.wire(
-            merge.flux_out(Channel::Context),
-            Port::output(Endpoint::State(Channel::Context)),
-        );
-
-        let result = graph.run_seeded(State::default(), seeds).await;
-        hook!(event = "map_done", items = k);
-        result
-    }
-}
-
-fn scatter(spec: &ScatterSpec, input: &State) -> Vec<State> {
-    match spec {
-        ScatterSpec::Json => scatter_json(input),
-        ScatterSpec::File(name) => scatter_file(name, input),
-    }
-}
-
-fn scatter_json(input: &State) -> Vec<State> {
-    let Some(text) = last_assistant_text(input) else {
-        return vec![input.clone()];
-    };
-    let Ok(Value::Array(elements)) = serde_json::from_str::<Value>(text.trim()) else {
-        return vec![input.clone()];
-    };
-    if elements.is_empty() {
-        return vec![input.clone()];
-    }
-    items_from_elements(elements, input)
-}
-
-/// Scatter over a JSON array read from `<run_dir>/<name>` on disk. `run_dir` is
-/// recovered from the incoming handoff context. Any failure (no run_dir, missing
-/// file, not an array, empty) falls back to a single item, so a Map never
-/// hard-fails.
-fn scatter_file(name: &str, input: &State) -> Vec<State> {
-    let Some(run_dir) = run_dir_from_context(input) else {
-        return vec![input.clone()];
-    };
-    let raw_path = format!("{run_dir}/{name}");
-    let path = crate::tools::resolve_path(&raw_path, &input.env.cwd);
-    if !path.starts_with(&input.env.cwd) {
-        return vec![input.clone()];
-    }
-    let Ok(contents) = std::fs::read_to_string(&path) else {
-        return vec![input.clone()];
-    };
-    let Ok(Value::Array(elements)) = serde_json::from_str::<Value>(contents.trim()) else {
-        return vec![input.clone()];
-    };
-    if elements.is_empty() {
-        return vec![input.clone()];
-    }
-    items_from_elements(elements, input)
-}
-
-/// Turn JSON array elements into per-item states: each element is appended to a
-/// clone of the shared input context as a tagged user fragment.
-fn items_from_elements(elements: Vec<Value>, input: &State) -> Vec<State> {
-    elements
-        .into_iter()
-        .map(|element| {
-            let item_text = match &element {
-                Value::String(s) => s.clone(),
-                other => serde_json::to_string_pretty(other).unwrap_or_else(|_| other.to_string()),
-            };
-            let mut item = input.clone();
-            item.ctx.append(
-                Fragment::user(format!("Your assigned work item:\n{item_text}")).with_tag(ITEM_TAG),
-            );
-            item
-        })
-        .collect()
-}
-
-/// Recover `run_dir` from a handoff in the context — the last `run_dir:` line in
-/// any text fragment. Used by [`ScatterSpec::File`] to locate the work-list file.
-fn run_dir_from_context(input: &State) -> Option<String> {
-    let mut found = None;
-    for fragment in input.ctx.fragments() {
-        let Some(text) = fragment.as_text() else {
-            continue;
-        };
-        for line in text.lines() {
-            if let Some(rest) = line.trim().strip_prefix("run_dir:") {
-                let value = rest.trim().trim_matches('`').trim();
-                if !value.is_empty() {
-                    found = Some(value.to_string());
-                }
-            }
-        }
-    }
-    found
-}
-
-/// The flux mode used to merge the per-item worker outputs in the inner graph.
-fn merge_mode(spec: GatherSpec) -> FluxMode {
-    match spec {
-        GatherSpec::Digest => FluxMode::Context(ContextFlux::Digest),
-    }
-}
-
-/// The text of the most recent assistant fragment in a state's context, if any.
-fn last_assistant_text(state: &State) -> Option<&str> {
-    state
-        .ctx
+fn reorder_context_before_first_halt(state: &mut RunState, base_purpose: &str) {
+    let env_position = state
+        .context
         .fragments()
         .iter()
-        .rev()
-        .find(|fragment| fragment.role == Role::Assistant)
-        .and_then(|fragment| fragment.as_text())
+        .position(|fragment| is_scaffolding(fragment) && fragment.tag == "env");
+    let Some(env_position) = env_position else {
+        return;
+    };
+    let env_id = state.context.fragments()[env_position].id();
+    let before_env = state.context.fragments()[..env_position]
+        .iter()
+        .filter(|fragment| !is_scaffolding(fragment) && !is_purpose_tag(fragment))
+        .map(|fragment| (fragment.id(), fragment.clone()))
+        .collect::<Vec<_>>();
+    if before_env.is_empty() {
+        return;
+    }
+    for (id, _) in &before_env {
+        let _ = state.context.remove(*id);
+    }
+    let mut cursor = env_id;
+    for (_, fragment) in &before_env {
+        if let Ok(new_id) = state.context.insert(cursor, fragment.clone()) {
+            cursor = new_id;
+        }
+    }
+    if !base_purpose.is_empty() {
+        let _ = state
+            .context
+            .insert(cursor, Fragment::user(base_purpose).with_tag("purpose_b"));
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use machine::Fragment;
 
-    fn state_with_assistant(text: &str) -> State {
-        let mut state = State::default();
-        state.ctx.append(Fragment::assistant(text));
+    fn state_with_assistant(text: &str) -> RunState {
+        let mut state = RunState::default();
+        state.context.append(Fragment::assistant(text));
         state
-    }
-
-    #[test]
-    fn json_array_of_strings_scatters_into_one_item_each() {
-        let input = state_with_assistant(r#"["alpha", "beta", "gamma"]"#);
-        let items = scatter(&ScatterSpec::Json, &input);
-        assert_eq!(items.len(), 3);
-        for (item, expected) in items.iter().zip(["alpha", "beta", "gamma"]) {
-            let last = item.ctx.fragments().last().expect("item fragment");
-            assert_eq!(last.role, Role::User);
-            assert_eq!(last.tag, ITEM_TAG);
-            assert!(last.as_text().unwrap().contains(expected));
-        }
-    }
-
-    #[test]
-    fn json_array_of_objects_serializes_each_element() {
-        let input = state_with_assistant(r#"[{"section":"A"},{"section":"B"}]"#);
-        let items = scatter(&ScatterSpec::Json, &input);
-        assert_eq!(items.len(), 2);
-        let first = items[0].ctx.fragments().last().unwrap().as_text().unwrap();
-        assert!(first.contains("section"));
-        assert!(first.contains('A'));
-    }
-
-    #[test]
-    fn non_array_message_falls_back_to_a_single_item() {
-        let input = state_with_assistant("just a normal handoff, not JSON");
-        assert_eq!(scatter(&ScatterSpec::Json, &input).len(), 1);
-    }
-
-    #[test]
-    fn empty_context_falls_back_to_a_single_item() {
-        let input = State::default();
-        let items = scatter(&ScatterSpec::Json, &input);
-        assert_eq!(items.len(), 1);
-    }
-
-    #[test]
-    fn empty_json_array_falls_back_to_a_single_item() {
-        let input = state_with_assistant("[]");
-        assert_eq!(scatter(&ScatterSpec::Json, &input).len(), 1);
     }
 
     #[test]
@@ -478,38 +258,10 @@ mod tests {
         let input = state_with_assistant(
             "run_dir: runs/20260604T110702Z\nartifact: runs/20260604T110702Z/00_card_plan.json\nstatus: ok",
         );
-        assert_eq!(
-            run_dir_from_context(&input).as_deref(),
-            Some("runs/20260604T110702Z")
-        );
-    }
-
-    #[test]
-    fn scatter_file_without_run_dir_falls_back() {
-        let input = state_with_assistant("no handoff, no run_dir here");
-        assert_eq!(
-            scatter(&ScatterSpec::File("items.json".into()), &input).len(),
-            1
-        );
-    }
-
-    #[test]
-    fn scatter_file_reads_json_array_from_disk() {
-        use std::io::Write;
-        let dir = std::env::temp_dir().join("rcm_scatter_file_test");
-        let run = dir.join("runs/RUN1");
-        std::fs::create_dir_all(&run).unwrap();
-        let mut file = std::fs::File::create(run.join("items.json")).unwrap();
-        write!(file, r#"["alpha", "beta", "gamma"]"#).unwrap();
-
-        let mut input = state_with_assistant("run_dir: runs/RUN1\nstatus: ok");
-        input.env.cwd = dir.clone();
-
-        let items = scatter(&ScatterSpec::File("items.json".into()), &input);
-        assert_eq!(items.len(), 3);
-        let first = items[0].ctx.fragments().last().unwrap().as_text().unwrap();
-        assert!(first.contains("alpha"));
-
-        let _ = std::fs::remove_dir_all(&dir);
+        assert!(input.context.fragments().iter().any(|f| {
+            f.as_text()
+                .unwrap_or("")
+                .contains("run_dir: runs/20260604T110702Z")
+        }));
     }
 }
