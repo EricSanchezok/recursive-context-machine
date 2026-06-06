@@ -170,7 +170,15 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> tracing_subscriber::layer::Layer<S>
 
         let mut fields = HookFields::default();
         if let Some(scope) = ctx.event_scope(event) {
-            for span in scope.from_root() {
+            // Walk innermost span -> root so the *nearest* component identity
+            // wins. With `merge_missing` (keep-first) a nested component — e.g.
+            // a scout inside the `discovery` composite, or any sub-graph node —
+            // then attributes its completion/tool/fragment events to itself,
+            // not to the enclosing composite. Walking `from_root()` instead lets
+            // the outer composite's fields win and lumps every child's work onto
+            // the parent tape, so children render with 0 cells and parallel
+            // sub-nodes look like one sequential node.
+            for span in scope {
                 if let Some(span_fields) = span.extensions().get::<HookFields>() {
                     fields.merge_missing(span_fields);
                 }
