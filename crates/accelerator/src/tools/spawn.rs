@@ -46,9 +46,10 @@ impl SpawnTool {
         }
     }
 
-    /// Try to extract a status line from a worker's output.
+    /// Extract a handoff status from a worker's output.
     /// Scans context fragments first, then falls back to the purpose field
     /// (status text set in the worker's base purpose survives merge_input).
+    /// Returns one of `ok` / `partial` / `blocked` / `failed` / `unknown`.
     fn extract_status(output: &RunState) -> &'static str {
         // 1. Check context text fragments (handoff messages from real workers).
         for fragment in output.context.fragments() {
@@ -56,36 +57,41 @@ impl SpawnTool {
                 continue;
             };
             for line in text.lines() {
-                let line = line.trim();
-                if line == "status: ok" {
-                    return "ok";
-                }
-                if line == "status: blocked" {
-                    return "blocked";
-                }
-                if line == "status: failed" {
-                    return "failed";
-                }
-                if line.contains("evidence: abstract_only") {
-                    return "abstract_only";
+                if let Some(status) = Self::classify_status_line(line) {
+                    return status;
                 }
             }
         }
         // 2. Fallback: scan the purpose (workers with halt-only policies
         //    may encode status in purpose, which survives merge_input).
         for line in output.purpose.text.lines() {
-            let line = line.trim();
-            if line == "status: ok" {
-                return "ok";
-            }
-            if line == "status: blocked" {
-                return "blocked";
-            }
-            if line == "status: failed" {
-                return "failed";
+            if let Some(status) = Self::classify_status_line(line) {
+                return status;
             }
         }
         "unknown"
+    }
+
+    /// Classify a single line as a handoff status, if it is one. Matching is
+    /// lenient on purpose: handoffs come from an LLM, so we accept the
+    /// schema's `status: <value>` case-insensitively, ignore leading list /
+    /// markdown markers, and look only at the first word after the colon. This
+    /// keeps `- status: ok`, `Status: partial (image-only PDF)` etc. from being
+    /// misread as failures.
+    fn classify_status_line(line: &str) -> Option<&'static str> {
+        let trimmed = line
+            .trim()
+            .trim_start_matches(['-', '*', '•', '#', '>', ' '])
+            .trim()
+            .to_ascii_lowercase();
+        let value = trimmed.strip_prefix("status:")?;
+        match value.split_whitespace().next()? {
+            "ok" => Some("ok"),
+            "partial" => Some("partial"),
+            "blocked" => Some("blocked"),
+            "failed" => Some("failed"),
+            _ => None,
+        }
     }
 }
 
@@ -194,12 +200,16 @@ impl machine::Tool for SpawnTool {
                 start += chunk.len();
             }
 
-            // Build summary report.
+            // Build summary report. `ok` and `partial` both mean the worker
+            // produced its artifact, so neither should be retried; only
+            // blocked / failed / unknown are surfaced as failures.
             let mut ok = 0u32;
+            let mut partial = 0u32;
             let mut failures = Vec::new();
             for (i, slot) in outcomes.iter().enumerate() {
                 match slot.as_deref() {
                     Some("ok") => ok += 1,
+                    Some("partial") => partial += 1,
                     _ => {
                         if let Some(id) = item_ids.get(i) {
                             failures.push(id.clone());
@@ -212,6 +222,9 @@ impl machine::Tool for SpawnTool {
             let mut report = format!(
                 "spawn_{tool_name} results ({total} items, max_parallel={max_parallel}):\nok={ok}"
             );
+            if partial > 0 {
+                report.push_str(&format!("\npartial={partial}"));
+            }
             if failures.is_empty() {
                 report.push_str("\nAll items completed successfully.");
             } else {
@@ -227,7 +240,7 @@ impl machine::Tool for SpawnTool {
             Ok(ToolResult {
                 content: report,
                 call_id: String::new(),
-                title: Some(format!("spawn_{tool_name}: {ok}/{} ok", total)),
+                title: Some(format!("spawn_{tool_name}: {}/{} ok", ok + partial, total)),
             })
         })
     }
