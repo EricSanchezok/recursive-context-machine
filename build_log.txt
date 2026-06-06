@@ -1,0 +1,27 @@
+﻿cargo :    Compiling log v0.4.30
+所在位置 行:1 字符: 18
++ & { cd "d:\RCM"; cargo build --release -p accelerator 2>&1 | Out-File ...
++                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling log v0.4.30:String) [], RemoteExc 
+   eption
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   Compiling serde_core v1.0.228
+   Compiling tracing-core v0.1.36
+   Compiling phf v0.13.1
+error: failed to run custom build command for `serde_core v1.0.228`
+
+Caused by:
+  process didn't exit successfully: `D:\RCM\target\release\build\serde_core-f3b9ce21b6ee559a
+\build-script-build` (exit code: 101)
+  --- stdout
+  cargo:rerun-if-changed=build.rs
+
+  --- stderr
+
+  thread 'main' (33768) panicked at /rustc/ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96/library\
+std\src\sys\process\mod.rs:67:17:
+  called `Result::unwrap()` on an `Err` value: Os { code: 0, kind: Uncategorized, message: "
+鎿嶄綔鎴愬姛瀹屾垚銆? }
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: build failed, waiting for other jobs to finish...

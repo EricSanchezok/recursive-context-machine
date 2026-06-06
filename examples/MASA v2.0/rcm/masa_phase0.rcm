@@ -1,0 +1,118 @@
+name = "MASA Phase 0 - Paper Discovery"
+
+use "./phase0/anchor.rcm" as Anchor
+use "./phase0/query_plan.rcm" as QueryPlan
+use "./phase0/discovery.rcm" as Discovery
+use "./phase0/expansion.rcm" as Expansion
+use "./phase0/extended_query_plan.rcm" as ExtendedQueryPlan
+use "./phase0/extended_discovery.rcm" as ExtendedDiscovery
+use "./phase0/paper_fetcher.rcm" as PaperFetcher
+use "./phase0/paper_profiler.rcm" as PaperProfiler
+use "./phase0/taxonomy_builder.rcm" as TaxonomyBuilder
+use "./phase0/evolution_mapper.rcm" as EvolutionMapper
+
+graph {
+    accelerator anchor = Anchor
+    accelerator query_plan = QueryPlan
+    accelerator discovery = Discovery
+    accelerator expansion = Expansion
+    accelerator extended_query_plan = ExtendedQueryPlan
+    accelerator extended_discovery = ExtendedDiscovery
+    accelerator paper_fetcher = PaperFetcher
+    accelerator paper_profiler = PaperProfiler
+    accelerator taxonomy_builder = TaxonomyBuilder
+    accelerator evolution_mapper = EvolutionMapper
+
+    flux anchor_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux query_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux discovery_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux expansion_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux extended_query_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux extended_discovery_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux paper_fetcher_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux paper_profiler_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux evolution_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    anchor.context -> anchor_handoff.slot(0)
+    anchor_handoff.out -> query_plan.context
+    anchor.done -> query_plan.trigger
+
+    query_plan.context -> query_handoff.slot(0)
+    query_handoff.out -> discovery.context
+    query_plan.done -> discovery.trigger
+
+    discovery.context -> discovery_handoff.slot(0)
+    discovery_handoff.out -> expansion.context
+    discovery.done -> expansion.trigger
+
+    expansion.context -> expansion_handoff.slot(0)
+    expansion_handoff.out -> extended_query_plan.context
+    expansion.done -> extended_query_plan.trigger
+
+    extended_query_plan.context -> extended_query_handoff.slot(0)
+    extended_query_handoff.out -> extended_discovery.context
+    extended_query_plan.done -> extended_discovery.trigger
+
+    extended_discovery.context -> extended_discovery_handoff.slot(0)
+    extended_discovery_handoff.out -> paper_fetcher.context
+    extended_discovery.done -> paper_fetcher.trigger
+
+    paper_fetcher.context -> paper_fetcher_handoff.slot(0)
+    paper_fetcher_handoff.out -> paper_profiler.context
+    paper_fetcher.done -> paper_profiler.trigger
+
+    paper_profiler.context -> paper_profiler_handoff.slot(0)
+    paper_profiler_handoff.out -> taxonomy_builder.context
+    paper_profiler.done -> taxonomy_builder.trigger
+
+    taxonomy_builder.context -> evolution_handoff.slot(0)
+    evolution_handoff.out -> evolution_mapper.context
+    taxonomy_builder.done -> evolution_mapper.trigger
+
+    evolution_mapper.context -> output.context
+    evolution_mapper.done -> output.done
+}
