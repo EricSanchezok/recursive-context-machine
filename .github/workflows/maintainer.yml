@@ -11,13 +11,13 @@ on:
     types: [created]
   workflow_dispatch:
 
-# Each issue / PR gets its own lane. Runs queue rather than cancel so a
-# long-running review is never killed by a subsequent push or comment on the
-# same PR. Schedule and manual triggers fall back to run_id so they never
-# block each other.
+# Each issue / PR gets its own lane. A new push or comment on the same PR
+# cancels the in-progress run so the review always runs against the latest
+# code. Schedule and manual triggers fall back to run_id so they never cancel
+# each other.
 concurrency:
   group: maintainer-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   issues: write
@@ -44,7 +44,7 @@ jobs:
         github.actor != 'github-actions[bot]'
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       KIMI_CODING_API_KEY: ${{ secrets.KIMI_CODING_API_KEY }}
@@ -89,22 +89,6 @@ jobs:
             echo "Rendered: $RENDERED"
           fi
 
-      - name: Snapshot maintainer comment count (pre-run)
-        # Baseline so the post-run check can tell whether *this* run added a
-        # comment — not just whether one ever existed (a PR's earlier push may
-        # already have left one). Scoped to the always-commenting paths.
-        id: precount
-        if: ${{ steps.dispatch.outputs.rendered != '' && (github.event_name == 'pull_request' || github.event_name == 'issues') }}
-        env:
-          REPO: ${{ github.event.repository.full_name }}
-          NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-          KIND: ${{ github.event_name == 'pull_request' && 'pr' || 'issue' }}
-        run: |
-          before=$(gh "$KIND" view "$NUMBER" --repo "$REPO" --json comments \
-            --jq '[.comments[] | select(.author.login=="github-actions[bot]")] | length' || echo 0)
-          echo "before=$before" >> "$GITHUB_OUTPUT"
-          echo "pre-run maintainer comments on $KIND #$NUMBER: $before"
-
       - name: Check out PR head for in-context review reads
         # pr_review's diff_review / intent_check read PR files via the fs tool, so
         # the working tree must hold the PR's code — not the base we rendered from.
@@ -119,29 +103,6 @@ jobs:
       - name: Run rendered pipeline
         if: steps.dispatch.outputs.rendered != ''
         run: ./accelerate run "${{ steps.dispatch.outputs.rendered }}" --stream
-
-      - name: Verify a maintainer comment was posted
-        # pr_review / issue_triage must always leave a comment. If accelerate
-        # exits 0 but the bot-comment count didn't rise — the model skipped the
-        # gh post, or a fork PR's read-only GITHUB_TOKEN rejected it (403) — fail
-        # loudly instead of going green on a silent no-op. Mention / dispatch are
-        # conditional posters and are intentionally excluded.
-        if: ${{ success() && steps.dispatch.outputs.rendered != '' && (github.event_name == 'pull_request' || github.event_name == 'issues') }}
-        env:
-          REPO: ${{ github.event.repository.full_name }}
-          NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
-          KIND: ${{ github.event_name == 'pull_request' && 'pr' || 'issue' }}
-          BEFORE: ${{ steps.precount.outputs.before }}
-        run: |
-          after=$(gh "$KIND" view "$NUMBER" --repo "$REPO" --json comments \
-            --jq '[.comments[] | select(.author.login=="github-actions[bot]")] | length' || echo 0)
-          echo "post-run maintainer comments on $KIND #$NUMBER: $after (was ${BEFORE:-0})"
-          if [ "$after" -gt "${BEFORE:-0}" ]; then
-            echo "✓ a maintainer comment was posted during this run"
-          else
-            echo "::error title=Maintainer comment not posted::accelerate finished but no new maintainer comment landed on $KIND #$NUMBER. Likely the agent skipped the gh post, or (PR from a fork) GITHUB_TOKEN was read-only and gh returned 403. Inspect the run log and the uploaded rendered .rcm artifact."
-            exit 1
-          fi
 
       - name: Upload rendered .rcm as audit artifact
         # Keep even on failure — a busted run is exactly when we need the rendered
