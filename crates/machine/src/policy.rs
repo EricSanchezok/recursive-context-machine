@@ -3,12 +3,9 @@ use std::pin::Pin;
 
 use serde::{Deserialize, Serialize};
 
-use crate::context::Context;
-use crate::env::Environment;
 use crate::fragment::Fragment;
 use crate::inbox::Inbox;
-use crate::purpose::Purpose;
-use crate::resources::Resources;
+use crate::machine::{MachineStatus, RunState};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Action {
@@ -77,6 +74,13 @@ pub const ACTION_VERBS: &[&str] = &[
     "Done",
 ];
 
+pub struct PolicyView<'a> {
+    pub run: &'a RunState,
+    pub inbox: &'a Inbox,
+    pub step: u64,
+    pub status: MachineStatus,
+}
+
 pub trait Policy: Send + Sync {
     fn clone_box(&self) -> Box<dyn Policy>;
 
@@ -86,11 +90,7 @@ pub trait Policy: Send + Sync {
 
     fn decide<'a>(
         &'a self,
-        purpose: &'a Purpose,
-        ctx: &'a Context,
-        env: &'a Environment,
-        resources: &'a Resources,
-        inbox: &'a Inbox,
+        view: PolicyView<'a>,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>>;
 }
 

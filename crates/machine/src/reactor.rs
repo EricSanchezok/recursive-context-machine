@@ -6,9 +6,9 @@ use crate::context::Context;
 use crate::env::Environment;
 use crate::fragment::{Content, Fragment, Role};
 use crate::hook;
-use crate::record::ActionOutcome;
 use crate::resources::{LookupResult, Resources};
 use crate::tool::ToolRuntime;
+use crate::usage::TokenUsage;
 use futures_util::future::join_all;
 use tokio::time::{Duration, timeout};
 use tracing::{debug, info, warn};
@@ -19,7 +19,7 @@ pub async fn react(
     env: &Environment,
     resources: &Resources,
     tool_runtime: &ToolRuntime,
-) -> ActionOutcome {
+) -> (Vec<Fragment>, TokenUsage) {
     let started_at = Instant::now();
 
     hook!(event = "completion_start", machine_id);
@@ -228,10 +228,7 @@ pub async fn react(
         }
     }
 
-    ActionOutcome::Reactor {
-        fragments: output,
-        usage,
-    }
+    (output, usage)
 }
 
 fn humantime(duration: Duration) -> String {
