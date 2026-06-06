@@ -160,3 +160,63 @@ async fn spawn_respects_max_parallel_concurrency() {
     );
     let _elapsed = start.elapsed();
 }
+
+#[tokio::test]
+async fn spawn_partial_status_counts_as_completed_not_failed() {
+    // `partial` is a success per schema/handoff.md (the worker produced its
+    // artifact). It must not be surfaced as a failure for retry.
+    let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "partial"));
+    let items = vec![
+        serde_json::json!({"id": "P1"}),
+        serde_json::json!({"id": "P2"}),
+    ];
+    let result = tool
+        .execute(
+            serde_json::json!({"items": items}),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect("spawn should succeed");
+    assert!(
+        result.content.contains("partial=2"),
+        "report: {}",
+        result.content
+    );
+    assert!(
+        result.content.contains("All items completed successfully."),
+        "report: {}",
+        result.content
+    );
+    assert!(
+        !result.content.contains("failed="),
+        "report: {}",
+        result.content
+    );
+}
+
+#[tokio::test]
+async fn spawn_lenient_status_parsing_tolerates_trailing_note() {
+    // A worker that annotates its status (`status: ok (image-only PDF)`) is
+    // still classified as ok, not an unknown failure.
+    let tool = SpawnTool::new(
+        "spawn_test",
+        worker_with_status("inner", "ok (image-only PDF)"),
+    );
+    let result = tool
+        .execute(
+            serde_json::json!({"items": [{"id": "L1"}]}),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect("spawn should succeed");
+    assert!(
+        result.content.contains("ok=1"),
+        "report: {}",
+        result.content
+    );
+    assert!(
+        !result.content.contains("failed="),
+        "report: {}",
+        result.content
+    );
+}
