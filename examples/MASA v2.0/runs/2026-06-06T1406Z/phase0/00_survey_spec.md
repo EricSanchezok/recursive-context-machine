@@ -1,0 +1,29 @@
+# SurveySpec
+
+- **run_dir**: `.`
+- **topic**: automated literature survey agents with citation graph expansion
+- **reader_need**: a concise technical brief for a research engineer designing autonomous survey agents; must clarify current capabilities, open challenges, and design trade-offs in citation-graph-aware literature surveying.
+- **scope_include**:
+  - LLM-based agents that autonomously retrieve, filter, and synthesize academic papers
+  - methods that leverage citation graphs (cocitation, bibliographic coupling, direct citation) for retrieval or expansion
+  - iterative / multi-turn search strategies (focused crawling, BFS on citation networks)
+  - evaluation benchmarks for survey generation (e.g., AutoSurvey, SurveyBench)
+- **scope_exclude**:
+  - pure recommender systems or citation recommendation without synthesis
+  - non-automated literature review methodologies (PRISMA, manual meta-analysis)
+  - graph neural network architectures applied to citation graphs in isolation (no survey-agent framing)
+- **anchor_questions**:
+  - Primary: How do current automated survey agents incorporate citation graph structure to guide paper discovery, relevance ranking, and content synthesis?
+  - Secondary: What are the main failure modes — hallucination, coverage gaps, citation obsolescence — and what mitigation strategies exist?
+- **concept_seed**:
+  - core: automated survey, literature survey agent, citation graph expansion, focused crawling, retrieval-augmented generation
+  - synonyms/abbreviations: survey agent, auto-survey, citation-aware retrieval, graph-based RAG, citation crawling
+  - boundary terms: meta-analysis, systematic review (manual), paper recommendation
+- **expected_dimensions**:
+  - method: retrieval strategy (BM25 / dense / graph-based), LLM backbone, agentic loop design
+  - benchmark: AutoSurvey, SurveyBench, human evaluation protocols
+  - metric: coverage, factual precision, citation accuracy, redundancy
+  - limitation: hallucination of citations, stale graph data, topic drift, cost
+  - application: domain-specific vs. general-purpose survey agents
+  - theory: trade-off between exploration and exploitation in citation traversal
+- **quality_bar**: the final brief must be able to answer both anchor questions with concrete method names, architectural patterns, failure mechanisms, and at least one quantitative benchmark result per major approach.

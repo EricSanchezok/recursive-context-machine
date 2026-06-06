@@ -1,4 +1,4 @@
-name = "Autoresearch Expansion"
+name = "MASA Expansion"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -10,26 +10,26 @@ model deepseek-v4-flash {
 
 graph {
     accelerator citation_seed_selector {
-        purpose = "autoresearch citation seed selector"
+        purpose = "masa citation seed selector"
         models = ["deepseek-v4-flash"]
         policy = "captain"
-        prompts = { captain = file "../prompts/citation_seed_selector.txt" }
+        prompts = { captain = file "../../prompts/phase0/citation_seed_selector.txt" }
         tools = ["fs"]
     }
 
     accelerator reference_expander {
-        purpose = "autoresearch reference expander"
+        purpose = "masa reference expander"
         models = ["deepseek-v4-flash"]
         policy = "captain"
-        prompts = { captain = file "../prompts/reference_expander.txt" }
+        prompts = { captain = file "../../prompts/phase0/reference_expander.txt" }
         tools = ["arxiv_download", "arxiv_search", "fs"]
     }
 
     accelerator semantic_expander {
-        purpose = "autoresearch semantic expander"
+        purpose = "masa semantic expander"
         models = ["deepseek-v4-flash"]
         policy = "captain"
-        prompts = { captain = file "../prompts/semantic_expander.txt" }
+        prompts = { captain = file "../../prompts/phase0/semantic_expander.txt" }
         tools = ["arxiv_search", "fs"]
     }
 
@@ -46,10 +46,10 @@ graph {
     }
 
     accelerator expansion_merger {
-        purpose = "autoresearch expansion merger"
+        purpose = "masa expansion merger"
         models = ["deepseek-v4-flash"]
         policy = "captain"
-        prompts = { captain = file "../prompts/expansion_merger.txt" }
+        prompts = { captain = file "../../prompts/phase0/expansion_merger.txt" }
         tools = ["fs"]
     }
 

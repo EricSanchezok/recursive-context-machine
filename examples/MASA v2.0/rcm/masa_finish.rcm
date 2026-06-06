@@ -1,0 +1,10 @@
+name = "MASA Finish - Polishing"
+
+use "./finish/polisher.rcm" as Polisher
+
+graph {
+    accelerator polisher = Polisher
+
+    polisher.context -> output.context
+    polisher.done -> output.done
+}
