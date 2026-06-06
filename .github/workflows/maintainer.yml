@@ -11,13 +11,13 @@ on:
     types: [created]
   workflow_dispatch:
 
-# Each issue / PR gets its own lane. Runs queue rather than cancel so a
-# long-running review is never killed by a subsequent push or comment on the
-# same PR. Schedule and manual triggers fall back to run_id so they never
-# block each other.
+# Each issue / PR gets its own lane. A new push or comment on the same PR
+# cancels the in-progress run so the review always runs against the latest
+# code. Schedule and manual triggers fall back to run_id so they never cancel
+# each other.
 concurrency:
   group: maintainer-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   issues: write
