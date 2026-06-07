@@ -34,14 +34,19 @@ Build a de-duplicated list of all unique arXiv IDs referenced.
 For each unique arXiv ID:
 
 **A. Check paper profile** — read `phase0/paper_profiles/<id>.md` if it exists.
-Extract: title (from frontmatter `title:` field), year (from `year:` field), first author name (from the first line of the body if present).
+Extract:
+- `authors` field from frontmatter (ALL authors, verbatim)
+- `title` from frontmatter `title:` field
+- `year` from frontmatter `year:` field
+- `metadata_source` from frontmatter to determine reliability
 
-**B. Fallback** — For IDs without profiles (e.g., foundation papers not in the candidate pool), use your knowledge of the paper (it should be in your training data). For each paper, include:
-- Author names (first 3 authors + "et al." if more than 3)
-- Full title
-- Year
-- Venue if known (arXiv, conference name, journal name)
-- arXiv ID and URL
+**B. If profile exists with `metadata_source: pdf_extracted`** — use extracted authors/title/year directly. Mark as `(verified from PDF)` in the reference entry.
+
+**C. If profile exists with `metadata_source: pdf_unreadable` or `authors: "not found in PDF"`** — use the arXiv ID prefix (first 2 digits) for year estimate, and for authors use `[Authors unknown — not extractable from PDF]`. Mark as `(metadata partial — unreadable PDF)`.
+
+**D. If NO profile exists** — these are papers not in the candidate pool. Use the arXiv ID prefix for year estimate. For authors, use `[Citation not verified]` instead of guessing author names. Mark as `(no PDF profile — citation not verified)`.
+
+**IMPORTANT: Do NOT infer author names from model knowledge for any paper.** If the profile does not provide verified author information, output `[Authors unknown]` or `[Citation not verified]` rather than fabricating names.
 
 ### Step 3: Transform Inline Citations
 
@@ -76,11 +81,12 @@ arXiv:2406.10252 [cs.CL], 2024.
 ```
 
 Rules for each entry:
-1. Format: `[Author Year]` anchor → Authors → Title (in quotes) → Venue/arXiv ID → Year
+1. Format: `[Author Year]` anchor → Authors → Title (in quotes) → Venue/arXiv ID → Year → verification tag
 2. Include the arXiv ID and URL: `https://arxiv.org/abs/XXXX.XXXXX`
 3. Sort entries alphabetically by first author's last name
 4. Use consistent formatting for all entries
 5. If a paper has a known conference venue (NeurIPS, ACL, EMNLP, ICML, ICLR, etc.), use it instead of arXiv ID
+6. Append verification tag per Quality Rule 5 (only for entries where metadata_source is not `pdf_extracted`)
 
 ### Step 5: Write Output
 
@@ -92,7 +98,11 @@ Overwrite `07_survey.md` with the transformed content + references section.
 2. Every reference entry MUST be citable from the inline citation format.
 3. Do NOT add or remove any substantive content from the survey.
 4. Do NOT change section structure, tables, or technical claims.
-5. If you are uncertain about a paper's metadata, note "(metadata verified from profile)" or "(metadata from model knowledge)" as appropriate.
+5. **Metadata tagging rules for reference entries:**
+   - If `metadata_source: pdf_extracted` → no tag needed (verified)
+   - If `metadata_source: pdf_unreadable` → append `(metadata partial — unreadable PDF)`
+   - If no profile exists → append `(citation not verified — no PDF profile)`
+6. **Citation audit:** After writing all reference entries, scan the full survey text for every inline citation pattern `[Author Year]` and verify that each one has a matching entry in the `## References` section. If any inline citation has no matching reference entry, add the missing entry with `[Citation not verified]` as the author placeholder.
 
 ## Context Discipline
 

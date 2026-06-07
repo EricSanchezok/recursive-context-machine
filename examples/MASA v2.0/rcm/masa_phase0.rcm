@@ -10,6 +10,7 @@ use "./phase0/paper_fetcher.rcm" as PaperFetcher
 use "./phase0/paper_profiler.rcm" as PaperProfiler
 use "./phase0/taxonomy_builder.rcm" as TaxonomyBuilder
 use "./phase0/evolution_mapper.rcm" as EvolutionMapper
+use "./phase0/coverage_auditor.rcm" as CoverageAuditor
 
 graph {
     accelerator anchor = Anchor
@@ -22,6 +23,7 @@ graph {
     accelerator paper_profiler = PaperProfiler
     accelerator taxonomy_builder = TaxonomyBuilder
     accelerator evolution_mapper = EvolutionMapper
+    accelerator coverage_auditor = CoverageAuditor
 
     flux anchor_handoff {
         channel = context
@@ -77,6 +79,12 @@ graph {
         arity = 1
     }
 
+    flux coverage_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
     anchor.context -> anchor_handoff.slot(0)
     anchor_handoff.out -> query_plan.context
     anchor.done -> query_plan.trigger
@@ -113,6 +121,10 @@ graph {
     evolution_handoff.out -> evolution_mapper.context
     taxonomy_builder.done -> evolution_mapper.trigger
 
-    evolution_mapper.context -> output.context
-    evolution_mapper.done -> output.done
+    evolution_mapper.context -> coverage_handoff.slot(0)
+    coverage_handoff.out -> coverage_auditor.context
+    evolution_mapper.done -> coverage_auditor.trigger
+
+    coverage_auditor.context -> output.context
+    coverage_auditor.done -> output.done
 }

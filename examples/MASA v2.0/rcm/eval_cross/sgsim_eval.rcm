@@ -2,11 +2,10 @@ name = "SGSimEval Evaluation (Cross-Judge)"
 
 model gpt55 {
     protocol = "openai"
-    endpoint = "https://gmncode.com/v1"
-    credentials = { key = "__CROSS_KEY__" }
+    endpoint = "http://127.0.0.1:8001/v1"
+    credentials = { env = "CROSS_JUDGE_API_KEY" }
     limit = { context = "200000", output = "65536" }
     modalities = { input = ["text"], output = ["text"] }
-    model = "gpt-5.5"
 }
 
 accelerator {

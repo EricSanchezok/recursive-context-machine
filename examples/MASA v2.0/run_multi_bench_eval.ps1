@@ -15,7 +15,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$accelerator = Join-Path $scriptDir "..\..\target\debug\accelerate.exe"
+$accelerator = Join-Path $scriptDir "..\..\target\release\accelerate.exe"
 $env:DEEPSEEK_API_KEY = "sk-b9ebba94ad7943faaad0ae877390a5cc"
 
 # ── Benchmarks ──
@@ -33,7 +33,7 @@ $judgeLabel = "Self-Judge (DeepSeek)"
 if ($CrossJudge) {
     $judgeLabel = "Cross-Judge (gpt-5.5 via gmncode.com)"
     if (-not $env:CROSS_JUDGE_API_KEY) {
-        $env:CROSS_JUDGE_API_KEY = Read-Host "Enter API key for gmncode.com"
+        $env:CROSS_JUDGE_API_KEY = Read-Host "Enter OpenAI API key"
     }
     Write-Host "Cross-judge: gpt-5.5 via gmncode.com" -ForegroundColor Magenta
 }

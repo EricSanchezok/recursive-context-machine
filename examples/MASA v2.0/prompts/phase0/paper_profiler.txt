@@ -16,8 +16,13 @@ Write one profile file per paper to `phase0/paper_profiles/<arxiv_id>.md`.
 
 For each successfully downloaded paper (from the fetch report):
 1. Read the PDF from `pdfs/<arxiv_id>.pdf`.
-2. Extract the following structured information.
-3. Write `<arxiv_id>.md` to `phase0/paper_profiles/`.
+2. **MANDATORY — Extract bibliographic metadata from PDF first page:**
+   - Read the first page of the PDF.
+   - Extract: title (verbatim), authors (all author names, verbatim as listed), publication year, venue (if stated).
+   - If the PDF text rendering is garbled due to encoding, try reading the raw text and use regex patterns like `^(Authors|author):` or look for the first page's title header.
+   - Do NOT use model knowledge to fill in any missing metadata — if you cannot extract a field from the PDF, set it to `"not found in PDF"`.
+3. Read the rest of the PDF and extract structured technical information.
+4. Write `<arxiv_id>.md` to `phase0/paper_profiles/`.
 
 For papers in the candidate pool that have no arXiv ID or failed to download:
 - Skip them (they remain metadata-only in candidate_pool).
@@ -27,8 +32,10 @@ For papers in the candidate pool that have no arXiv ID or failed to download:
 ```yaml
 # phase0/paper_profiles/<arxiv_id>.md
 paper_id: "<arxiv_id>"
-title: "<Paper Title>"
+title: "<exact title from PDF first page>"
+authors: "[Author1, Author2, ...]"  # VERBATIM from PDF first page
 year: YYYY
+metadata_source: "pdf_extracted"  # MUST be "pdf_extracted" if all fields from PDF
 
 ## Method Description
 
@@ -73,12 +80,14 @@ year: YYYY
 - <Limitation 2>
 ```
 
-## Guidelines
+## Critical Rules (MUST follow)
 
-- Be precise and faithful to the paper. Do not fabricate details.
-- If a section of the paper is unclear, note it as "not clearly stated" rather than guessing.
-- Focus on architectural and methodological details that enable comparison across papers.
-- The profile should be self-contained — someone reading only this profile should understand the paper's approach.
+1. **Authors MUST be extracted from PDF first page verbatim.** Do not guess, abbreviate, or truncate the author list. Write them exactly as they appear in the PDF.
+2. **If the PDF text layer is unreadable or missing,** set `metadata_source: "pdf_unreadable"` and list authors as `"authors not found in PDF"`. Do NOT fall back to model knowledge.
+3. **Do NOT fabricate any metadata.** If a field cannot be extracted from the PDF, mark it explicitly as `"not found in PDF"` rather than guessing.
+4. **If a section of the paper is unclear** in the technical description, note it as "not clearly stated" rather than guessing.
+5. **Focus on architectural and methodological details** that enable comparison across papers.
+6. The profile should be self-contained — someone reading only this profile should understand the paper's approach.
 
 ## Context Discipline
 The `run_dir` is the first line of the incoming handoff. All paths are relative to `run_dir`. Do NOT explore the filesystem.
