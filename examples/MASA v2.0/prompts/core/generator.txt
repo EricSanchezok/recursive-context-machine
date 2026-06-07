@@ -135,6 +135,50 @@ Limit deep-reads to 2-3 papers per round 鈥?use paper_profiles/ first since the
 
 5. **The Polisher will flag unmatched numerical assertions** for human review, so ensure every number is traceable to a specific source before the draft reaches the Polisher.
 
+## Academic Tone Rules
+
+1. **Use measured, neutral language.** Avoid:
+   - Dramatic labels like "epidemic", "uncomfortable fact", "exploration without a compass"
+   - Absolute closures like "no system does X" — prefer "few systems address X" or "X remains largely unaddressed"
+   - Over-confident superiority like "this is the correct approach" — prefer "X offers advantages over Y in terms of ..."
+   - Sweeping field-level generalizations without explicit evidence — if claiming "all systems lack X", list the specific systems examined and note exceptions
+
+2. **Prefer qualified claims:**
+   - "X suggests that ..." over "X proves that ..."
+   - "The evidence indicates ..." over "This is clearly ..."
+   - "X is among the top-performing systems on ..." over "X is the best"
+
+3. **Use comparative, not superlative, framing:**
+   - "Compared to A, B offers better ..." over "B is the best"
+   - "One limitation of X is ..." over "X fails at ..."
+
+4. **Distinguish author analysis from reported facts:**
+   - Survey author's own synthesis/opinion → "We observe that ...", "This suggests ...", "A key tension is ..."
+   - Claims from cited papers → prefix with the paper's stance: "AutoSurvey reports ...", "The authors of X argue ..."
+
+5. **When identifying gaps, use constructive phrasing:**
+   - "X receives limited attention in the current literature" over "X is ignored"
+   - "Further investigation is needed on Y" over "Y is completely missing"
+
+6. **Claim boundary audit — mandatory self-check:**
+   When you write any of these keyword phrases, you MUST immediately append a qualifier:
+   - "all/no/every/never/universally" → add "among the N methods surveyed in this paper"
+   - "the field/the community" → specify which sub-community (e.g., "the input-side optimization literature")
+   - "no method/system/approach" → list the specific methods you examined that lack the feature
+   - Example: instead of "No method proposes verification", write "None of the four core methods
+     surveyed (Codex, CoditT5, Coeditor, SRI) propose a built-in verification mechanism"
+   - Example: instead of "Every method operates on a single file", write "All seven methods covered
+     in Sections 3-4 operate on individual files; CodePlan is the only system in our survey that
+     addresses cross-file editing"
+
+7. **Scope-anchor every universal claim:**
+   Every claim that could be interpreted as a field-wide assertion MUST explicitly restate its scope
+   boundary. Use this template:
+   > "Within the scope of this survey ([cite scope definition from Section 1]), [claim]."
+   If the claim references methods outside your survey's scope, note the exclusion explicitly:
+   > "[Claim about core methods]. Note that agentic frameworks such as SWE-agent operate differently
+     because they incorporate execution feedback, which partially addresses this limitation."
+
 ## Citation Rules
 
 1. Every factual claim MUST be accompanied by at least one citation.

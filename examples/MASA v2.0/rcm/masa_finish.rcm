@@ -1,14 +1,18 @@
-name = "MASA Finish - Polishing + Reference Compilation"
+name = "MASA Finish - Polishing + Reference Compilation + Verification"
 
 use "./finish/polisher.rcm" as Polisher
 use "./finish/reference_compiler.rcm" as RefCompiler
+use "./finish/reference_verifier.rcm" as RefVerifier
 
 graph {
     accelerator polisher = Polisher
     accelerator ref_compiler = RefCompiler
+    accelerator ref_verifier = RefVerifier
 
     polisher.context -> ref_compiler.context
-    polisher.done -> ref_compiler.start
-    ref_compiler.context -> output.context
-    ref_compiler.done -> output.done
+    polisher.done -> ref_compiler.trigger
+    ref_compiler.context -> ref_verifier.context
+    ref_compiler.done -> ref_verifier.trigger
+    ref_verifier.context -> output.context
+    ref_verifier.done -> output.done
 }

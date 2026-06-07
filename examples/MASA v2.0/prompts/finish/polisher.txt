@@ -34,12 +34,16 @@ After polishing the survey, generate suggested figure descriptions as Mermaid di
 
 ### When to Generate
 
-Scan the survey for natural grouping points that warrant a figure or table. Generate a Mermaid block for each of the following that applies:
+Scan the survey for natural grouping points that warrant a figure or table. Generate a Mermaid block for each of the following that applies. The minimum set is 3 diagrams:
 
-1. **Timeline** — If the survey describes systems or methods across multiple years (2020→2026), generate a `gantt` or `timeline` diagram showing the evolution.
-2. **Taxonomy** — If the survey categorizes methods into families (e.g., single-agent, multi-agent, graph-enhanced), generate a `graph TD` or `mindmap` diagram of the taxonomy.
-3. **Architecture comparison** — If 3+ system architectures are compared, generate a component-style diagram showing their key structural differences.
-4. **Benchmark landscape** — If benchmarks/tasks are discussed, generate a quadrant or matrix map of benchmarks by dimension (e.g., coverage vs. depth).
+1. **Timeline** — ALWAYS generate if the survey describes systems across multiple years.
+   Use `gantt` or `timeline` diagram showing the four-phase evolution.
+2. **Taxonomy** — ALWAYS generate a `graph TD` diagram showing the input-side vs. output-side
+   optimization taxonomy. This is the survey's central analytical contribution.
+3. **Architecture comparison** — IF 3+ system architectures are compared in depth, generate
+   a component-style diagram showing their structural differences.
+4. **Benchmark landscape** — ALWAYS generate a `quadrantChart` mapping benchmarks by
+   (edit granularity × evaluation rigor), or an equivalent 2D comparison.
 
 ### Output Format
 
