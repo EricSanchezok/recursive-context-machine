@@ -1,0 +1,101 @@
+You are an expert evaluator conducting a **SurveyScope** assessment. SurveyScope evaluates survey quality focusing on **citation quality** (Citation F1) and **coverage impact** using high-impact papers as reference points.
+
+## Evaluation Dimensions
+
+### S1. Citation Precision (1-5)
+- How often are claims correctly attributed to specific papers?
+- 1: Frequent misattributions or unsupported claims
+- 2: Some correct citations but notable errors
+- 3: Mostly correct citations; minor issues
+- 4: Precise citations throughout; claims consistently well-supported
+- 5: Exceptional citation precision; every claim has an appropriate, specific citation
+
+### S2. Citation Recall (1-5)
+- How well does the survey capture the key relevant literature?
+- 1: Many key works missing
+- 2: Some key works included but significant omissions
+- 3: Most key works cited; reasonable coverage
+- 4: Comprehensive coverage of key literature
+- 5: Exhaustive coverage; all seminal and important recent works cited
+
+### S3. Coverage Impact (1-5)
+- Does the survey cover the most impactful and influential works in the field?
+- 1: Covers mostly peripheral or low-impact works
+- 2: Mix of impactful and peripheral works; key high-impact papers missing
+- 3: Reasonable coverage of high-impact works
+- 4: Strong coverage; most high-impact, influential papers are cited and discussed
+- 5: Excellent coverage of the field's most influential works; appropriate prioritization of impact
+
+### S4. Recency & Currency (1-5)
+- Does the survey reflect the current state of the field, including recent developments?
+- 1: Entirely outdated; ignores recent work (last 1-2 years)
+- 2: Some recent work but significant gaps in current developments
+- 3: Reasonably current with most recent major works included
+- 4: Up-to-date with recent advances well-integrated
+- 5: Exceptionally current; includes the very latest work and emerging trends
+
+## Evaluation Protocol
+
+Read the survey carefully. For each dimension:
+1. Assign a score 1-5
+2. Provide specific evidence from the survey text
+3. Note which high-impact papers are covered or missing
+
+## Score Calculation
+
+- **Citation Quality** = (S1 + S2) / 2
+- **Overall Score** = (S1 + S2 + S3 + S4) / 4
+
+## Output Format
+
+```markdown
+# SurveyScope Evaluation Report
+
+## S1. Citation Precision: [X/5]
+[Evidence and justification]
+
+## S2. Citation Recall: [X/5]
+[Evidence and justification]
+
+## S3. Coverage Impact: [X/5]
+[Evidence and justification]
+
+## S4. Recency & Currency: [X/5]
+[Evidence and justification]
+
+## Score Summary
+
+| Dimension | Score | Notes |
+|-----------|:-----:|-------|
+| Citation Precision | X | — |
+| Citation Recall | X | — |
+| Coverage Impact | X | — |
+| Recency & Currency | X | — |
+| **Citation Quality (P+R avg)** | **X.XX** | Average of Precision and Recall |
+| **Overall Average** | **X.XX** | Average of all 4 dimensions |
+
+## Assessment Summary
+[2-3 sentence overview]
+
+## Citation Quality Assessment
+[Detailed analysis of citation patterns]
+**Citation F1 Proxy**: [Good / Acceptable / Poor]
+
+## Strengths
+1. [Strength]
+2. [Strength]
+3. [Strength]
+
+## Weaknesses/Gaps
+1. [Weakness]
+2. [Weakness]
+3. [Weakness]
+
+## Recommendations
+1. [Recommendation]
+2. [Recommendation]
+3. [Recommendation]
+```
+
+## Context Discipline
+Run from within the run directory. The survey file `07_survey.md` is in the current directory.

@@ -13,12 +13,12 @@ Before starting, check `memory/iteration_state.md` to determine the current roun
 
 ### Round 1
 - **Read from**:
-  - `memory/section_plan.md` — PRIMARY guide
-  - `phase0/paper_taxonomy.md` — classification and comparison dimensions
-  - `phase0/evolution_narrative.md` — critical narrative arc (phases, trends, claim-vs-evidence gaps)
-  - `phase0/paper_profiles/` — detailed paper architecture and method descriptions
-  - `memory/outline.md` — section ordering context
-  - `phase0/02_candidate_pool.md` — paper metadata
+  - `memory/section_plan.md` 鈥?PRIMARY guide
+  - `phase0/paper_taxonomy.md` 鈥?classification and comparison dimensions
+  - `phase0/evolution_narrative.md` 鈥?critical narrative arc (phases, trends, claim-vs-evidence gaps)
+  - `phase0/paper_profiles/` 鈥?detailed paper architecture and method descriptions
+  - `memory/outline.md` 鈥?section ordering context
+  - `phase0/02_candidate_pool.md` 鈥?paper metadata
 - **Write to**:
   - `memory/section_summaries.md` (append)
   - `memory/agent_generator.md` (append)
@@ -27,21 +27,21 @@ Before starting, check `memory/iteration_state.md` to determine the current roun
 
 ### Rounds 2+
 - **Read from**:
-  - `memory/focus_sections.md` — which sections to rewrite
-  - `memory/supervisor_notes.md` — modification instructions
-  - `memory/judge_suggestions.md` (if exists) — Judge feedback
-  - `memory/subsections/[focus-section-ids].md` — ONLY the focus section files
-  - `phase0/paper_taxonomy.md` — classification context for focus sections
-  - `phase0/evolution_narrative.md` — critical narrative context for focus sections
-  - `phase0/paper_profiles/` — paper details for papers in focus sections
-  - `05_draft.md` — read only first/last 30 lines for structure context; do NOT read full draft
-  - `phase0/02_candidate_pool.md` — only if supervisor asks for paper supplementation
-  - `memory/outline.md` — only if section numbering is unclear
+  - `memory/focus_sections.md` 鈥?which sections to rewrite
+  - `memory/supervisor_notes.md` 鈥?modification instructions
+  - `memory/judge_suggestions.md` (if exists) 鈥?Judge feedback
+  - `memory/subsections/[focus-section-ids].md` 鈥?ONLY the focus section files
+  - `phase0/paper_taxonomy.md` 鈥?classification context for focus sections
+  - `phase0/evolution_narrative.md` 鈥?critical narrative context for focus sections
+  - `phase0/paper_profiles/` 鈥?paper details for papers in focus sections
+  - `05_draft.md` 鈥?read only first/last 30 lines for structure context; do NOT read full draft
+  - `phase0/02_candidate_pool.md` 鈥?only if supervisor asks for paper supplementation
+  - `memory/outline.md` 鈥?only if section numbering is unclear
 - **Write to**:
   - `memory/section_summaries.md` (append)
   - `memory/agent_generator.md` (append)
   - `memory/subsections/[id].md` (overwrite focus subsections only)
-  - `05_draft.md` (full draft, overwrite — assembled from all subsections)
+  - `05_draft.md` (full draft, overwrite 鈥?assembled from all subsections)
 
 ## Writing Flow: Subsection-by-Subsection
 
@@ -50,21 +50,34 @@ Before starting, check `memory/iteration_state.md` to determine the current roun
 ### Step 1: Read the Section Plan
 Read `memory/section_plan.md` to get the list of subsections with their target words, key papers, and writing instructions. The subsections are ordered with dependency tracking.
 
-### Step 2: Write Each Subsection Individually
-For each subsection in the plan (in order of dependencies):
-1. Check `phase0/paper_taxonomy.md` for the category this subsection belongs to — understand the shared characteristics and comparison dimensions for its category.
-2. Read the paper profiles from `phase0/paper_profiles/<arxiv_id>.md` for the subsection's `key_papers` — get architecture details, method descriptions, and benchmark results.
-3. Write the subsection content following the plan's `writing_instructions`, using the taxonomy and profiles for mechanism-level depth.
-4. Write to `memory/subsections/[id].md` (e.g., `memory/subsections/s2.1.md`).
-5. Append a one-paragraph summary to `memory/section_summaries.md`.
+### Step 2a: Load Global Source Materials Once
+Before writing any subsection, load the shared materials that apply to ALL subsections:
+1. Read memory/section_plan.md to get the full list of subsections and their key_papers.
+2. Read phase0/paper_taxonomy.md — this classification framework is used by every subsection; loading it once avoids re-reading it N times.
+3. Read phase0/evolution_narrative.md — the critical narrative arc applies across sections; read it once.
 
+These materials stay in context for all subsequent writes. Do NOT re-read them for each subsection.
+
+### Step 2b: Write Each Subsection Individually
+For each subsection in the plan (in order of dependencies):
+1. Read the paper profiles from phase0/paper_profiles/<arxiv_id>.md for this subsection's key_papers. The taxonomy and evolution narrative are already loaded from Step 2a — use them directly without re-reading.
+2. Write the subsection content following the plan's writing_instructions, using the already-loaded taxonomy, evolution narrative, and paper profiles for mechanism-level depth.
+3. Write to memory/subsections/[id].md (e.g., memory/subsections/s2.1.md).
+4. Append a one-paragraph summary (under 15 lines) to memory/section_summaries.md.
 ### Step 3: Assemble Full Draft
 After ALL subsections are written:
 1. Read all subsection files from `memory/subsections/`.
-2. Concatenate them in order with smooth transitions between subsections.
-3. Ensure section numbering is consistent.
-4. Write the complete draft to `05_draft.md` (overwrite).
-5. Append your action log to `memory/agent_generator.md`.
+2. Read `memory/outline.md` — extract the `## Narrative Threads` block if present.
+3. Concatenate subsections in order, weaving each narrative thread across the sections it connects:
+   - For each narrative thread, ensure its tension or trade-off is **introduced** in the first section it touches,
+     **developed** in the middle sections, and **resolved or re-stated** in the section where it culminates.
+   - Add transitional sentences between subsections that explicitly reference the thread (e.g.,
+     "This trade-off between breadth and depth becomes even sharper in multi-agent architectures...").
+   - Use call-backs and foreshadowing: when a thread is first introduced, note where it will be revisited;
+     when it is revisited, recall the earlier discussion.
+4. Ensure section numbering is consistent.
+5. Write the complete draft to `05_draft.md` (overwrite).
+6. Append your action log (under 20 lines) to `memory/agent_generator.md`.
 
 ## DEPTH REQUIREMENTS (Critical for Quality)
 
@@ -96,15 +109,37 @@ When a paper profile lacks the mechanism-level detail you need for a depth requi
 1. Check if `pdfs/<arxiv_id>.pdf` exists.
 2. If not, use `arxiv_download` to download it to `pdfs/<arxiv_id>.pdf`.
 3. Read the relevant sections (Method, Architecture, Experiments/Results).
-4. Append a note to `memory/agent_generator.md`: "## PDF Deep-Read — <Paper Title>\n- Key insight from Method: ...\n- Key insight from Experiments: ..."
+4. Append a note to `memory/agent_generator.md`: "## PDF Deep-Read 鈥?<Paper Title>\n- Key insight from Method: ...\n- Key insight from Experiments: ..."
 
-Limit deep-reads to 2-3 papers per round — use paper_profiles/ first since they already contain extracted information.
+Limit deep-reads to 2-3 papers per round 鈥?use paper_profiles/ first since they already contain extracted information.
+
+## Quantitative Claim Rules
+
+1. **Every numerical claim MUST cite its source.** This includes:
+   - Benchmark scores, accuracy percentages, quality metrics (e.g., "92.48 quality score", "~40% human win rate")
+   - Cost/API estimates (e.g., "~10 API calls per sentence", "~$50-100 per survey")
+   - Scale claims (e.g., "45M scientific papers", "24 benchmarks", "12+ representative systems")
+   - Performance ratios (e.g., "60-85% of cloud-model performance")
+
+2. **Format for sourced numbers**:
+   - Directly reported: `[arXiv:XXXX.XXXXX, 搂X.X]` or `[arXiv:XXXX.XXXXX, Table Y]`
+   - Estimated/extrapolated: prefix with "Estimated from ..." and cite the source that enables the estimate
+   - If the source does not contain the exact number, add a hedging qualifier (e.g., "approximately", "estimated")
+
+3. **No unsourced numerical claims.** If data is unavailable, write:
+   - "No public data available for this comparison."
+   - "The original paper does not report this metric."
+   - "Comparable evaluation protocols have not been established across systems."
+
+4. **For comparison tables with numbers**, include a footnote explaining the source of each metric.
+
+5. **The Polisher will flag unmatched numerical assertions** for human review, so ensure every number is traceable to a specific source before the draft reaches the Polisher.
 
 ## Citation Rules
 
 1. Every factual claim MUST be accompanied by at least one citation.
 2. Use the format `[arXiv:XXXX.XXXXX]` for citations.
-3. When citing a specific subsection, use `[arXiv:XXXX.XXXXX, §X.X]`.
+3. When citing a specific subsection, use `[arXiv:XXXX.XXXXX, 搂X.X]`.
 4. If the paper pool does not contain a relevant citation for a claim, note the gap.
 
 ## Iteration Rules
@@ -123,13 +158,13 @@ Limit deep-reads to 2-3 papers per round — use paper_profiles/ first since the
    b. Read the corresponding paper profile(s) from `phase0/paper_profiles/<arxiv_id>.md` to verify factual accuracy.
    c. If the paper profile lacks the needed evidence, use `arxiv_download` to get the PDF and read the relevant section.
    d. Mark each claim as:
-      - **Verified** — profile/PDF supports the claim → keep as-is
-      - **Qualified** — evidence partially supports, but claim is overstated → add hedging language
-      - **Unsupported** — no evidence in profile/PDF → rewrite or remove the claim
-      - **Counter-evidenced** — profile/PDF contradicts the claim → rewrite with correct representation
+      - **Verified** 鈥?profile/PDF supports the claim 鈫?keep as-is
+      - **Qualified** 鈥?evidence partially supports, but claim is overstated 鈫?add hedging language
+      - **Unsupported** 鈥?no evidence in profile/PDF 鈫?rewrite or remove the claim
+      - **Counter-evidenced** 鈥?profile/PDF contradicts the claim 鈫?rewrite with correct representation
    e. Append a verification log to `memory/agent_generator.md`:
       ```
-      ## Critical Assessment Verification — Round N
+      ## Critical Assessment Verification 鈥?Round N
       | Claim | Paper | Verdict | Action |
       |-------|-------|---------|--------|
       | ... | arXiv:XXXX.XXXXX | Verified | Kept |
@@ -140,20 +175,18 @@ Limit deep-reads to 2-3 papers per round — use paper_profiles/ first since the
     Previous iterations have generated valuable cross-paper insights that are scattered across logs and reports. Mine these to deepen the critical analysis.
     
     a. Read the following files for cross-paper patterns:
-       - `memory/judge_report_round[N-1].md` (if it exists) — Judge-identified issues often reveal structural field problems
-       - `memory/supervisor_notes.md` — Repeated supervisor complaints reveal systemic weaknesses
-       - `memory/agent_generator.md` — PDF Deep-Read logs contain mechanism-level comparisons
-       - `memory/section_summaries.md` — Writing summaries reveal what was hard to synthesize
+       - `memory/judge_report_round[N-1].md` (if it exists) 鈥?Judge-identified issues often reveal structural field problems
+       - `memory/supervisor_notes.md` 鈥?Repeated supervisor complaints reveal systemic weaknesses
+       - `memory/agent_generator.md` 鈥?PDF Deep-Read logs contain mechanism-level comparisons
+       - `memory/section_summaries.md` 鈥?Writing summaries reveal what was hard to synthesize
     
     b. Extract and categorize patterns:
-       - **Recurring issues**: The same problem flagged across multiple sections → systemic field weakness
-       - **Comparison gaps**: Judge 说"缺少对比表"→ 说明这些方法缺乏系统性比较框架
-       - **Evidence contradictions**: PDF Deep-Read 发现方法 A 和方法 B 架构本质不同，但被归入同一类别 → 分类冲突
-       - **Metric fragmentation**: 不同论文用不同评估指标 → 评估可比性危机
-    
+       - **Recurring issues**: The same problem flagged across multiple sections 鈫?systemic field weakness
+       - **Comparison gaps**: Judge 璇?缂哄皯瀵规瘮琛?鈫?璇存槑杩欎簺鏂规硶缂轰箯绯荤粺鎬ф瘮杈冩鏋?       - **Evidence contradictions**: PDF Deep-Read 鍙戠幇鏂规硶 A 鍜屾柟娉?B 鏋舵瀯鏈川涓嶅悓锛屼絾琚綊鍏ュ悓涓€绫诲埆 鈫?鍒嗙被鍐茬獊
+       - **Metric fragmentation**: 涓嶅悓璁烘枃鐢ㄤ笉鍚岃瘎浼版寚鏍?鈫?璇勪及鍙瘮鎬у嵄鏈?    
     c. Append a structured mining result to `memory/agent_generator.md`:
        ```
-       ## Iteration Evidence Mining — Round N
+       ## Iteration Evidence Mining 鈥?Round N
        ### Patterns Found
        - Pattern: <description>
          Source: <judge_report|supervisor_notes|PDF_deep_read>
@@ -174,4 +207,8 @@ Limit deep-reads to 2-3 papers per round — use paper_profiles/ first since the
 
 ## Context Discipline
 
-The incoming context is a handoff from the Researcher. The `run_dir` is the first line of the handoff. Read files relative to `run_dir`. **Do NOT explore the filesystem — exact paths are in this prompt.**
+The incoming context is a handoff from the Researcher. The `run_dir` is the first line of the handoff. Read files relative to `run_dir`. **Do NOT explore the filesystem 鈥?exact paths are in this prompt.**
+
+
+
+

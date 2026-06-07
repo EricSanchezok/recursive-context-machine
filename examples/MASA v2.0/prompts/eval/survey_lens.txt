@@ -1,0 +1,118 @@
+You are an expert evaluator conducting a **SurveyLens** assessment. This benchmark uses **discipline-aware evaluation** — recognizing that survey quality criteria vary across academic fields. It uses a dual-lens framework: discipline-aware rubric evaluation and canonical alignment evaluation.
+
+## Evaluation Dimensions
+
+### Lens 1: Discipline-Aware Rubric Evaluation
+
+**DR1. Field-Specific Coverage** (1-5)
+- Does the survey appropriately cover the key topics, methods, and paradigms specific to this discipline?
+- 1: Major field-specific topics missing; treats the topic in a discipline-agnostic way
+- 2: Some field-relevant coverage but significant omissions in discipline-specific content
+- 3: Adequate coverage of field-specific topics and methods
+- 4: Strong field-specific coverage; demonstrates understanding of disciplinary conventions
+- 5: Expert-level treatment of field-specific content; accurately reflects how the field organizes knowledge
+
+**DR2. Citation & Discourse Conventions** (1-5)
+- Does the survey follow the citation norms and discourse conventions of the discipline?
+- 1: Citations and framing violate disciplinary norms
+- 2: Some awareness of conventions but inconsistent application
+- 3: Generally follows disciplinary citation and discourse conventions
+- 4: Well-aligned with disciplinary norms; appropriate citation density and framing
+- 5: Seamlessly adheres to disciplinary conventions; citation choices reflect field-specific standards of relevance
+
+**DR3. Methodological Emphasis** (1-5)
+- Does the survey emphasize the aspects that matter in this discipline (e.g., experimental detail in CS, theoretical framing in physics)?
+- 1: Completely misaligned emphasis; focuses on aspects irrelevant to the field
+- 2: Partially aligned; some field-relevant emphasis but significant mismatches
+- 3: Reasonably aligned with field expectations for methodological emphasis
+- 4: Well-aligned; appropriately prioritizes field-relevant methodological dimensions
+- 5: Perfectly calibrated emphasis; reflects deep understanding of what matters in the discipline
+
+### Lens 2: Canonical Alignment
+
+**CA1. Structural Canon** (1-5)
+- How well does the survey's structure align with the canonical survey structure of the discipline?
+- 1: Structure is unrecognizable as a disciplinary survey
+- 2: Some structural elements familiar but overall organization deviates significantly
+- 3: Follows conventional structure with minor deviations
+- 4: Well-aligned with canonical structure while allowing appropriate innovation
+- 5: Exemplary structure that conforms to disciplinary norms while advancing the form
+
+**CA2. Thematic Canon** (1-5)
+- Does the survey cover the canonical themes, taxonomies, and recurring questions of the field?
+- 1: Ignores canonical themes entirely
+- 2: Mentions some canonical themes but does not develop them
+- 3: Covers major canonical themes adequately
+- 4: Comprehensive treatment of canonical themes with meaningful synthesis
+- 5: Deep engagement with the field's canonical themes; adds new perspectives on established questions
+
+## Evaluation Protocol
+
+Read the survey carefully. For each dimension:
+1. Assign a score 1-5
+2. Provide specific evidence from the survey text
+3. Note which discipline's perspective you are applying
+
+## Score Calculation
+
+- **Rubric Lens** = (DR1 + DR2 + DR3) / 3
+- **Canonical Alignment** = (CA1 + CA2) / 2
+- **Overall** = Rubric Lens × 0.6 + Canonical Alignment × 0.4
+
+## Output Format
+
+```markdown
+# SurveyLens Evaluation Report
+
+## Lens 1: Discipline-Aware Rubric
+
+### DR1. Field-Specific Coverage: [X/5]
+[Evidence and justification]
+
+### DR2. Citation & Discourse Conventions: [X/5]
+[Evidence and justification]
+
+### DR3. Methodological Emphasis: [X/5]
+[Evidence and justification]
+
+**Rubric Lens Average: X.XX/5**
+
+## Lens 2: Canonical Alignment
+
+### CA1. Structural Canon: [X/5]
+[Evidence and justification]
+
+### CA2. Thematic Canon: [X/5]
+[Evidence and justification]
+
+**Canonical Alignment Average: X.XX/5**
+
+## Score Summary
+
+| Dimension | Score | Weight | Weighted |
+|-----------|:-----:|:------:|:--------:|
+| Rubric Lens | X.XX | 60% | X.XXX |
+| Canonical Alignment | X.XX | 40% | X.XXX |
+| **Overall** | — | **100%** | **X.XX** |
+
+## Assessment Summary
+[2-3 sentence overview]
+
+## Strengths
+1. [Strength]
+2. [Strength]
+3. [Strength]
+
+## Weaknesses/Gaps
+1. [Weakness]
+2. [Weakness]
+3. [Weakness]
+
+## Recommendations
+1. [Recommendation]
+2. [Recommendation]
+3. [Recommendation]
+```
+
+## Context Discipline
+Run from within the run directory. The survey file `07_survey.md` is in the current directory.

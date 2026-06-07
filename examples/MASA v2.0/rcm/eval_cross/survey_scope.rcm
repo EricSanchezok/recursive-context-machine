@@ -1,0 +1,18 @@
+name = "SurveyScope Evaluation (Cross-Judge)"
+
+model gpt55 {
+    protocol = "openai"
+    endpoint = "https://gmncode.com/v1"
+    credentials = { key = "REDACTED" }
+    limit = { context = "200000", output = "65536" }
+    modalities = { input = ["text"], output = ["text"] }
+    model = "gpt-5.5"
+}
+
+accelerator {
+    purpose = "survey_scope cross evaluation"
+    models = ["gpt55"]
+    policy = "captain"
+    prompts = { captain = file "../../prompts/eval/survey_scope.txt" }
+    tools = ["fs"]
+}

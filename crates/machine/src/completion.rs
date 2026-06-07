@@ -105,7 +105,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, U
             let endpoint = builder
                 .build()
                 .expect("failed to build openai client")
-                .completion_model(&model.name);
+                .completion_model(model.api_model.as_deref().unwrap_or(&model.name));
             send(&endpoint, model, &messages, &tools).await
         }
         Protocol::Anthropic => {
@@ -117,7 +117,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, U
             let endpoint = builder
                 .build()
                 .expect("failed to build anthropic client")
-                .completion_model(&model.name);
+                .completion_model(model.api_model.as_deref().unwrap_or(&model.name));
             send(&endpoint, model, &messages, &tools).await
         }
         Protocol::Gemini => {
@@ -129,7 +129,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, U
             let endpoint = builder
                 .build()
                 .expect("failed to build gemini client")
-                .completion_model(&model.name);
+                .completion_model(model.api_model.as_deref().unwrap_or(&model.name));
             send(&endpoint, model, &messages, &tools).await
         }
     };

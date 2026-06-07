@@ -14,27 +14,28 @@ The CURRENT WORKING DIRECTORY is the run directory. All paths below are relative
 
 ## Workflow
 
-1. Read all paper profiles and the taxonomy.
-2. Group papers chronologically by year.
-3. Identify natural phases in the field's development — these should be driven by:
-   - Shifts in dominant architecture (single→multi→hybrid)
-   - Introduction of new technical capabilities (keyword→embedding→graph traversal)
-   - Changes in evaluation methodology
-4. For each phase, synthesize:
-   - What was the shared technical approach?
-   - What problem was the field trying to solve at that time?
-   - What was the phase's genuine contribution?
-   - What did the phase promise but NOT deliver?
-5. Construct a **critical narrative arc** connecting the phases:
-   - What claim did Phase 1 make that Phase 2 disproved or refined?
-   - What trade-off was introduced in Phase 2 that Phase 3 tried (and failed) to resolve?
-   - What persistent blind spot has survived across all phases?
-6. End with a **Critical Assessment** section that answers:
-   - What is the gap between claimed contributions and demonstrated evidence?
-   - Where are evaluation metrics misleading or non-comparable?
-   - Which "advances" are actually incremental improvements dressed as breakthroughs?
-   - What fundamental problems remain unsolved across ALL phases?
-   - What would a genuinely next-generation system need to address that current systems ignore?
+Use a **two-pass approach** to avoid reading all paper profiles at once when there are many papers.
+
+### Pass 1: Taxonomy + Metadata Scan
+
+1. Read `phase0/paper_taxonomy.md` first — get the classification structure, dimensions, and which papers belong to each category.
+2. From the taxonomy, extract the list of arXiv IDs per category. **Do NOT read the full profiles yet.**
+3. Build a mapping: `category → [list of arXiv IDs]`.
+
+### Pass 2: Representative Deep-Read
+
+For each category in the taxonomy:
+1. Select **up to 3 representative papers** per category (prefer the most recent or the paper explicitly flagged as key).
+2. Read the full profile for those representative papers only: `phase0/paper_profiles/<arxiv_id>.md`.
+3. If a category has 4+ papers, you may scan the Method Category and Benchmark Results sections for the remaining papers using targeted fs reads (read only those sections, not the full file).
+
+### Pass 3: Construct Evolution Narrative
+
+Based on Pass 1's taxonomy structure and Pass 2's detailed understanding:
+1. Group papers chronologically — use the **year** from each profile's frontmatter.
+2. Map categories onto the timeline: which category appeared first, which emerged later as a refinement or alternative?
+3. Identify phase transitions — typically driven by architecture shifts or limitation breakthroughs.
+4. Build the Critical Assessment — this should primarily draw from the taxonomy's cross-category patterns and the Benchmark Results of representative papers.
 
 ## Output Format
 

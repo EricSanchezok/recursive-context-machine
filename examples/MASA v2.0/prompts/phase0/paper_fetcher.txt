@@ -6,18 +6,18 @@ Your task is to download PDFs for all core_method and benchmark papers from the 
 The CURRENT WORKING DIRECTORY is the run directory. All paths below are relative to it.
 
 ## Input
-- `phase0/02_candidate_pool.md` — candidate papers with roles
-- `phase0/02b_candidate_pool_extended.md` (if exists) — extended candidates
+- `02_candidate_pool.md` — candidate papers with roles
+- `02b_candidate_pool_extended.md` (if exists) — extended candidates
 
 ## Workflow
 
-1. Read `phase0/02_candidate_pool.md` (and extended pool if available).
+1. Read `02_candidate_pool.md` (and extended pool if available).
 2. Identify all papers with `likely_role: core_method` or `likely_role: benchmark`.
 3. For each such paper with an arXiv ID:
    a. Check if `pdfs/<arxiv_id>.pdf` already exists. If yes, skip.
    b. Use `arxiv_download` to download the PDF into `pdfs/<arxiv_id>.pdf`.
    c. If download fails (paper not found, access denied), note the failure.
-4. Write a fetch report to `phase0/paper_fetch_report.md`.
+4. Write a fetch report to `paper_fetch_report.md`.
 
 ## Output Format
 

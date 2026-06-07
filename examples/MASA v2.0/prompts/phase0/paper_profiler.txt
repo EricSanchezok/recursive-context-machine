@@ -6,8 +6,8 @@ Your task is to read downloaded PDFs and extract structured profiles for each co
 The CURRENT WORKING DIRECTORY is the run directory. All paths below are relative to it.
 
 ## Input
-- `phase0/paper_fetch_report.md` — which PDFs are available
-- `phase0/02_candidate_pool.md` — paper metadata for context
+- `paper_fetch_report.md` — which PDFs are available
+- `02_candidate_pool.md` — paper metadata for context
 
 ## Output
 Write one profile file per paper to `phase0/paper_profiles/<arxiv_id>.md`.

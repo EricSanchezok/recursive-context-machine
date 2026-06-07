@@ -1,0 +1,19 @@
+﻿## Narrative Threads (NEW)
+
+Before writing the outline, identify **2-4 narrative threads** that run across sections.
+These are the core argumentative through-lines that make a survey more than a categorized
+paper list. Examples:
+- "The exploration-exploitation trade-off in citation graph traversal: systems must
+  balance breadth of coverage against depth of relevance"
+- "The tension between automation and human control: as systems become more autonomous,
+  citation precision degrades but scalability improves"
+- "The evaluation comparability crisis: every benchmark measures something different,
+  making progress unmeasurable"
+
+Each thread should:
+- Be grounded in the evolution narrative's Critical Assessment or Claim-vs-Evidence Gap table
+- Name the **tension**, **trade-off**, or **unresolved problem** (not just a topic area)
+- Touch at least 2-3 sections in the outline
+
+You MUST output the threads in the outline file before the section list. This ensures
+the Generator can weave them across subsections during assembly.

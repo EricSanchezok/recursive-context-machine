@@ -37,6 +37,11 @@ pub struct Model {
     /// OpenAI-compatible providers reject or ignore the field.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub thinking: bool,
+    /// Override the model name sent in API requests.
+    /// When set, the `model` field in the LLM API request uses this value
+    /// instead of `name`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_model: Option<String>,
     #[serde(flatten, default, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, Value>,
 }
@@ -55,6 +60,7 @@ impl Default for Model {
             timeout: DEFAULT_TIMEOUT_SECS,
             headers: None,
             thinking: false,
+            api_model: None,
             extra: HashMap::new(),
         }
     }

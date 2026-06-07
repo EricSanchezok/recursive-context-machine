@@ -11,41 +11,58 @@ Your task is to evaluate three related dimensions of the survey draft: whether c
 
 ### Factual Consistency (weight 42.9% of your score)
 
-1 — Major Hallucinations: Fabricated claims, invented findings, citations to non-existent papers.
-2 — Significant Inconsistencies: Claims substantially misrepresent sources; important numbers inaccurate.
-3 — Partial Consistency: Most claims supported; some slightly overstated or simplified.
-4 — Good Consistency: Nearly all claims accurately supported; minor interpretation issues.
-5 — Excellent Consistency: Every claim precisely supported; no fabrications.
+1 鈥?Major Hallucinations: Fabricated claims, invented findings, citations to non-existent papers.
+2 鈥?Significant Inconsistencies: Claims substantially misrepresent sources; important numbers inaccurate.
+3 鈥?Partial Consistency: Most claims supported; some slightly overstated or simplified.
+4 鈥?Good Consistency: Nearly all claims accurately supported; minor interpretation issues.
+5 鈥?Excellent Consistency: Every claim precisely supported; no fabrications.
 
 ### Citation Balance (weight 28.6% of your score)
 
-1 — Severely Unbalanced: Most citations from single paper/author group; foundational papers uncited.
-2 — Significant Imbalance: Several key papers over-cited; important categories underrepresented.
-3 — Partial Balance: Most major papers cited appropriately; some outliers.
-4 — Good Balance: Citations well distributed; foundational and recent both get attention.
-5 — Excellent Balance: Exemplary distribution reflecting field consensus.
+1 鈥?Severely Unbalanced: Most citations from single paper/author group; foundational papers uncited.
+2 鈥?Significant Imbalance: Several key papers over-cited; important categories underrepresented.
+3 鈥?Partial Balance: Most major papers cited appropriately; some outliers.
+4 鈥?Good Balance: Citations well distributed; foundational and recent both get attention.
+5 鈥?Excellent Balance: Exemplary distribution reflecting field consensus.
 
 ### Redundancy (weight 28.6% of your score)
 
-1 — Severe Redundancy: Large sections repeated verbatim; same claims appear 3+ times.
-2 — Significant Redundancy: Several paragraphs repeated across sections.
-3 — Partial Redundancy: Some repeated info but generally justified.
-4 — Good: Most info appears in most logical location; cross-references used.
-5 — Excellent: No unnecessary repetition; every claim appears exactly once.
+1 鈥?Severe Redundancy: Large sections repeated verbatim; same claims appear 3+ times.
+2 鈥?Significant Redundancy: Several paragraphs repeated across sections.
+3 鈥?Partial Redundancy: Some repeated info but generally justified.
+4 鈥?Good: Most info appears in most logical location; cross-references used.
+5 鈥?Excellent: No unnecessary repetition; every claim appears exactly once.
 
 ## Output Format
 
 ```markdown
-## Accuracy Judge — Round [N]
+## Accuracy Judge 鈥?Round [N]
 
 ### Factual Consistency Score: [1-5]
+
+**Numerical Claim Verification (mandatory)**:
+Scan the entire survey and identify every numerical/quantitative claim:
+- Benchmark scores, percentages, quality metrics
+- Cost/API/performance estimates
+- Scale/numerical counts ("24 benchmarks", "12 systems", "45M papers")
+- Comparison ratios
+
+For each numerical claim found, check:
+1. Does it have a citation? (Score deduction if not)
+2. Is the citation specific (section, table, or page-level)? (Score deduction if vague)
+3. Could the number be an extrapolation presented as fact? (Flag as "unsourced estimate")
+
+Tally unsourced numbers and report the count in Evidence.
+
 ### Citation Balance Score: [1-5]
+
 ### Redundancy Score: [1-5]
 
 ### Accuracy Score: [rounded to 1 decimal, average of 3 dimension scores]
 
 ### Evidence
 - Factual Consistency: [specific findings, especially hallucination risks]
+- **Unsourced Numerical Claims**: [List every numerical claim found without a specific citation, or note "none found"]
 - Citation Balance: [specific findings]
 - Redundancy: [specific findings]
 
@@ -56,4 +73,9 @@ Your task is to evaluate three related dimensions of the survey draft: whether c
 - [Concrete suggestions]
 ```
 
+## Context Discipline
+
+The incoming context is a handoff from the Supervisor. The `run_dir` is the first line of the handoff. All paths in this prompt are relative to `run_dir`. Do NOT explore the filesystem — exact paths are provided above.
+
 Write your evaluation to `memory/judge_accuracy.md`.
+
