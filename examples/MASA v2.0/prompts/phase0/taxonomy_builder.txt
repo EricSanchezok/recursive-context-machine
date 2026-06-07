@@ -7,19 +7,49 @@ The CURRENT WORKING DIRECTORY is the run directory. All paths below are relative
 
 ## Input
 - `phase0/paper_profiles/*.md` — all paper profiles
-- `phase0/02_candidate_pool.md` — full candidate list for context
+- `02_candidate_pool.md` — full candidate list for context
 
 ## Output
 - `phase0/paper_taxonomy.md` (overwrite)
 
 ## Workflow
 
-1. Read all paper profiles from `phase0/paper_profiles/`.
-2. Analyze the papers and identify:
-   - What natural groupings exist (by architecture, graph awareness, retrieval method, etc.)
-   - What classification dimensions best capture the differences
-   - Which papers belong to each category
-3. Build the taxonomy and write to `phase0/paper_taxonomy.md`.
+Due to the potentially large number of paper profiles, use the following **two-pass approach** to avoid exceeding context limits:
+
+### Pass 1: Metadata Scan
+
+1. Read all file names from `phase0/paper_profiles/` to get the full list of arXiv IDs.
+2. For each profile file, read **only the frontmatter** (first 10 lines containing `paper_id`, `title`, `year`). This is a cheap `fs` read per file.
+3. Then, for the same file, read **only the `## Method Category` section** — use `fs` to read lines around the heading `## Method Category`. This section is typically 3-5 lines and contains the paper's self-declared category.
+4. Build a grouping table:
+   ```
+   | arXiv ID | Title | Year | Method Category | Source |
+   |----------|-------|------|-----------------|--------|
+   | 2303.17651 | Self-Refine | 2023 | Iterative Self-Feedback | explicit |
+   | ... | ... | ... | ... | ... |
+   ```
+5. Group papers by their Method Category. Categories with 2+ papers form candidate groups. Categories with only 1 paper may need to be merged with a nearby category.
+
+### Pass 2: Representative Deep-Read
+
+1. For each distinct Method Category found in Pass 1, select **up to 3 representative papers** (prefer the most cited or most recent).
+2. Read the full profile for those representative papers only.
+3. If a category has no explicit Method Category in any profile header, read one full profile to classify it.
+
+### Pass 3: Build Taxonomy
+
+Based on Pass 1's full-paper metadata scan and Pass 2's representative deep-reads:
+1. Identify what **natural groupings** exist across the representative profiles.
+2. Determine which **classification dimensions** best capture the differences.
+3. Assign all papers from Pass 1's metadata table to their categories.
+4. Write the complete taxonomy to `phase0/paper_taxonomy.md`.
+
+### Handling Category Ambiguity
+
+- If a paper profile has an explicit `## Method Category` section, use that as the starting point.
+- If multiple profiles share the same Method Category, they form a natural group.
+- If the Method Category section is missing from a profile, infer it from the closest representative profile in Pass 2.
+- If you cannot confidently classify a paper, place it in an "Uncategorized / Needs Review" section with a brief note on why.
 
 ## Taxonomy Format
 

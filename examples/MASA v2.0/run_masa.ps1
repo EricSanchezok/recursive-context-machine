@@ -1,5 +1,5 @@
-# MASA Automated Survey Pipeline
-# One-shot execution: creates run dir, runs Phase 0 → multi-round Core → Finish
+﻿# MASA Automated Survey Pipeline
+# One-shot execution: creates run dir, runs Phase 0 鈫?multi-round Core 鈫?Finish
 # All output goes to MASA v2.0/runs/<timestamp>/
 
 param(
@@ -9,16 +9,19 @@ param(
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# ── Paths ──
+# 鈹€鈹€ Paths 鈹€鈹€
 $phase0Rcm = Join-Path $scriptDir "rcm\masa_phase0.rcm"
 $coreRcm    = Join-Path $scriptDir "rcm\masa_core.rcm"
 $finishRcm  = Join-Path $scriptDir "rcm\masa_finish.rcm"
 $accelerator = Join-Path $scriptDir "..\..\target\release\accelerate.exe"
 
-# ── API Key ──
-$env:DEEPSEEK_API_KEY = "sk-b9ebba94ad7943faaad0ae877390a5cc"
+# 鈹€鈹€ API Key (must be set in environment, not hardcoded) 鈹€鈹€
+if (-not $env:DEEPSEEK_API_KEY) {
+    Write-Error "DEEPSEEK_API_KEY is not set. Please set it before running: `$env:DEEPSEEK_API_KEY='sk-...'"
+    exit 1
+}
 
-# ── Create fixed run directory ──
+# 鈹€鈹€ Create fixed run directory 鈹€鈹€
 $timestamp = Get-Date -Format "yyyy-MM-ddTHHmmZ"
 $runDir = Join-Path $scriptDir "runs\$timestamp"
 New-Item -ItemType Directory -Path $runDir -Force | Out-Null
@@ -37,10 +40,8 @@ $originalCwd = Get-Location
 Set-Location $runDir
 
 try {
-    # ═══════════════════════════════════════════
-    # Phase 0: Paper Discovery (run once)
-    # ═══════════════════════════════════════════
-    Write-Host "=== Phase 0: Paper Discovery ===" -ForegroundColor Yellow
+    # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?    # Phase 0: Paper Discovery (run once)
+    # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?    Write-Host "=== Phase 0: Paper Discovery ===" -ForegroundColor Yellow
     $output = & "$accelerator" run "$phase0Rcm" 2>&1
     $output | ForEach-Object { Write-Host $_ }
     $phase0ExitCode = $LASTEXITCODE
@@ -80,10 +81,8 @@ previous_round_score: 0.0
 verdict: START
 "@
 
-    # ═══════════════════════════════════════════
-    # Core: Multi-Round Iteration with Judge Control
-    # ═══════════════════════════════════════════
-    $prevScore = 0.0
+    # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?    # Core: Multi-Round Iteration with Judge Control
+    # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?    $prevScore = 0.0
     $verdict = "CONTINUE"
 
     for ($round = 1; $round -le $MaxRounds; $round++) {
@@ -123,6 +122,24 @@ verdict: $verdict
         Write-Host "Round $round complete." -ForegroundColor Green
         Write-Host ""
 
+        # Log retention: trim overgrown files after each round
+        $retentionRules = @{
+            "memory/agent_researcher.md"  = @{ MaxLines = 200; KeepLines = 50 }
+            "memory/agent_generator.md"   = @{ MaxLines = 300; KeepLines = 80 }
+            "memory/section_summaries.md" = @{ MaxLines = 200; KeepLines = 50 }
+            "memory/supervisor_notes.md"  = @{ MaxLines = 300; KeepLines = 100 }
+        }
+        foreach ($relPath in $retentionRules.Keys) {
+            $absPath = Join-Path $runDir $relPath
+            if (-not (Test-Path $absPath)) { continue }
+            $lines = Get-Content $absPath
+            $rule = $retentionRules[$relPath]
+            if ($lines.Count -gt $rule.MaxLines) {
+                $lines[-$rule.KeepLines..-1] | Set-Content $absPath
+                Write-Host "  Trimmed $relPath ($($lines.Count) → $($rule.KeepLines) lines)" -ForegroundColor DarkGray
+            }
+        }
+
         # Termination checks
         if ($verdict -eq "STOP") {
             Write-Host "Judge verdict is STOP. Ending iteration." -ForegroundColor Green
@@ -131,10 +148,8 @@ verdict: $verdict
         $prevScore = $totalScore
     }
 
-    # ═══════════════════════════════════════════
-    # Phase Finish: Polishing
-    # ═══════════════════════════════════════════
-    Write-Host "=== Phase Finish: Polishing ===" -ForegroundColor Yellow
+    # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?    # Phase Finish: Polishing
+    # 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?    Write-Host "=== Phase Finish: Polishing ===" -ForegroundColor Yellow
     $output = & "$accelerator" run "$finishRcm" 2>&1
     $output | ForEach-Object { Write-Host $_ }
     Write-Host "Phase Finish complete." -ForegroundColor Green
@@ -148,7 +163,9 @@ catch {
 
 Set-Location $originalCwd
 
-# ── Summary ──
+# 鈹€鈹€ Summary 鈹€鈹€
 Write-Host "=== MASA Pipeline Complete ===" -ForegroundColor Green
 Write-Host "Final survey: $runDir\07_survey.md" -ForegroundColor Cyan
 Write-Host "Run directory: $runDir" -ForegroundColor Gray
+
+

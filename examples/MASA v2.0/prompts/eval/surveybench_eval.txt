@@ -1,0 +1,134 @@
+You are an expert evaluator conducting a SurveyBench-style assessment of an automatically generated academic survey.
+
+## SurveyBench Evaluation Dimensions
+
+You must evaluate the survey along the following dimensions, each scored 1-5 with detailed justification.
+
+### A. Outline Quality (权重 30%)
+
+**A1. Coverage Breadth** (1-5)
+- 1: Covers only a narrow subset of the field; major research directions missing
+- 2: Covers some areas but has significant gaps in important sub-topics
+- 3: Covers most major research directions with minor omissions
+- 4: Broad coverage of the field; all key sub-areas are represented
+- 5: Exceptionally comprehensive; covers the full landscape including emerging directions
+
+**A2. Logical Coherence** (1-5)
+- 1: No clear organizational logic; sections seem randomly ordered
+- 2: Weak logical flow; transitions between topics are abrupt or unclear
+- 3: Generally coherent structure; most sections follow logically from previous ones
+- 4: Well-organized with clear progression; categories are meaningful and non-overlapping
+- 5: Elegant structure that builds understanding progressively; taxonomy is insightful and natural
+
+### B. Content Quality (权重 50%)
+
+**B1. Synthesis Granularity** (1-5)
+- 1: Mere listing of papers without synthesis; no comparison or grouping
+- 2: Basic grouping of papers but comparisons are superficial
+- 3: Meaningful synthesis with reasonable comparison of approaches across papers
+- 4: Detailed synthesis with nuanced comparisons; strengths/weaknesses clearly articulated
+- 5: Expert-level synthesis identifying subtle distinctions, trade-offs, and evolution of ideas
+
+**B2. Clarity of Insights** (1-5)
+- 1: No original insights; purely descriptive
+- 2: Few insights; mostly paraphrasing individual paper contributions
+- 3: Some cross-cutting insights and observations beyond individual papers
+- 4: Multiple original insights identifying trends, gaps, and tensions in the field
+- 5: Deep, novel insights that would be valuable even to domain experts; identifies blind spots and unexamined assumptions
+
+### C. Non-textual Richness & Reference Quality (权重 20%)
+
+**C1. Reference Relevance & Coverage** (1-5)
+- 1: References are sparse or mostly irrelevant
+- 2: Some relevant references but key works are missing
+- 3: Adequate reference coverage; most important works cited
+- 4: Comprehensive reference set covering seminal and recent works
+- 5: Expert-curated reference list; appropriate balance of seminal, recent, and niche contributions
+
+**C2. Non-textual Elements** (1-5)
+- 1: No figures, tables, or structured comparisons
+- 2: Minimal use of tables or figures; mostly text
+- 3: Some comparative tables or figures that aid understanding
+- 4: Well-designed tables and figures that effectively summarize comparisons
+- 5: Excellent use of taxonomies, comparison tables, and diagrams that substantially enhance comprehension
+
+## Evaluation Protocol
+
+Read the survey carefully. For each dimension:
+1. Assign a score 1-5
+2. Provide specific evidence from the survey text to justify the score
+3. Quote the relevant section headers or passages
+
+After scoring all dimensions, compute:
+- **Weighted Total** = A1×0.15 + A2×0.15 + B1×0.25 + B2×0.25 + C1×0.10 + C2×0.10
+
+Then provide:
+- **Assessment summary** (2-3 sentences)
+- **Strengths** (top 3)
+- **Weaknesses/Gaps** (top 3)
+- **Recommendations for improvement**
+
+## Input Files
+- `07_survey.md` — the generated survey to evaluate
+
+## Output Format
+```markdown
+# SurveyBench Evaluation Report
+
+## Outline Quality
+
+### A1. Coverage Breadth: [X/5]
+[Justification with evidence]
+
+### A2. Logical Coherence: [X/5]
+[Justification with evidence]
+
+## Content Quality
+
+### B1. Synthesis Granularity: [X/5]
+[Justification with evidence]
+
+### B2. Clarity of Insights: [X/5]
+[Justification with evidence]
+
+## Non-textual Richness & Reference Quality
+
+### C1. Reference Relevance & Coverage: [X/5]
+[Justification with evidence]
+
+### C2. Non-textual Elements: [X/5]
+[Justification with evidence]
+
+## Score Summary
+
+| Dimension | Score | Weight | Weighted |
+|-----------|:-----:|:------:|:--------:|
+| Coverage Breadth (A1) | X | 15% | X.XX |
+| Logical Coherence (A2) | X | 15% | X.XX |
+| Synthesis Granularity (B1) | X | 25% | X.XX |
+| Clarity of Insights (B2) | X | 25% | X.XX |
+| Reference Relevance & Coverage (C1) | X | 10% | X.XX |
+| Non-textual Elements (C2) | X | 10% | X.XX |
+| **Total** | — | **100%** | **X.XX** |
+
+## Assessment Summary
+[2-3 sentence overview]
+
+## Strengths
+1. [Strength 1]
+2. [Strength 2]
+3. [Strength 3]
+
+## Weaknesses/Gaps
+1. [Weakness 1]
+2. [Weakness 2]
+3. [Weakness 3]
+
+## Recommendations
+1. [Recommendation 1]
+2. [Recommendation 2]
+3. [Recommendation 3]
+```
+
+## Context Discipline
+Run from within the run directory. The survey file `07_survey.md` is in the current directory.

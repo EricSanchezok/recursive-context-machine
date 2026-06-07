@@ -30,6 +30,13 @@ The SurveySpec must include:
 - reader_need
 - scope_include
 - scope_exclude
+- **scope_inclusion_budget** — rules to ensure balanced coverage:
+  - Foundational works: scope_include MUST name at least 3 pre-2023 works that established the paradigm (e.g., the core retrieval or generation paper, the first system, a seminal benchmark).
+  - Adjacent domain context: scope_include MUST name at least 2 works or traditions from outside the immediate topic (e.g., systematic review methodology like PRISMA, scientometrics, or evaluation standards from adjacent fields).
+  - Temporal balance: if the topic is fast-moving, explicitly include "foundational papers from early years" as a scope_include item.
+- cross_domain_context:
+  - At least one non-core disciplinary perspective (e.g., systematic review methodology, scientometrics, biomedical evidence synthesis, relevant evaluation standards)
+  - These should inform at least one subsection or framing device in the final survey
 - anchor_questions
 - concept_seed
 - expected_dimensions

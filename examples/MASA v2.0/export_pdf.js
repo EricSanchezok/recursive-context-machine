@@ -4,7 +4,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const MD_FILE = path.resolve(__dirname, 'runs/2026-06-06T1406Z/07_survey.md');
+const MD_FILE = path.resolve(__dirname, 'runs/2026-06-07T1011Z/07_survey.md');
 const PDF_FILE = MD_FILE.replace(/\.md$/, '.pdf');
 
 const CSS = `

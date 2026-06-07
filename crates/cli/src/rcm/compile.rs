@@ -363,6 +363,7 @@ fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String
             modalities: Some(modalities),
             headers,
             thinking: def.thinking,
+            api_model: def.api_model.clone(),
             ..Default::default()
         };
         if models.insert(def.id.clone(), model).is_some() {
