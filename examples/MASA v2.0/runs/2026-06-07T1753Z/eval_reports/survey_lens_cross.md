@@ -6,80 +6,75 @@
 ### DR1. Field-Specific Coverage: 5/5
 **Discipline perspective applied: Computer Science / NLP / Information Retrieval / Scientometrics.**
 
-The survey demonstrates expert-level field-specific coverage for automated literature survey generation, especially as it sits at the intersection of NLP, information retrieval, citation recommendation, graph learning, and scholarly document processing. It covers the major technical paradigms expected in this area: citation graph infrastructure, SPECTER-style citation-informed embeddings, graph neural networks, graph transformers, retrieval-augmented generation, single-agent LLM pipelines, multi-agent systems, RL-based search policies, human-in-the-loop review systems, evaluation benchmarks, and citation-verification methods.
+The survey provides expert-level field-specific coverage of automated literature survey generation, especially as it intersects with retrieval-augmented generation, citation graph modeling, multi-agent LLM systems, and evaluation benchmarks. It covers foundational citation-graph infrastructure and representation learning, including Semantic Scholar Literature Graph, SPECTER, BERT+GCN citation recommendation, LitFM, and HiGTL (搂2.1, 搂3.1). It then traces LLM-era systems such as AutoSurvey, STORM, PaperQA/PaperQA2, OpenScholar, SciSage, Agentic AutoSurvey, MATC, PaSa, IterSurvey, SurveyG, and related evaluation frameworks.
 
-Specific evidence includes:
-- A five-phase historical organization from 鈥淐itation Graph Foundations鈥?through 鈥淐itation Graph Re-integration,鈥?which reflects the field鈥檚 actual progression from graph-based scholarly IR to LLM-based RAG systems and back toward graph-aware architectures.
-- Detailed treatment of core systems such as Semantic Scholar Graph, SPECTER, AutoSurvey, STORM, PaperQA/PaperQA2, OpenScholar, SciSage, Agentic AutoSurvey, PaSa, SurveyG, LitFM, and CiteGuard.
-- Inclusion of evaluation frameworks and benchmarks such as LitQA, LitQA2, ScholarQABench, SurveyScope, SurveyBench, SurGE, DeepSurvey-Bench, SurveyLens, SGSimEval, and ReportBench.
-- Strong attention to disciplinary concerns in CS/IR/NLP: retrieval precision/recall, citation F1, benchmark comparability, ablation studies, LLM-as-judge validity, hallucinated citations, computational cost, and datastore scale.
+The survey is particularly strong in organizing the field around the discipline-relevant tension between **semantic retrieval** and **structural citation-graph signals**, which is highly appropriate for CS/IR/NLP. It also covers methodological subareas that matter in this field: retrieval metrics, citation F1, graph traversal, multi-agent orchestration, RAG pipelines, RL search policies, citation hallucination, benchmark fragmentation, and computational cost.
 
-The survey does not treat the topic generically; it uses the organizing categories and methodological concerns of the relevant computational disciplines.
+Minor omissions include less treatment of older scientometric graph methods such as PageRank-style centrality, co-citation analysis, bibliographic coupling as mature methods, and systematic search methodology from evidence synthesis. However, these are partly acknowledged through discussion of scientometrics, PRISMA, and citation-bias issues.
 
 ### DR2. Citation & Discourse Conventions: 4/5
-**Discipline perspective applied: Computer Science / NLP / IR survey-writing conventions.**
+**Discipline perspective applied: Computer Science / NLP / Information Retrieval.**
 
-The survey mostly follows CS/NLP/IR discourse conventions. It uses author-year citations, comparative tables, benchmark-centered claims, architecture-focused descriptions, and explicit discussion of evaluation metrics. The citation density is appropriate for a technical survey, and the references are organized in a recognizable scholarly style.
+The survey largely follows CS/NLP survey conventions: author-year bracketed citations, dense citation support for claims, comparative tables, taxonomy-driven organization, benchmark summaries, and explicit discussion of reported metrics. The references section is extensive and includes arXiv identifiers, ACL/TACL-style papers, benchmark papers, and related systems. The survey also appropriately distinguishes between reported claims and evidentiary support, which is a strong discourse practice in CS survey writing.
 
-Strengths include:
-- Frequent citation of systems at the point of discussion, e.g., 鈥淪PECTER [Cohan et al., 2020],鈥?鈥淎utoSurvey [Chen et al., 2024],鈥?鈥淧aSa [Sun et al., 2025],鈥?and 鈥淪urveyG [Li et al., 2025c].鈥?- Standard CS survey discourse: 鈥渕echanism analysis,鈥?鈥渃omparison table,鈥?鈥渃laimed metric,鈥?鈥渂enchmark,鈥?鈥渁blation,鈥?鈥渃ost profile,鈥?and 鈥渙pen problems.鈥?- Appropriate use of arXiv identifiers and conference markers where available, e.g., ACL 2020 for SPECTER.
+Examples include the 鈥淐laim vs. Evidence Gap Analysis鈥?table in 搂5.1, the benchmark landscape in 搂5.3, and repeated qualification of claims such as 鈥渉uman-competitive,鈥?鈥渟uperhuman,鈥?and 鈥?B beats GPT-4o.鈥?This is well aligned with critical CS survey conventions.
 
-However, there are some weaknesses:
-- The citation style is internally readable but not fully standardized to ACM, IEEE, ACL, or APA format.
-- Some citations appear potentially inconsistent or questionable, such as the discussion of PRISMA being attributed to 鈥淲altman et al., 2020,鈥?which is not the canonical PRISMA citation.
-- The survey cites many very recent or future-dated works, including 2026 papers, without clearly distinguishing established literature from emerging or hypothetical frontier work.
-- Some in-text references are inconsistent with the bibliography, e.g., SurveyLens is discussed with different author-year attributions in different places.
-
-Overall, it is well aligned with CS/NLP survey discourse, but citation precision and bibliographic normalization prevent a perfect score.
+The main limitation is that the survey does not provide a formal literature search protocol, inclusion/exclusion criteria, corpus construction process, or reproducible bibliography methodology. For a systematic or semi-systematic CS survey, this weakens transparency. In addition, many cited works are very recent or future-dated preprints, which may be acceptable in fast-moving NLP/IR areas but requires careful verification and stronger venue-quality discussion.
 
 ### DR3. Methodological Emphasis: 5/5
-**Discipline perspective applied: Computer Science / NLP / IR systems evaluation.**
+**Discipline perspective applied: Computer Science / NLP / Information Retrieval.**
 
-The methodological emphasis is highly appropriate for the discipline. The survey focuses on the dimensions that matter in computational research: architectures, retrieval mechanisms, benchmark validity, metrics, ablation gaps, computational cost, hallucination rates, and evaluation comparability.
+The methodological emphasis is highly appropriate for the discipline. The survey prioritizes mechanisms, architectures, evaluation metrics, ablations, computational cost, and benchmark comparability 鈥?exactly the dimensions that matter in CS/NLP/IR survey work.
 
 Strong evidence includes:
-- Detailed mechanism-level analysis of SPECTER鈥檚 contrastive learning, LitFM鈥檚 graph transformer design, SurveyG鈥檚 hierarchical traversal, SciSage鈥檚 reflect-while-writing architecture, and PaSa鈥檚 RL search policy.
-- Repeated distinction between retrieval metrics and survey-generation quality, captured in the 鈥渂ottleneck transfer problem.鈥?- Critical discussion of confounded evaluations, especially for multi-agent systems where gains may reflect base model improvements, retrieval changes, or prompt engineering rather than architecture alone.
-- Strong emphasis on benchmark validity and metric mismatch: factual QA is distinguished from survey synthesis, citation F1 from scholarly value, and recall from critical-analytic depth.
-- Inclusion of cost-efficiency concerns, such as token budgets, API calls, datastore scale, RL training cost, and human effort.
+- Mechanism-level descriptions of SPECTER contrastive learning, LitFM graph-transformer pretraining, SurveyG hierarchical traversal, PaperQA2 contradiction detection, SciSage reflect-while-writing, and PaSa RL search policies.
+- Repeated distinction between retrieval metrics and end-to-end survey quality, especially in 搂3.4鈥檚 鈥渂ottleneck transfer problem.鈥?- Critical analysis of missing ablations, unvalidated LLM-as-judge evaluation, citation hallucination audits, and cost reporting in 搂5.2.
+- Tables comparing systems by graph awareness, pipeline stage, benchmark, metric, overhead, and cost profile.
 
-This is exactly the methodological focus expected in a high-quality CS/NLP/IR survey.
+The survey does not merely summarize systems; it evaluates whether reported metrics support the claimed methodological contribution. This reflects strong disciplinary understanding.
 
 **Rubric Lens Average: 4.67/5**
 
 ## Lens 2: Canonical Alignment
 
 ### CA1. Structural Canon: 4/5
-**Discipline perspective applied: Computer Science / AI literature survey structure.**
+**Discipline perspective applied: Computer Science / NLP / Information Retrieval.**
 
-The structure is strongly aligned with canonical CS survey form. It includes an introduction and scope statement, related-survey positioning, a taxonomy/evolutionary narrative, architecture deep dives, comparison tables, critical assessment, future directions, conclusion, suggested figures, and references.
+The structure is strongly aligned with canonical CS survey form. It includes:
+- Introduction and scope.
+- Positioning relative to prior surveys.
+- Chronological/evolutionary organization.
+- Architectural taxonomy.
+- Comparative tables.
+- Cross-cutting methodological analysis.
+- Critical assessment.
+- Future directions.
+- Conclusion.
+- References.
 
-Canonical strengths include:
-- Clear statement of contributions in the introduction.
-- Explicit comparison to prior surveys.
-- Taxonomic organization by system paradigm and historical phase.
-- Many tables comparing systems by method, metric, benchmark, graph awareness, cost, and limitations.
-- Critical assessment section that evaluates claim-evidence gaps and methodological weaknesses.
-- Future directions section with concrete architecture and evaluation proposals.
+The five-phase evolution arc is clear and effective, and the architectural deep dive in 搂3 is a strong canonical survey component. The inclusion of 鈥淐ritical Assessment鈥?and 鈥淔uture Directions鈥?sections also follows the norms of high-quality CS surveys.
 
-The main reason this is not a 5 is that the structure is somewhat overextended and repetitive. Sections 2, 3, 4, and 5 revisit similar themes 鈥?graph awareness, evaluation fragmentation, bottleneck transfer, and critical-analytic blind spots 鈥?sometimes with overlapping claims. The 鈥淪uggested Figures鈥?section after the conclusion also reads more like drafting scaffolding than part of a polished final survey. A canonical published CS survey would likely integrate the figures directly and tighten repeated arguments.
+The main structural weakness is the absence of an explicit methodology section describing how the 50+ papers were selected, searched, screened, and categorized. For a survey making broad claims about the field, a formal search and inclusion protocol would strengthen canonical alignment. The suggested figures appearing after the conclusion are also slightly nonstandard; figures would usually be integrated into the main text.
 
 ### CA2. Thematic Canon: 5/5
-**Discipline perspective applied: Computer Science / NLP / IR / scholarly document processing.**
+**Discipline perspective applied: Computer Science / NLP / Information Retrieval.**
 
-The survey deeply engages with the canonical themes of the field and adds a coherent synthesis around them. It covers the major recurring questions in automated survey generation:
+The survey deeply engages canonical themes in automated survey generation and related CS subfields. It covers:
+- RAG and semantic retrieval.
+- Citation graph expansion.
+- Graph neural networks and graph transformers.
+- Scientific document embeddings.
+- LLM-based survey generation.
+- Single-agent vs. multi-agent architectures.
+- Human-in-the-loop review.
+- RL-guided search.
+- Citation validation and hallucination.
+- Benchmark fragmentation.
+- Evaluation reliability.
+- Cost and scalability.
+- Bias in citation networks.
 
-- How should systems retrieve relevant literature?
-- What is the role of citation graphs versus semantic embeddings?
-- Do multi-agent systems improve quality or merely add overhead?
-- How should generated surveys be evaluated?
-- Do retrieval gains translate into synthesis gains?
-- How should hallucinated or unsupported citations be detected?
-- What is the role of human oversight?
-- How can RL or iterative refinement improve search and generation?
-- What constitutes 鈥渟cholarly value鈥?beyond coherence and coverage?
-
-The survey鈥檚 four central threads 鈥?semantic鈥搒tructural tension, evaluation comparability crisis, bottleneck transfer problem, and critical-analytic blind spot 鈥?are strong thematic syntheses. These are not merely lists of papers; they are organizing arguments that help explain the field鈥檚 current trajectory and unresolved problems.
+The thematic synthesis is especially strong because the survey does not simply list topics; it organizes them around four recurring field-level problems: semantic鈥搒tructural tension, evaluation comparability crisis, bottleneck transfer problem, and critical-analytic blind spot. These themes provide a coherent interpretive framework and add analytical value beyond cataloging the literature.
 
 **Canonical Alignment Average: 4.50/5**
 
@@ -93,39 +88,30 @@ The survey鈥檚 four central threads 鈥?semantic鈥搒tructural tension, evalu
 
 ## Assessment Summary
 
-This is a strong, discipline-aware CS/NLP/IR survey that demonstrates deep understanding of automated literature survey generation, citation graph expansion, RAG, multi-agent systems, and evaluation methodology. Its main strengths are its architecture-level analysis and its critical synthesis of evaluation problems; its main weaknesses are citation normalization, occasional bibliographic inconsistency, and some structural repetition.
+This is a strong, discipline-aware CS/NLP/IR survey that demonstrates deep familiarity with automated survey generation, citation graph retrieval, multi-agent LLM systems, and evaluation challenges. Its strongest contribution is the critical synthesis around semantic versus structural retrieval and the claim that evaluation infrastructure, rather than another pipeline alone, is the field鈥檚 central bottleneck. The main weakness is the absence of a formal survey methodology describing paper selection, search process, and inclusion criteria.
 
 ## Strengths
 
-1. **Excellent field-specific synthesis.**  
-   The survey captures the technical landscape across citation graphs, embeddings, LLM pipelines, multi-agent systems, RL search, HITL systems, and evaluation benchmarks.
+1. **Strong field-specific synthesis:** The survey integrates NLP, IR, graph learning, scientometrics, RAG, multi-agent systems, RL, and benchmark evaluation into a coherent field narrative.
 
-2. **Strong methodological critique.**  
-   The discussion of benchmark proliferation, missing ablations, LLM-as-judge risks, citation hallucination, cost reporting, and retrieval-to-survey transfer is highly aligned with CS/NLP evaluation norms.
+2. **Excellent methodological critique:** It repeatedly distinguishes reported performance from warranted conclusions, especially around 鈥渉uman-competitive,鈥?鈥渟uperhuman,鈥?multi-agent gains, and retrieval-to-survey transfer claims.
 
-3. **Compelling organizing framework.**  
-   The four recurring threads 鈥?semantic鈥搒tructural tension, evaluation comparability crisis, bottleneck transfer, and critical-analytic blind spot 鈥?provide a meaningful synthesis rather than a simple paper catalog.
+3. **Clear taxonomic and comparative structure:** The five-phase evolution arc, architectural deep dive, cross-phase comparison table, and benchmark landscape are well suited to CS survey conventions.
 
 ## Weaknesses/Gaps
 
-1. **Citation and reference inconsistencies.**  
-   Some attributions appear questionable or inconsistent, and the bibliography is not normalized to a standard CS publication style.
+1. **No explicit literature search protocol:** The survey claims coverage of 50+ papers but does not explain how papers were identified, filtered, or categorized.
 
-2. **Some repetition across sections.**  
-   Several arguments recur in similar form across the evolution arc, architectural deep dive, critical assessment, future directions, and conclusion.
+2. **Limited classical scientometric grounding:** Although scientometrics is referenced, the survey could more deeply incorporate established citation-network methods such as PageRank, co-citation analysis, bibliographic coupling, main-path analysis, and field-normalized impact measures.
 
-3. **Limited distinction between established and frontier/preprint claims.**  
-   Many cited works are recent or future-dated, but the survey does not always clearly separate mature findings from speculative or unvalidated frontier claims.
+3. **Heavy reliance on recent/preprint literature:** This is understandable for a fast-moving CS/NLP topic, but the survey would benefit from more explicit discussion of evidence maturity, publication status, and reproducibility of cited systems.
 
 ## Recommendations
 
-1. **Normalize and audit citations.**  
-   Use a consistent citation style, verify all in-text references against the bibliography, and correct questionable attributions such as the PRISMA-related citation.
+1. **Add a methodology section** describing search queries, databases used, date range, inclusion/exclusion criteria, screening process, and taxonomy construction procedure.
 
-2. **Tighten repeated arguments.**  
-   Consolidate recurring claims about evaluation fragmentation, graph reintegration, and critical-analytic depth to reduce redundancy and improve readability.
+2. **Deepen the scientometric foundation** by connecting citation graph expansion to older work on co-citation, bibliographic coupling, centrality, main-path analysis, temporal citation dynamics, and field-normalized impact.
 
-3. **Add an evidence-confidence layer.**  
-   For each major system or claim, distinguish between peer-reviewed results, arXiv preprints, benchmark-specific findings, unvalidated claims, and speculative future directions.
+3. **Separate evidence maturity levels** by distinguishing peer-reviewed results, arXiv/preprint claims, benchmark-only findings, and speculative future directions. This would make the critical assessment even more rigorous.
 
 鈺扳攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈺?

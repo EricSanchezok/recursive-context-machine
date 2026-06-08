@@ -3,133 +3,110 @@
 
 ## S1. Citation Precision: 2/5
 
-The survey is citation-dense and often attributes claims to specific papers, but citation precision is weakened by several clear or likely misattributions, unsupported claims, and internal inconsistencies.
+The survey is citation-dense and often links claims to named papers, but citation precision is weakened by several serious issues:
 
-Specific evidence:
+- Many highly specific quantitative claims are presented without enough verifiable context, e.g. 鈥?32% citation F1鈥?for SciSage, 鈥?.18/10 vs 4.77/10鈥?for Agentic AutoSurvey, 鈥?37.78% recall@20鈥?for PaSa, 鈥?28.1% precision鈥?for LitFM, and 鈥?5.4% on CiteME鈥?for CiteGuard. These may be sourced to cited papers, but the survey does not provide benchmark details, absolute baselines, sample sizes, or evaluation protocols sufficient to judge attribution accuracy.
+- Several references appear suspicious, future-dated, or potentially fabricated/unstable, especially many 2025鈥?026 arXiv-style citations: SurveyLens, DeepSurvey-Bench, Graphs of Research, SurveyEval, CiteGuard, SurveyG, SciSage, MATC, AURA, etc. Some may exist, but the density of unverified future/recent works and very specific metrics raises citation hallucination risk.
+- The survey sometimes cites a paper for broad claims that go beyond what that work likely establishes. For example, PaperQA/PaperQA2 is framed as survey-generation literature, though its core task is scientific QA / synthesis rather than full narrative survey generation. Similarly, AURA is acknowledged as conversational survey work but is repeatedly used as transferable evidence for literature surveys.
+- Some citations are missing at the point of claim. For instance, SummEval is discussed in the introduction but cited only as a named framework without inline reference in the relevant sentence; the reference list includes Fabbri et al., 2021 but the body text does not consistently cite it.
 
-- The introduction attributes PRISMA-related rigor to 鈥淸Waltman et al., 2020]鈥?in line 11, but the cited reference is 鈥淩eturn to Basics: Clustering using Structural Information,鈥?not the PRISMA reporting guideline. The canonical PRISMA 2020 statement is Page et al., 2021, not Waltman et al.
-- 鈥淪TM Global Brief 2023鈥?and 鈥淯NESCO Science Report 2021鈥?are cited in line 5 but do not appear in the reference list.
-- SummEval is discussed in line 11, but the canonical SummEval paper is not cited in the bibliography.
-- The survey repeatedly cites very specific performance numbers 鈥?e.g., 鈥?28% MAP鈥?for Context-Aware Citation Recommendation, 鈥?28.1% precision鈥?for LitFM, 鈥?37.78% recall@20鈥?for PaSa, 鈥?32% citation F1鈥?for SciSage 鈥?but often does not provide enough benchmark context to verify what the metric means, whether it is relative or absolute, or whether the comparison baseline is appropriate.
-- There are internal citation inconsistencies: Section 6.4 says 鈥淪urveyLens鈥檚 discipline-aware design [Li et al., 2026]鈥?while Section 6鈥檚 prioritization table cites 鈥淪urveyLens [Chen et al., 2025e]鈥? the bibliography lists SurveyLens under Li et al., 2026 and Chen et al., 2025e as SGSimEval.
-- Several references appear highly generic or possibly synthetic, with placeholder-like author lists and future-dated arXiv identifiers. This is especially concerning for many 2025鈥?026 benchmark/system papers that are treated as established literature.
-
-That said, many core citations are plausible and appropriately matched to their claims: SPECTER [Cohan et al., 2020], Semantic Scholar Literature Graph [Ammar et al., 2018], STORM [Shao et al., 2024], PaperQA [Lala et al., 2023], OpenScholar [Akter et al., 2024], ASReview [van de Schoot et al., 2021], and Science of Science [Fortunato et al., 2018] are cited in generally appropriate contexts.
-
-Overall, the survey shows an attempt at precise attribution, but citation precision is compromised by demonstrable misattributions, missing bibliography entries, inconsistent labels, and a large number of difficult-to-verify recent/future citations.
+The survey has good local citation formatting and generally names sources when making claims, but the precision is undermined by probable over-attribution, benchmark conflation, and a large number of hard-to-verify recent/future references.
 
 ## S2. Citation Recall: 3/5
 
-The survey covers many relevant works for automated literature survey generation, citation-aware retrieval, multi-agent survey writing, and evaluation. It includes several important high-level clusters:
+The survey covers many relevant works for automated survey generation, citation-aware retrieval, and literature-review automation. It includes several important papers/systems:
 
-- Automated survey or long-form synthesis systems: AutoSurvey, STORM, PaperQA, PaperQA2, OpenScholar, SciSage, Agentic AutoSurvey, SurveyGen, SurveyX, IterSurvey.
-- Citation-aware retrieval and graph representation: Semantic Scholar Literature Graph, SPECTER, BERT+GCN citation recommendation, LitFM, HiGTL, SurveyG.
-- Human-in-the-loop and systematic review automation: ASReview, FAST虏, InsightAgent.
-- Evaluation benchmarks: SurveyScope, SurveyBench, Survey-Arena, SurGE, DeepSurvey-Bench, SurveyLens, ReportBench, SGSimEval.
-- Adjacent methodological literatures: scientometrics, citation bias, citation recommendation surveys, long-form evaluation.
+- Citation graph and scientific retrieval foundations: Semantic Scholar Literature Graph, SPECTER, BERT+GCN citation recommendation, LitFM, HiGTL.
+- LLM-based synthesis systems: AutoSurvey, STORM, PaperQA, PaperQA2, OpenScholar.
+- Review automation and screening: PRISMA, ASReview, FAST虏.
+- Evaluation-related works: SummEval, SurveyScope, SurveyBench, SurGE, ReportBench, DeepSurvey-Bench, SurveyLens, SGSimEval, SurveyEval.
+- Adjacent citation/scientometrics work: Fortunato et al., Radicchi et al., Wang et al., recency-bias/citation-amnesia papers.
 
-However, recall is only moderate because several important reference areas are thinly covered or missing:
+However, important literature and historical foundations are missing or underdeveloped:
 
-- The actual PRISMA 2020 statement and systematic review reporting standards are missing/misattributed.
-- SummEval is mentioned but not cited.
-- Major long-form summarization and factuality/attribution evaluation works are underrepresented, despite the survey鈥檚 emphasis on survey faithfulness and citation hallucination.
-- Key retrieval-augmented generation evaluation and attribution works are largely absent.
-- Practical literature-review tools and systems such as Elicit, Semantic Scholar recommendation workflows, Connected Papers, ResearchRabbit, Inciteful, and systematic-review automation tools beyond ASReview/FAST虏 are not discussed.
-- Foundational citation-network work such as PageRank-style graph ranking, co-citation analysis, bibliographic coupling, and classic scientometrics are only indirectly referenced.
-- The survey claims a 鈥渢axonomy of 135+ papers,鈥?but the bibliography contains roughly 50 entries, creating a mismatch between claimed breadth and documented coverage.
+- Classic citation-network foundations are absent or barely represented: Garfield鈥檚 citation indexing, Kessler鈥檚 bibliographic coupling, Small鈥檚 co-citation analysis, PageRank-style graph ranking, HITS, and bibliometric mapping/VOSviewer-type literature.
+- The survey does not substantially cover widely used academic discovery and review-support systems such as Elicit, Semantic Scholar recommender/search systems beyond the graph paper, Connected Papers, ResearchRabbit, Litmaps, Inciteful, Scite, Consensus, or systematic-review platforms beyond ASReview.
+- Foundational RAG, long-context synthesis, scientific NLP, and citation generation literature are only lightly covered. The survey cites Jin et al. and Bai et al. but does not deeply integrate the larger citation recommendation / citation intent / scientific document summarization literature.
+- The claim of 鈥?0+ papers鈥?is only partially realized in analytical depth: many papers are listed in tables but not critically discussed.
 
-The recall is therefore reasonable for the narrow topic of LLM-based automated survey generation, but incomplete for the broader intersection of citation graph expansion, literature review automation, survey generation, and evaluation.
+Overall, recall is reasonable for a narrow, LLM-era automated survey-generation framing, but incomplete for the broader field of citation graph expansion and literature-survey automation.
 
 ## S3. Coverage Impact: 3/5
 
-The survey covers several impactful works and concepts:
+The survey includes several high-impact or field-shaping works:
 
-- SPECTER is correctly treated as a foundational citation-informed embedding model.
-- The Semantic Scholar Literature Graph is appropriately framed as important infrastructure.
-- STORM, PaperQA, PaperQA2, AutoSurvey, and OpenScholar are central recent systems for LLM-based scientific synthesis or literature QA.
-- ASReview is an influential system in active-learning-based systematic review screening.
-- Fortunato et al.鈥檚 *Science of Science* is an important scientometric reference.
-- The survey gives substantial attention to benchmark fragmentation, citation F1, citation hallucination, and cost reporting 鈥?all high-impact methodological issues for the field.
+- **SPECTER** is appropriately treated as foundational for citation-informed scientific document embeddings.
+- **Semantic Scholar Literature Graph** is correctly positioned as important infrastructure.
+- **PRISMA 2020** is a high-impact systematic-review reporting framework and is usefully invoked as an adjacent standard.
+- **STORM**, **AutoSurvey**, **PaperQA/PaperQA2**, and **OpenScholar** are plausible high-impact LLM-era systems for related tasks.
+- **ASReview** is an important active-learning system for systematic-review screening.
+- **Fortunato et al., Science of Science** is a major scientometrics reference.
 
-However, the impact prioritization is uneven:
+That said, impact prioritization is uneven. The survey gives substantial space to many very recent or possibly low-adoption systems while omitting or minimizing older, high-impact bibliometrics and citation-analysis work. The narrative is heavily shaped around a five-phase arc that privileges recent LLM-agent systems, some of which may not yet have demonstrated real influence. This creates a risk that 鈥渋mpact鈥?is inferred from novelty and claimed metrics rather than actual adoption, citation influence, or benchmark centrality.
 
-- The survey devotes extensive space to many 2025鈥?026 systems that may be preliminary, niche, or difficult to verify, while some established, high-impact work in systematic review automation, long-form summarization evaluation, RAG faithfulness, citation recommendation, and scientometrics receives little or no discussion.
-- PRISMA is central to systematic reviews but is cited incorrectly and not properly integrated.
-- The survey鈥檚 focus on named automated survey systems is useful, but it underweights broader high-impact research on evidence synthesis, claim verification, retrieval evaluation, and citation networks.
-- Some 鈥渇rontier鈥?papers are treated as highly consequential despite limited evidence or non-standard benchmarks.
-
-Overall, the survey gives reasonable coverage of influential automated survey-generation systems and citation-aware retrieval papers, but its high-impact coverage is diluted by speculative or weakly verified recent works and by omissions of canonical adjacent literature.
+The survey鈥檚 strongest impact coverage is in modern neural scientific retrieval and LLM-based synthesis. Its weakest impact coverage is in foundational bibliometrics, citation-network analysis, and real-world review automation tools.
 
 ## S4. Recency & Currency: 4/5
 
-The survey is highly current. It includes numerous 2024, 2025, and 2026 works and explicitly frames the field as evolving through phases up to 鈥淐itation Graph Re-integration, 2025鈥?026.鈥?It discusses recent benchmarks such as SurveyScope, SurveyBench, DeepSurvey-Bench, SurveyLens, ReportBench, SGSimEval, and SurveyEval, and recent architectures such as SciSage, Agentic AutoSurvey, MATC, PaSa, SurveyG, and Graphs of Research.
+The survey is highly current. It includes work through 2025 and 2026 and explicitly discusses emerging benchmarks, graph-LLM integration, multi-agent survey generation, RL-guided retrieval, citation verification, and evaluation frameworks. The 鈥渃urrent frontier鈥?framing is up to date and reflects active research directions.
 
-Strengths in recency:
+Evidence of strong currency includes:
 
-- Strong integration of 2024鈥?026 LLM-based survey-generation systems.
-- Good attention to recent multi-agent, RL-guided, and graph-aware developments.
-- Up-to-date discussion of evaluation fragmentation and citation verification.
-- The survey identifies current open problems rather than only summarizing older work.
+- Coverage of 2025鈥?026 benchmarks such as DeepSurvey-Bench, SurveyLens, SurveyEval, SGSimEval, ReportBench, and SurveyBench.
+- Coverage of recent agentic architectures such as SciSage, Agentic AutoSurvey, MATC, InsightAgent, IterSurvey, SurveyGen-I, and SurveyG.
+- Discussion of recent concerns: benchmark fragmentation, citation hallucination, LLM-as-judge limitations, cost reporting, and critical-analytic depth.
 
-Limitations:
-
-- The survey may over-rely on very recent preprints and future-dated benchmark papers without clearly distinguishing mature, validated work from speculative frontier work.
-- Some cited works appear difficult to verify or possibly synthetic, which weakens confidence in the currency dimension.
-- Recentness sometimes substitutes for impact: several frontier systems are treated as major phase-defining works without enough external validation.
-
-Despite these caveats, the survey is clearly current and reflects many of the latest claimed developments in automated survey generation.
+However, recency is somewhat overextended. The survey relies heavily on very recent or future-dated arXiv-style papers, many of which may not be peer-reviewed, widely adopted, or independently validated. The currency is therefore strong, but not always stable or mature.
 
 ## Score Summary
 
 | Dimension | Score | Notes |
 |-----------|:-----:|-------|
-| Citation Precision | 2 | Dense citation practice, but multiple misattributions, missing references, and internal inconsistencies |
-| Citation Recall | 3 | Covers many relevant systems but misses canonical systematic-review, summarization-evaluation, and attribution literature |
-| Coverage Impact | 3 | Includes several high-impact works but overweights speculative recent systems and omits some foundational adjacent literature |
-| Recency & Currency | 4 | Very current, with extensive 2024鈥?026 coverage, though some recent citations are hard to verify |
+| Citation Precision | 2 | Dense citations, but many highly specific claims are hard to verify and some citations appear overextended or possibly hallucinated |
+| Citation Recall | 3 | Covers many relevant LLM-era and graph-aware systems, but misses classic citation-network foundations and real-world discovery/review tools |
+| Coverage Impact | 3 | Includes several influential works but overweights very recent systems with uncertain impact |
+| Recency & Currency | 4 | Very current, with extensive 2025鈥?026 coverage, though some references may be unstable or speculative |
 | **Citation Quality (P+R avg)** | **2.50** | Average of Precision and Recall |
 | **Overall Average** | **3.00** | Average of all 4 dimensions |
 
 ## Assessment Summary
 
-This is an ambitious, well-structured, and highly current survey of automated literature survey generation with a useful organizing theme around citation graph expansion and the semantic鈥搒tructural tension. However, its citation quality is weakened by several clear attribution errors, missing references, internal inconsistencies, and possible overreliance on hard-to-verify recent works. The survey is strongest as a conceptual synthesis and weakest as a rigorously grounded bibliographic artifact.
+This is an ambitious and well-structured survey with a strong narrative about the tension between semantic retrieval and citation-graph structure in automated survey generation. Its main weakness is citation reliability: the survey contains many precise numerical claims and many very recent/future-looking references whose validity is difficult to establish from the text alone. Coverage is broad and current, but impact prioritization is uneven and foundational citation-analysis literature is underrepresented.
 
 ## Citation Quality Assessment
 
-The survey uses citations extensively and often links claims to named systems, which is a strength. Many major systems are cited in plausible contexts: AutoSurvey for outline-driven generation, STORM for perspective-guided synthesis, PaperQA/PaperQA2 for scientific QA and citation chaining, SPECTER for citation-informed embeddings, Semantic Scholar for literature graph infrastructure, ASReview for active-learning screening, and OpenScholar for large-scale retrieval-augmented scientific synthesis.
+The survey uses citations frequently and usually attaches claims to named papers, which is a strength. However, citation quality is compromised by three patterns.
 
-However, the citation pattern has several problems:
+First, the survey often treats benchmark-specific performance claims as broader evidence about survey generation. For example, PaperQA2鈥檚 performance on LitQA2 is correctly problematized later, but the survey still repeatedly frames it as relevant to 鈥渟uperhuman synthesis鈥?in the survey-generation literature. Similarly, PaSa鈥檚 recall@20 search improvement and LitFM鈥檚 retrieval precision are used as part of a survey-generation progress narrative even though the survey itself acknowledges that retrieval gains have not been shown to transfer to survey quality.
 
-- **Unsupported or missing references:** STM Global Brief, UNESCO Science Report, and SummEval are invoked but not included in the bibliography.
-- **Incorrect attribution:** PRISMA is associated with Waltman et al., 2020, which is not the PRISMA guideline.
-- **Inconsistent citation mapping:** SurveyLens is attributed inconsistently to Li et al., 2026 and Chen et al., 2025e.
-- **Over-specific numerical claims:** Many exact performance numbers are repeated without enough benchmark detail, baseline detail, or qualification.
-- **Possible synthetic citation risk:** A large fraction of 2025鈥?026 citations have generic titles/authors and are treated as established despite appearing preliminary or difficult to verify.
-- **Reference-list mismatch:** The text claims a taxonomy of 鈥?35+ papers,鈥?but the reference list contains far fewer cited items.
+Second, many claims are very specific but insufficiently contextualized. The survey gives values such as 鈥?32% citation F1,鈥?鈥?37.78% recall@20,鈥?鈥?5.4% on CiteME,鈥?and 鈥?B beats GPT-4o by 5%,鈥?but often does not include absolute scores, dataset sizes, statistical significance, or baseline settings. This makes the citations appear precise but not fully auditable.
 
-**Citation F1 Proxy**: Poor
+Third, the reference list contains many recent and future-dated arXiv-style papers. Some may be real, but the concentration of specific 2025鈥?026 benchmarks and systems creates a nontrivial risk of citation hallucination or premature citation of unvalidated work.
+
+**Citation F1 Proxy**: Acceptable-to-Poor
 
 ## Strengths
 
-1. **Strong conceptual organization:** The five-phase evolution arc is clear and analytically useful, especially the semantic鈥搒tructural tension between embedding-based retrieval and citation graph-aware retrieval.
+1. **Strong organization and synthesis narrative**: The five-phase evolution arc provides a coherent account of how the field moved from citation graphs to LLM pipelines, multi-agent systems, RL-guided retrieval, and graph reintegration.
 
-2. **Good coverage of core LLM-era survey systems:** AutoSurvey, STORM, PaperQA, PaperQA2, OpenScholar, SciSage, PaSa, SurveyG, and related systems are discussed in a coherent architecture-focused taxonomy.
+2. **Good inclusion of modern LLM-era systems**: The survey covers AutoSurvey, STORM, PaperQA, PaperQA2, OpenScholar, SciSage, Agentic AutoSurvey, IterSurvey, SurveyGen-I, SurveyG, and related evaluation benchmarks.
 
-3. **Excellent attention to evaluation limitations:** The survey insightfully identifies benchmark fragmentation, weak ablations, unmeasured critical-analytic depth, citation hallucination, and cost-reporting gaps.
+3. **Critical stance toward evaluation claims**: The discussion of benchmark fragmentation, bottleneck transfer, lack of ablations, LLM-as-judge risks, citation hallucination, and missing cost reporting is valuable and unusually reflective.
 
 ## Weaknesses/Gaps
 
-1. **Citation precision problems:** The PRISMA misattribution, missing bibliography entries, and inconsistent SurveyLens citations are significant errors for a survey that emphasizes citation quality.
+1. **Questionable citation precision**: Many specific claims rely on citations that are not sufficiently contextualized and may be over-attributed, unstable, or possibly fabricated.
 
-2. **Overreliance on recent or possibly unverified works:** The survey treats many 2025鈥?026 systems and benchmarks as established reference points without clearly distinguishing mature evidence from frontier claims.
+2. **Missing foundational citation-analysis literature**: Classic bibliometrics and citation-network papers are not adequately covered, including co-citation, bibliographic coupling, citation indexing, graph ranking, and scientometric mapping methods.
 
-3. **Incomplete adjacent-literature coverage:** Important works in systematic review methodology, long-form summarization evaluation, RAG faithfulness, attribution evaluation, and classic citation-network analysis are missing or underdeveloped.
+3. **Overweighting of recent systems with uncertain impact**: The survey gives large analytical weight to 2025鈥?026 agentic and benchmark papers whose influence may not yet be established.
 
 ## Recommendations
 
-1. **Audit every citation and reference.** Add missing references for STM, UNESCO, SummEval, and PRISMA; correct the PRISMA citation; resolve SurveyLens/SGSimEval inconsistencies; and verify all arXiv identifiers and author lists.
+1. **Audit all citations and metrics**: Verify every cited paper, arXiv ID, year, metric, benchmark, and numerical claim. Add absolute scores, baseline definitions, dataset sizes, and evaluation settings where available.
 
-2. **Separate verified findings from claimed findings.** For each system, distinguish 鈥渞eported by authors,鈥?鈥渧alidated on shared benchmark,鈥?鈥渋ndependently reproduced,鈥?and 鈥渟peculative/future direction.鈥?
-3. **Expand foundational and adjacent coverage.** Add canonical works on PRISMA, systematic review automation, long-form summarization evaluation, RAG faithfulness/attribution, citation recommendation, bibliographic coupling, co-citation analysis, and graph ranking.
+2. **Add foundational citation-network literature**: Include Garfield on citation indexing, Kessler on bibliographic coupling, Small on co-citation, PageRank/HITS-style graph ranking, and bibliometric mapping tools/methods.
+
+3. **Separate established impact from emerging work**: Clearly label papers as peer-reviewed, preprint, benchmark proposal, system paper, or speculative future direction, and avoid treating unvalidated recent systems as field-defining unless evidence supports that status.
 
 鈺扳攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈺?
