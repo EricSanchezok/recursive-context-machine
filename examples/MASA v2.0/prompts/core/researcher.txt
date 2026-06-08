@@ -41,7 +41,7 @@ rewrite specific sections. In this mode:
   - `phase0/02_candidate_pool.md` and `phase0/03a_seed_papers.md` 鈥?metadata context
   - `phase0/02b_candidate_pool_extended.md` (extended pool for supplementation, if exists)
   - `memory/outline.md` (previous outline, if iteration > 1)
-  - `memory/supervisor_notes.md` (feedback from supervisor, if exists)
+  - `memory/supervisor_notes_round[N-1].md` (feedback from supervisor, if exists)
   - `memory/judge_suggestions.md` (feedback from LLM Judge, if exists)
 - **Write to**:
   - `phase0/paper_taxonomy.md` (update taxonomy, Rounds 1-2 only)

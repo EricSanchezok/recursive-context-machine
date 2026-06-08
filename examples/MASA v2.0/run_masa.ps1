@@ -12,6 +12,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 # 鈹€鈹€ Paths 鈹€鈹€
 $phase0Rcm = Join-Path $scriptDir "rcm\masa_phase0.rcm"
 $coreRcm    = Join-Path $scriptDir "rcm\masa_core.rcm"
+$iterateRcm = Join-Path $scriptDir "rcm\masa_iterate.rcm"
 $finishRcm  = Join-Path $scriptDir "rcm\masa_finish.rcm"
 $accelerator = Join-Path $scriptDir "..\..\target\release\accelerate.exe"
 
@@ -56,7 +57,8 @@ try {
         "02a_method_candidates.md", "02b_benchmark_candidates.md",
         "02c_survey_candidates.md", "02d_frontier_candidates.md",
         "03a_seed_papers.md", "03b_citation_expansion.md",
-        "03c_semantic_expansion.md", "03_expansion.md"
+        "03c_semantic_expansion.md", "03_expansion.md",
+        "paper_fetch_report.md"
     )
     foreach ($file in $phase0Files) {
         $source = Join-Path $runDir $file
@@ -92,7 +94,8 @@ previous_round_score: $prevScore
 verdict: $verdict
 "@
 
-        $output = & "$accelerator" run "$coreRcm" 2>&1
+        $roundRcm = if ($round -eq 1) { $coreRcm } else { $iterateRcm }
+        $output = & "$accelerator" run "$roundRcm" 2>&1
         $output | ForEach-Object { Write-Host $_ }
 
         # Read Judge verdict from iteration_state.md (written by synthesizer)
@@ -123,7 +126,6 @@ verdict: $verdict
             "memory/agent_researcher.md"  = @{ MaxLines = 200; KeepLines = 50 }
             "memory/agent_generator.md"   = @{ MaxLines = 300; KeepLines = 80 }
             "memory/section_summaries.md" = @{ MaxLines = 200; KeepLines = 50 }
-            "memory/supervisor_notes.md"  = @{ MaxLines = 300; KeepLines = 100 }
         }
         foreach ($relPath in $retentionRules.Keys) {
             $absPath = Join-Path $runDir $relPath

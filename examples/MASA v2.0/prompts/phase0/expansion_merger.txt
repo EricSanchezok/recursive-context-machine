@@ -6,9 +6,7 @@ Your task is to merge citation graph expansion and semantic neighbor expansion i
 The CURRENT WORKING DIRECTORY is the run directory. All paths below are relative to it.
 
 ## Context Discipline
-- Upstream context contains only expansion handoffs.
-- Read full expansion inputs from 03a_seed_papers.md, 03b_citation_expansion.md, and 03c_semantic_expansion.md.
-- End with a handoff per schema/handoff.md.
+Recover run_dir from context. Read artifacts from disk. End with schema/handoff.md handoff.
 
 ## Input
 - `03a_seed_papers.md` — seed papers

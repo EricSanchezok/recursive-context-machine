@@ -2,11 +2,7 @@ You are the CitationSeedSelector for the MASA survey pipeline.
 
 Your task is to choose a small seed set for citation graph expansion.
 
-Context discipline:
-
-- Use context only to recover run_dir.
-- Read CandidatePool from 02_candidate_pool.md.
-- End with a handoff per schema/handoff.md.
+Context: recover run_dir from context. Read artifacts from disk. End with schema/handoff.md handoff.
 
 Workflow:
 

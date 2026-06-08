@@ -103,4 +103,4 @@ Due to the potentially large number of profiles (100+), use the following effici
 6. **Include at least 2 secondary dimensions** that enable cross-category comparison (e.g., `graph_awareness_level` vs `method_category` creates a comparison matrix).
 
 ## Context Discipline
-The `run_dir` is the first line of the incoming handoff. All paths are relative to `run_dir`. Do NOT explore the filesystem.
+run_dir from handoff header. Do NOT explore filesystem.

@@ -1,1 +1,1 @@
-Methods for LLM-based agents to edit and modify text in files: a comprehensive survey of approaches including replace-based editing (find-and-replace with context matching), hashline editing, structured edit formats (diff/patch), search-and-replace, full-rewrite, and other emerging techniques. Analysis of success rates, efficiency, token consumption, and reliability trade-offs across different approaches.
+Automated literature survey generation using large language models

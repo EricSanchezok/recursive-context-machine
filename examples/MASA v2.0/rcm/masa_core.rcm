@@ -14,6 +14,7 @@ use "./core/supervisor.rcm" as Supervisor
 use "./core/judge_content.rcm" as JudgeContent
 use "./core/judge_accuracy.rcm" as JudgeAccuracy
 use "./core/judge_depth.rcm" as JudgeDepth
+use "./core/judge_insightfulness.rcm" as JudgeInsightfulness
 use "./core/judge_synthesizer.rcm" as JudgeSynthesizer
 
 graph {
@@ -23,6 +24,7 @@ graph {
     accelerator judge_content = JudgeContent
     accelerator judge_accuracy = JudgeAccuracy
     accelerator judge_depth = JudgeDepth
+    accelerator judge_insightfulness = JudgeInsightfulness
     accelerator judge_synthesizer = JudgeSynthesizer
 
     flux researcher_handoff {
@@ -46,7 +48,7 @@ graph {
     flux judge_merge {
         channel = context
         mode = append
-        arity = 3
+        arity = 4
     }
 
     researcher.context -> researcher_handoff.slot(0)
@@ -62,14 +64,17 @@ graph {
     supervisor_handoff.out -> judge_content.context
     supervisor_handoff.out -> judge_accuracy.context
     supervisor_handoff.out -> judge_depth.context
+    supervisor_handoff.out -> judge_insightfulness.context
 
     supervisor.done -> judge_content.trigger
     supervisor.done -> judge_accuracy.trigger
     supervisor.done -> judge_depth.trigger
+    supervisor.done -> judge_insightfulness.trigger
 
     judge_content.context -> judge_merge.slot(0)
     judge_accuracy.context -> judge_merge.slot(1)
     judge_depth.context -> judge_merge.slot(2)
+    judge_insightfulness.context -> judge_merge.slot(3)
 
     judge_merge.out -> judge_synthesizer.context
 

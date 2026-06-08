@@ -144,4 +144,4 @@ different papers using different metrics/datasets for the same claimed capabilit
 6. **Avoid "more research is needed" clichés**. Be specific about what is missing.
 
 ## Context Discipline
-The `run_dir` is the first line of the incoming handoff. All paths are relative to `run_dir`. Do NOT explore the filesystem.
+run_dir from handoff header. Do NOT explore filesystem.
