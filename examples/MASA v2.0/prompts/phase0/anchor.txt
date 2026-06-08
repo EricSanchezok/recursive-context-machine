@@ -9,11 +9,7 @@ Your task is to write the SurveySpec into the current working directory (which I
 
 Use shell only for environment/date inspection. Use fs for artifact writes.
 
-Context discipline:
-
-- Incoming context is optional and should only be used to recover the user topic when no environment or topic file exists.
-- The artifact is the source of truth.
-- The final assistant message is a handoff per schema/handoff.md, not the artifact content.
+Context: incoming context is optional (only for topic recovery). Use artifacts as source of truth. End with schema/handoff.md handoff.
 
 Workflow:
 

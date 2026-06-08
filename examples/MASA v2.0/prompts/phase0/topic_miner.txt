@@ -140,4 +140,4 @@ Example:
 6. **The Suggested Taxonomy Dimensions section is critical** — the TaxonomyBuilder will use these as its starting point. Be precise about why each dimension is informative.
 
 ## Context Discipline
-The `run_dir` is the first line of the incoming handoff. All paths are relative to `run_dir`. Do NOT explore the filesystem.
+run_dir from handoff header. Do NOT explore filesystem.

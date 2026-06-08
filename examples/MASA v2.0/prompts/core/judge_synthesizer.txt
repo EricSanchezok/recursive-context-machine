@@ -6,48 +6,45 @@ Read all individual judge evaluations, compute the weighted total score, and out
 ## Working Directory
 The CURRENT WORKING DIRECTORY is the run directory. All paths below are relative to it. Use the `fs` tool to read and write files.
 
-## Input
-- Content evaluation (Coverage + Citation Relevance + Section Balance): `memory/judge_content.md`
-- Accuracy evaluation (Factual Consistency + Citation Balance + Redundancy): `memory/judge_accuracy.md`
-- Analysis Depth evaluation: `memory/judge_depth.md`
+## Inputs (4 Judges)
+- Content evaluation: `memory/judge_content.md` — contains Coverage, Citation Relevance, Section Balance scores
+- Accuracy evaluation: `memory/judge_accuracy.md` — contains Factual Consistency score
+- Depth evaluation: `memory/judge_depth.md` — contains Mechanism Depth AND Critical Synthesis scores (per-section + overall averages)
+- Insightfulness evaluation: `memory/judge_insightfulness.md` — contains Insightfulness score (new judge)
 - Current iteration state: `memory/iteration_state.md` (if exists)
-- Generator iteration logs: `memory/agent_generator.md` (if exists) — contains PDF Deep-Read logs and Iteration Evidence Mining results
+- Generator iteration logs: `memory/agent_generator.md` (if exists)
 - Previous judge report: `memory/judge_report_round[N-1].md` (if exists, for convergence assessment)
 
 ## Weights
 
-Content Judge (Coverage + Citation Relevance + Section Balance) → 40%
-Accuracy Judge (Factual Consistency + Citation Balance + Redundancy) → 35%
-Depth Judge (Analysis Depth) → 25%
+| Dimension | Source Judge | Weight |
+|-----------|-------------|--------|
+| Coverage | Content Judge | 25% |
+| Factual Consistency | Accuracy Judge | 18% |
+| Mechanism Depth | Depth Judge | 15% |
+| Critical Synthesis | Depth Judge | 15% |
+| Insightfulness | Insightfulness Judge | 12% |
+| Citation Relevance | Content Judge | 10% |
+| Section Balance | Content Judge | 5% |
+| **Total** | — | **100%** |
 
-Read each judge's output and extract their dimension scores (coverage_score, citation_relevance_score, section_balance_score, etc.). Compute the final weighted score:
-
-| Dimension | Weight |
-|-----------|--------|
-| Coverage (from Content Judge) | 15% |
-| Citation Relevance (from Content Judge) | 15% |
-| Section Balance (from Content Judge) | 10% |
-| Factual Consistency (from Accuracy Judge) | 15% |
-| Citation Balance (from Accuracy Judge) | 10% |
-| Redundancy (from Accuracy Judge) | 10% |
-| Analysis Depth | 25% |
-| **Total** | **100%** |
+Read each judge's output and extract their dimension scores. For Depth Judge, parse both "Mechanism Depth" and "Critical Synthesis" from the overall scores section.
 
 ## Decision Rules
 
-1. **Single Dimension Check**: If ANY of the 7 dimensions scores < 3.0, mark as CRITICAL_ISSUE.
+1. **Single Dimension Check**: If ANY dimension scores < 3.0, mark as CRITICAL_ISSUE.
 2. **Total Score Check**: If total < 4.3, mark as BELOW_THRESHOLD.
 3. **Convergence Check**: If current round >= 2 AND improvement from previous round < 0.15, mark as CONVERGED.
-4. **Wasted Iteration Check**: If WASTED_ITERATION flag is set AND total score did not improve from previous round, override CONVERGED → mark as BELOW_THRESHOLD (evidence exists but not utilized).
+4. **Wasted Iteration Check**: If WASTED_ITERATION flag is set AND total score did not improve from previous round, override CONVERGED → mark as BELOW_THRESHOLD.
 5. **Max Rounds Check**: If current round >= 5, mark as MAX_ROUNDS_REACHED.
 
 ## Verdict Priority
 
 1. MAX_ROUNDS_REACHED → STOP (proceed to polisher)
 2. CONVERGED and no WASTED_ITERATION → STOP (proceed to polisher)
-3. WASTED_ITERATION and score not improved → CONTINUE (must utilize available evidence)
-4. CRITICAL_ISSUE → CONTINUE (must fix critical problems)
-5. BELOW_THRESHOLD → CONTINUE (improve quality)
+3. WASTED_ITERATION and score not improved → CONTINUE
+4. CRITICAL_ISSUE → CONTINUE
+5. BELOW_THRESHOLD → CONTINUE
 6. Total >= 4.3 AND no critical issues AND no wasted iteration → STOP (proceed to polisher)
 
 ## Output Format
@@ -59,38 +56,31 @@ Read each judge's output and extract their dimension scores (coverage_score, cit
 
 ## Dimension Scores
 
-| Dimension | Score | Weight | Weighted |
-|-----------|-------|--------|----------|
-| Analysis Depth | [1-5] | 25% | [value] |
-| Coverage | [1-5] | 15% | [value] |
-| Citation Relevance | [1-5] | 15% | [value] |
-| Factual Consistency | [1-5] | 15% | [value] |
-| Redundancy | [1-5] | 10% | [value] |
-| Citation Balance | [1-5] | 10% | [value] |
-| Section Balance | [1-5] | 10% | [value] |
-| **Total** | — | **100%** | **[value]** |
+| Dimension | Source Judge | Score (1-5) | Weight | Weighted |
+|-----------|-------------|-------------|--------|----------|
+| Coverage | Content | [1-5] | 25% | [value] |
+| Factual Consistency | Accuracy | [1-5] | 18% | [value] |
+| Mechanism Depth | Depth | [1-5] | 15% | [value] |
+| Critical Synthesis | Depth | [1-5] | 15% | [value] |
+| Insightfulness | Insight | [1-5] | 12% | [value] |
+| Citation Relevance | Content | [1-5] | 10% | [value] |
+| Section Balance | Content | [1-5] | 5% | [value] |
+| **Total** | — | — | **100%** | **[value]** |
 
 ## Iteration Evidence Assessment
 
-This section evaluates whether the Generator utilized evidence accumulated from previous iterations.
-
 ### PDF Deep-Read Utilization
 - Deep-read logs found in `memory/agent_generator.md`: [Yes/No]
-- Deep-read papers: [arXiv:XXXX.XXXXX, arXiv:XXXX.XXXXX, ...]
-- Findings reflected in draft: [Yes/Partial/No] — [Explain: which specific findings were incorporated into which sections, and which were ignored]
+- Deep-read papers: [arXiv:XXXX.XXXXX, ...]
+- Findings reflected in draft: [Yes/Partial/No] — [Explain]
 
 ### Iteration Evidence Mining
-- Mined patterns found in `memory/agent_generator.md`: [Yes/No]
-- Patterns identified: [list patterns found]
-- Patterns integrated into Section 5: [Yes/Partial/No] — [Explain: are the mined recurring issues, comparison gaps, or metric fragmentation observations reflected in the critical analysis?]
+- Mined patterns found: [Yes/No]
+- Patterns integrated into Section 5: [Yes/Partial/No]
 
 ### Convergence Assessment
-- Evidence utilization trend from R[N-1] to R[N]: [improved/stable/declined]
-- If improvement is stalled despite new evidence being available: Flag as WASTED_ITERATION — "Generator has access to evidence that is not being reflected in the draft"
-
-### Verdict Adjustment
-- If WASTED_ITERATION flag is set AND total score did not improve: downgrade verdict from STOP to CONTINUE
-- If PDF deep-read findings are ignored: add to Consolidated Suggestions
+- Evidence utilization trend: [improved/stable/declined]
+- If stalled despite new evidence: Flag as WASTED_ITERATION
 
 ## Verdict
 
@@ -110,15 +100,33 @@ This section evaluates whether the Generator utilized evidence accumulated from 
 
 ## Next Action
 
-[If CONTINUE: specific instructions for next iteration, including "Utilize the evidence from PDF deep-read logs on [paper list] to deepen Section 5 analysis"]
+[If CONTINUE: specific instructions for next iteration]
 [If STOP: proceed to polisher]
 ```
 
 ## Output Files
 
 Write the full report to:
-- `memory/judge_report_round[N].md`
-- `memory/judge_suggestions.md` (extracted suggestions for supervisor)
+- `memory/judge_report_round[N].md` (full report with all scores and evidence)
+
+Write consolidated suggestions to `memory/judge_suggestions.md`. **The first block must be a YAML score summary** that the Generator can parse without reading the full report:
+```yaml
+scores:
+  coverage: <value>
+  factual_consistency: <value>
+  mechanism_depth: <value>
+  critical_synthesis: <value>
+  insightfulness: <value>
+  citation_relevance: <value>
+  section_balance: <value>
+  total: <value>
+  verdict: <STOP/CONTINUE>
+below_threshold_scores: [<dimensions scoring < 3.0>]
+generator_priority: "<short instruction on what Generator should focus on>"
+---
+
+[Rest of suggestions text...]
+```
 
 Update `memory/iteration_state.md` with:
 ```
@@ -126,3 +134,5 @@ current_round: [N]
 last_total_score: [value]
 verdict: [STOP/CONTINUE]
 ```
+
+The Generator reads `judge_suggestions.md` to get both the score context (which dimensions are below threshold) and the actionable suggestions from each judge.

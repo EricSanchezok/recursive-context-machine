@@ -8,41 +8,52 @@ The CURRENT WORKING DIRECTORY is the run directory. All paths below are relative
 
 ## Input
 
-- `07_survey.md` — the polished survey with inline `[arXiv:XXXXX.XXXXX]` citations
+- `07_survey.md` — the polished survey with inline citations in `[ShortName, Year]` or `[arXiv:XXXXX.XXXXX]` format
 - `phase0/02_candidate_pool.md` — paper metadata table (arXiv ID, title, year)
-- `phase0/paper_profiles/` — directory of paper profiles containing title, author, year info
+- `phase0/paper_profiles/` — directory of paper profiles containing `citation:` block with verified metadata
 
 ## Output
 
 - `07_survey.md` — overwrite with:
-  1. All inline citations converted from `[arXiv:XXXXX.XXXXX]` to `[Author Year]` format
-  2. A `## References` section appended at the end
+  1. All inline citations converted from `[ShortName, Year]` or `[arXiv:XXXXX.XXXXX]` to `[Author Year]` format
+  2. A `## References` section appended at the end with fully formatted entries
 
 ## Workflow
 
-### Step 1: Extract All Unique Citations
+### Step 1: Build a Citation Map
 
-Read `07_survey.md` and extract EVERY arXiv ID reference. Look for these patterns:
-- `[arXiv:XXXXX.XXXXX]` or `[arXiv:XXXX.XXXXX]`
-- `[XXXXX.XXXXX]` or `[XXXX.XXXXX]` when directly referencing a paper
+**1A. Build an arXiv-ID-to-profile-title map:** Scan `phase0/02_candidate_pool.md` and all files in `phase0/paper_profiles/`. For each paper, create a mapping from:
+- arXiv ID → {title, profile_path}
+- profile title (lowercase, normalized) → {arxiv_id, profile_path}
+
+**1B. Extract all unique citations from the survey.** Read `07_survey.md` and find EVERY inline citation. Look for these patterns:
+- `[ShortName, Year]` — e.g. `[Agentic AutoSurvey, 2025]`, `[AutoSurvey, 2024]`
+- `[arXiv:XXXXX.XXXXX]` or `[XXXXX.XXXXX]`
 - Plain arXiv IDs in text like `2406.10252` or `arXiv:2406.10252`
 
-Build a de-duplicated list of all unique arXiv IDs referenced.
+For each `[ShortName, Year]` match, try to resolve it to an arXiv ID:
+  a. Normalize the ShortName (lowercase, remove punctuation).
+  b. Search the profile-title-to-ARXIV-ID map for a matching title.
+  c. If no exact match, try partial substring matching between ShortName and profile titles.
+  d. If still no match, look for the short name in `02_candidate_pool.md` rows.
+
+Build a de-duplicated list of all unique arXiv IDs referenced, mapped to their resolution method (direct / title-matched / unresolved).
 
 ### Step 2: Collect Metadata
 
 For each unique arXiv ID:
 
 **A. Check paper profile** — read `phase0/paper_profiles/<id>.md` if it exists.
-Extract:
-- `authors` field from frontmatter (ALL authors, verbatim)
+Extract (check `citation:` sub-fields first, fall back to flat fields for legacy profiles):
+- `citation.authors` or `authors` flat field (ALL authors, verbatim)
 - `title` from frontmatter `title:` field
 - `year` from frontmatter `year:` field
-- `metadata_source` from frontmatter to determine reliability
+- `citation.metadata_source` or `metadata_source` flat field to determine reliability
+- `citation.venue` or `venue` flat field
 
-**B. If profile exists with `metadata_source: pdf_extracted`** — use extracted authors/title/year directly. Mark as `(verified from PDF)` in the reference entry.
+**B. If profile exists with `citation.metadata_source: pdf_extracted`** (or legacy `metadata_source: pdf_extracted`) — use extracted authors/title/year directly. Mark as `(verified from PDF)` in the reference entry.
 
-**C. If profile exists with `metadata_source: pdf_unreadable` or `authors: "not found in PDF"`** — use the arXiv ID prefix (first 2 digits) for year estimate, and for authors use `[Authors unknown — not extractable from PDF]`. Mark as `(metadata partial — unreadable PDF)`.
+**C. If profile exists with `citation.metadata_source: pdf_unreadable`** (or legacy `metadata_source: pdf_unreadable`) — use the arXiv ID prefix (first 2 digits) for year estimate, and for authors use `[Authors unknown — not extractable from PDF]`. Mark as `(metadata partial — unreadable PDF)`.
 
 **D. If NO profile exists** — these are papers not in the candidate pool. Use the arXiv ID prefix for year estimate. For authors, use `[Citation not verified]` instead of guessing author names. Mark as `(no PDF profile — citation not verified)`.
 
@@ -50,19 +61,22 @@ Extract:
 
 ### Step 3: Transform Inline Citations
 
-In `07_survey.md`, replace ALL inline references from arXiv ID format to author-year format:
+In `07_survey.md`, replace ALL inline references from their current format to author-year format:
 
 | Before | After |
 |--------|-------|
-| `[arXiv:2406.10252]` | `[Chen et al., 2024]` |
+| `[Agentic AutoSurvey, 2025]` | `[Liu et al., 2025]` |
+| `[AutoSurvey, 2024]` | `[Wang et al., 2024]` |
+| `[arXiv:2406.10252]` | `[Wang et al., 2024]` |
 | `[arXiv:2005.11401]` | `[Lewis et al., 2020]` |
-| `[arXiv:2406.10252, §5]` | `[Chen et al., 2024, §5]` |
 | `[2510.03120]` | `[Wu et al., 2025]` |
 
 Rules:
-- If author info is available, use first author's last name + "et al." for 3+ authors
-- If year is unknown, check the arXiv ID prefix (first 2 digits = year)
-- Keep section references intact: `[Author Year, §X.X]`
+- Use the `citation.authors` from the profile to determine the first author's last name.
+- If author info is available, use first author's last name + "et al." for 3+ authors.
+- If year is unknown, check the arXiv ID prefix (first 2 digits = year).
+- Keep section references intact: `[Author Year, §X.X]`.
+- If a citation could not be resolved to an arXiv ID or profile, leave it as-is and log a warning.
 
 ### Step 4: Append References Section
 
@@ -99,8 +113,9 @@ Overwrite `07_survey.md` with the transformed content + references section.
 3. Do NOT add or remove any substantive content from the survey.
 4. Do NOT change section structure, tables, or technical claims.
 5. **Metadata tagging rules for reference entries:**
-   - If `metadata_source: pdf_extracted` → no tag needed (verified)
-   - If `metadata_source: pdf_unreadable` → append `(metadata partial — unreadable PDF)`
+   - If `citation.metadata_source` (or legacy `metadata_source`) is `pdf_extracted` → no tag needed (verified)
+   - If `citation.metadata_source` (or legacy `metadata_source`) is `pdf_unreadable` → append `(metadata partial — unreadable PDF)`
+   - If `citation.metadata_source` (or legacy `metadata_source`) is `pool_and_abstract` → append `(profile from abstract — not fully verified)`
    - If no profile exists → append `(citation not verified — no PDF profile)`
 6. **Citation audit:** After writing all reference entries, scan the full survey text for every inline citation pattern `[Author Year]` and verify that each one has a matching entry in the `## References` section. If any inline citation has no matching reference entry, add the missing entry with `[Citation not verified]` as the author placeholder.
 
