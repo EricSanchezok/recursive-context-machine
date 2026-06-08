@@ -100,32 +100,51 @@ For each focus section with `search_keywords`:
 - Read the PDF sections relevant to the knowledge gap (Method, Architecture, Experiments).
 
 **Step 3: Create Paper Profile**
-Write to `phase0/paper_profiles/<arxiv_id>.md`:
-```markdown
-# Paper Profile: <Title>
+Write to `phase0/paper_profiles/<arxiv_id>.md` in **AttributeTree YAML format** (must match the format used by PaperProfiler):
+```yaml
+---
+paper_id: "<arxiv_id>"
+title: "<exact title from PDF>"
+authors: "[Author1, Author2, ...]"
+year: YYYY
+venue: "<venue or 'not found in PDF'>"
+metadata_source: "pdf_extracted"
 
-- **arXiv ID**: <XXXX.XXXXX>
-- **Authors**: <...>
-- **Year**: <YYYY>
+method:
+  category: "<method_category>"
+  description: "<2-3 sentence method summary>"
+  architecture:
+    agent_count: <number or null>
+    coordination_pattern: "<pattern>"
+    retrieval_method: "<method>"
+    citation_graph_awareness: "<level>"
+    citation_graph_detail: "<detail or null>"
+    iteration_strategy: "<strategy>"
+    llm_backbone: "<model or 'not specified'>"
 
-## Method Description
-<2-3 paragraphs describing the method from the PDF>
+innovations:
+  - name: "<innovation>"
+    detail: "<explanation>"
 
-## Architecture
-<Key architectural details>
+benchmarks:
+  - metric: "<metric>"
+    value: "<value or null>"
+    dataset: "<dataset or null>"
+    notes: "<notes or null>"
 
-## Key Innovations
-- <Innovation 1>
+limitations:
+  - "<limitation>"
 
-## Benchmark Results
-| Dataset | Metric | Value |
-|---------|--------|-------|
+method_category: "<category>"
+category_rationale: "<why this category>"
 
-## Method Category
-<Which taxonomy category this paper fits into and why>
-
-## Relevance to Knowledge Gap
-<How this paper specifically addresses the gap>
+dimensions:
+  graph_awareness_level: "<level>"
+  retrieval_type: "<type>"
+  writing_paradigm: "<paradigm>"
+  evaluation_method: "<method>"
+  human_involvement: "<none | optional | mandatory>"
+---
 ```
 
 **Step 4: Update Paper Pool**

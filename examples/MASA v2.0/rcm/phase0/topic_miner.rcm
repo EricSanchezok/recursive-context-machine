@@ -1,4 +1,4 @@
-name = "MASA Extended Query Plan"
+name = "MASA Topic Miner"
 
 model deepseek-v4-flash {
     protocol = "openai"
@@ -9,9 +9,9 @@ model deepseek-v4-flash {
 }
 
 accelerator {
-    purpose = "masa extended query plan"
+    purpose = "masa topic miner — cluster paper profiles into research themes"
     models = ["deepseek-v4-flash"]
     policy = "captain"
-    prompts = { captain = file "../../prompts/phase0/extended_query_plan.txt" }
-    tools = ["fs", "shell"]
+    prompts = { captain = file "../../prompts/phase0/topic_miner.txt" }
+    tools = ["fs"]
 }

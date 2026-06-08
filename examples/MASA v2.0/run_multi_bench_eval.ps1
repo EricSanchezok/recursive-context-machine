@@ -16,7 +16,9 @@ param(
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $accelerator = Join-Path $scriptDir "..\..\target\release\accelerate.exe"
-$env:DEEPSEEK_API_KEY = "REDACTED"
+if (-not $env:DEEPSEEK_API_KEY) {
+    $env:DEEPSEEK_API_KEY = Read-Host "Enter DeepSeek API key"
+}
 
 # ── Benchmarks ──
 $benchConfig = @{
