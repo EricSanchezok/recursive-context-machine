@@ -6,36 +6,56 @@ Your task is to analyze the paper taxonomy and profiles, then construct a critic
 The CURRENT WORKING DIRECTORY is the run directory. All paths below are relative to it.
 
 ## Input
-- `phase0/paper_taxonomy.md` — classification framework
-- `phase0/paper_profiles/*.md` — paper details with method descriptions, benchmark results, and limitations
+- `phase0/paper_taxonomy.md` — classification framework (now includes a `Dimensions` column per paper)
+- `phase0/paper_profiles/*.md` — paper profiles in AttributeTree YAML format
 
 ## Output
 - `phase0/evolution_narrative.md` (overwrite)
 
 ## Workflow
 
-Use a **two-pass approach** to avoid reading all paper profiles at once when there are many papers.
+Use a **two-pass approach** that leverages the structured YAML fields in the AttributeTree profiles.
 
 ### Pass 1: Taxonomy + Metadata Scan
 
-1. Read `phase0/paper_taxonomy.md` first — get the classification structure, dimensions, and which papers belong to each category.
-2. From the taxonomy, extract the list of arXiv IDs per category. **Do NOT read the full profiles yet.**
-3. Build a mapping: `category → [list of arXiv IDs]`.
+1. Read `phase0/paper_taxonomy.md` — get the classification structure, Dimensions column per paper, and category-level paper lists.
 
-### Pass 2: Representative Deep-Read
+2. From the taxonomy, extract the list of arXiv IDs per category.
 
-For each category in the taxonomy:
-1. Select **up to 3 representative papers** per category (prefer the most recent or the paper explicitly flagged as key).
-2. Read the full profile for those representative papers only: `phase0/paper_profiles/<arxiv_id>.md`.
-3. If a category has 4+ papers, you may scan the Method Category and Benchmark Results sections for the remaining papers using targeted fs reads (read only those sections, not the full file).
+3. For each category, read **only the YAML frontmatter** (first 40 lines) of each profile. Extract:
+   - `year` — for chronological grouping
+   - `method.architecture.*` — agent_count, retrieval_method, citation_graph_awareness, iteration_strategy
+   - `dimensions.*` — all 5 cross-cutting dimensions (already summarized in taxonomy's Dimensions column)
+   - `benchmarks` — the full benchmarks array for quantitative trend analysis
+   - `limitations` — for gap identification
+   - `method.description` — compact method summary
+
+   Because the frontmatter is compact YAML (~25-40 lines), you can read ALL papers' frontmatter efficiently without token overflow.
+
+4. Build a timeline matrix across categories:
+   ```
+   | Category | Papers | Years | Dimensions Common | Top Benchmarks | Key Limitations |
+   |----------|--------|-------|-------------------|----------------|-----------------|
+   ```
+
+### Pass 2: Representative Deep-Read (Targeted)
+
+With the timeline matrix built, you only need full-profile reads for:
+- **Landmark papers** — the earliest, the most recent, and the highest-performing in each category
+- **Transition papers** — papers at the boundary of two phases (e.g., first paper to introduce a new paradigm)
+- Limit to 1-2 per category (vs the old 3 per category), saving ~30-50% reads
 
 ### Pass 3: Construct Evolution Narrative
 
-Based on Pass 1's taxonomy structure and Pass 2's detailed understanding:
-1. Group papers chronologically — use the **year** from each profile's frontmatter.
-2. Map categories onto the timeline: which category appeared first, which emerged later as a refinement or alternative?
-3. Identify phase transitions — typically driven by architecture shifts or limitation breakthroughs.
-4. Build the Critical Assessment — this should primarily draw from the taxonomy's cross-category patterns and the Benchmark Results of representative papers.
+Based on Pass 1's structured timeline matrix and Pass 2's targeted deep-reads:
+
+1. **Group papers chronologically** using the `year` field from frontmatter.
+2. **Map categories onto the timeline**: which category appeared first, which emerged later as a refinement or alternative?
+3. **Identify phase transitions** — typically driven by:
+   - Shifts in `dimensions.graph_awareness_level` (e.g., none → bfs → hierarchical)
+   - Shifts in `method.architecture.retrieval_method` (e.g., keyword → embedding → graph_traversal)
+   - Limitations in one category that the next category directly addresses
+4. **Build the Critical Assessment** using the benchmarks array data (structured YAML → easy cross-paper comparison) and the limitations field.
 
 ## Output Format
 
@@ -100,7 +120,9 @@ This is the "abstract" of the narrative.>
 - <Weakness 2>: <Evidence from multiple papers>
 
 ### Evaluation Comparability Crisis
-<Analysis of how evaluation fragmentation prevents meaningful progress measurement>
+<Analysis of how evaluation fragmentation prevents meaningful progress measurement.
+Use the `benchmarks` array data from profiles to substantiate this — show examples of
+different papers using different metrics/datasets for the same claimed capability.>
 
 ### Blind Spots
 - <Blind spot 1>: What no paper in the pool addresses
@@ -116,8 +138,8 @@ This is the "abstract" of the narrative.>
 
 1. **Be critical, not cynical**. The goal is honest assessment, not dismissal. Acknowledge genuine progress while calling out gaps.
 2. **Ground every critique in evidence from the paper profiles**. Do not make unsupported criticisms.
-3. **Pay special attention to evaluation methodology**. If papers in different phases use different metrics/datasets, flag that as a comparability issue.
-4. **Identify cross-cutting patterns** — e.g., "nearly all papers claim to solve hallucination, but none conduct a rigorous hallucination audit".
+3. **Pay special attention to the `benchmarks` arrays** — since these are now structured YAML with metric/value/dataset/notes, you can do quantitative cross-paper comparisons that were previously buried in prose tables.
+4. **Use the `dimensions.*` fields for cross-cutting pattern identification** — e.g., "across all categories, `evaluation_method` is overwhelmingly `benchmark_comparison` with no standard benchmark, confirming the evaluation comparability crisis."
 5. **The Critical Assessment section is the most important part**. It should be the longest and most detailed section.
 6. **Avoid "more research is needed" clichés**. Be specific about what is missing.
 

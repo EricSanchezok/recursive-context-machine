@@ -16,9 +16,9 @@ Before starting, check `memory/iteration_state.md` to determine the current roun
   - `memory/section_plan.md` 鈥?PRIMARY guide
   - `phase0/paper_taxonomy.md` 鈥?classification and comparison dimensions
   - `phase0/evolution_narrative.md` 鈥?critical narrative arc (phases, trends, claim-vs-evidence gaps)
-  - `phase0/paper_profiles/` 鈥?detailed paper architecture and method descriptions
-  - `memory/outline.md` 鈥?section ordering context
-  - `phase0/02_candidate_pool.md` 鈥?paper metadata
+  - `phase0/paper_profiles/` - detailed paper profiles (AttributeTree YAML format)
+  - `memory/outline.md` - section ordering context
+  - `phase0/02_candidate_pool.md` - paper metadata
 - **Write to**:
   - `memory/section_summaries.md` (append)
   - `memory/agent_generator.md` (append)
@@ -33,7 +33,7 @@ Before starting, check `memory/iteration_state.md` to determine the current roun
   - `memory/subsections/[focus-section-ids].md` 鈥?ONLY the focus section files
   - `phase0/paper_taxonomy.md` 鈥?classification context for focus sections
   - `phase0/evolution_narrative.md` 鈥?critical narrative context for focus sections
-  - `phase0/paper_profiles/` 鈥?paper details for papers in focus sections
+  - `phase0/paper_profiles/` 鈥?paper profiles (AttributeTree YAML format) for papers in focus sections
   - `05_draft.md` 鈥?read only first/last 30 lines for structure context; do NOT read full draft
   - `phase0/02_candidate_pool.md` 鈥?only if supervisor asks for paper supplementation
   - `memory/outline.md` 鈥?only if section numbering is unclear

@@ -1,4 +1,4 @@
-﻿# MASA Automated Survey Pipeline
+# MASA Automated Survey Pipeline
 # One-shot execution: creates run dir, runs Phase 0 鈫?multi-round Core 鈫?Finish
 # All output goes to MASA v2.0/runs/<timestamp>/
 
@@ -56,11 +56,7 @@ try {
         "02a_method_candidates.md", "02b_benchmark_candidates.md",
         "02c_survey_candidates.md", "02d_frontier_candidates.md",
         "03a_seed_papers.md", "03b_citation_expansion.md",
-        "03c_semantic_expansion.md", "03_expansion.md",
-        "01b_query_plan_extended.md", "01b_query_plan_extended_analysis.md",
-        "02b_candidate_pool_extended.md",
-        "02e_extended_method_candidates.md", "02f_extended_benchmark_candidates.md",
-        "02g_extended_survey_candidates.md", "02h_extended_frontier_candidates.md"
+        "03c_semantic_expansion.md", "03_expansion.md"
     )
     foreach ($file in $phase0Files) {
         $source = Join-Path $runDir $file
