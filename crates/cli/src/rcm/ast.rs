@@ -75,10 +75,6 @@ pub struct ModelDef {
     pub modalities_output: Vec<String>,
     pub headers: HashMap<String, String>,
     pub thinking: bool,
-    /// Override the model name sent in API requests.
-    /// When set, the `model` field in the LLM API request uses this value
-    /// instead of the block identifier `id`.
-    pub api_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -284,7 +284,6 @@ impl Parser {
         let mut modalities_output = Vec::new();
         let mut headers = std::collections::HashMap::new();
         let mut thinking = false;
-        let mut api_model = None;
 
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
@@ -307,7 +306,6 @@ impl Parser {
                 match key.as_str() {
                     "protocol" => protocol = self.expect_string()?,
                     "endpoint" => endpoint = Some(self.expect_string()?),
-                    "model" => api_model = Some(self.expect_string()?),
                     "thinking" => {
                         let value = self.expect_string()?;
                         thinking = value.parse().map_err(|_| {
@@ -336,7 +334,6 @@ impl Parser {
             modalities_output,
             headers,
             thinking,
-            api_model,
         })
     }
 
