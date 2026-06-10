@@ -109,7 +109,7 @@ Academic value receives higher weight because DeepSurvey-Bench's core contributi
 |-----------|:-----:|:------:|:--------:|
 | Surface Quality Average | X.XX | 40% | X.XXX |
 | Academic Value Average | X.XX | 60% | X.XXX |
-| **Overall** | 鈥?| **100%** | **X.XX** |
+| **Overall** | — | **100%** | **X.XX** |
 
 ## Assessment Summary
 [2-3 sentence overview focusing on academic depth]

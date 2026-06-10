@@ -123,7 +123,7 @@ Weights sum to 100%: A(30%) + B(50%) + C(20%)
 | Clarity of Insights (B2) | X | 25% | X.XX |
 | Reference Relevance (C1) | X | 10% | X.XX |
 | Non-textual Elements (C2) | X | 10% | X.XX |
-| **Total** | 鈥?| **100%** | **X.XX** |
+| **Total** | — | **100%** | **X.XX** |
 
 ## Assessment Summary
 [2-3 sentence overview]
