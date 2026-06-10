@@ -1,0 +1,156 @@
+﻿﻿## Instruction
+
+You are in the survey's run directory. Use `fs->read` to read `07_survey.md` first, then evaluate the survey content according to the criteria below.
+
+---
+
+You are an expert evaluator conducting a **DeepScholar-Bench** assessment following the protocol described in arXiv:2508.20033v2. This benchmark evaluates generative research synthesis (specifically "Related Work" sections) across three key dimensions using 0-100% metrics.
+
+## DeepScholar-Bench Evaluation Dimensions (From Paper)
+
+### 1. Knowledge Synthesis (40% Weight)
+
+**KS1. Organization & Coherency** (0-100)
+- Measures how well the content is organized and how coherent the narrative is
+- 0-20: Disorganized, incoherent, difficult to follow
+- 21-40: Poorly organized with disjointed sections
+- 41-60: Moderately organized with reasonable flow
+- 61-80: Well-organized with clear structure and logical flow
+- 81-100: Exceptionally well-organized with coherent narrative and smooth transitions
+
+**KS2. Nugget Coverage** (0-100)
+- Measures coverage of essential facts and key information
+- Score = percentage of key factual nuggets from the reference that are covered
+- 0-20: Missing most key facts; significant gaps in coverage
+- 21-40: Covers some basic facts but missing important details
+- 41-60: Covers essential facts with reasonable completeness
+- 61-80: Comprehensive coverage of key facts and details
+- 81-100: Exceptionally thorough coverage capturing all essential nuggets
+
+### 2. Retrieval Quality (30% Weight)
+
+**RQ1. Relevance Rate** (0-100)
+- Measures average relevance among all referenced sources
+- 0-20: Most references are irrelevant or tangential
+- 21-40: Some relevant references but many are off-topic
+- 41-60: Majority of references are relevant to the topic
+- 61-80: High relevance rate; almost all references are pertinent
+- 81-100: Excellent relevance; every reference directly supports the content
+
+**RQ2. Document Importance** (0-100)
+- Measures how notable/influential the referenced sources are
+- Score = average normalized citation count or venue impact percentile
+- 0-20: References mostly low-impact, obscure works
+- 21-40: Mix of low and moderate impact works
+- 41-60: Reasonable coverage of impactful works
+- 61-80: Strong coverage of high-impact, influential papers
+- 81-100: Excellent coverage of the field's most influential works
+
+**RQ3. Reference Coverage** (0-100)
+- Assesses whether the referenced set covers key, important references
+- 0-20: Missing most key references in the field
+- 21-40: Some key references included but significant omissions
+- 41-60: Covers most important references
+- 61-80: Comprehensive coverage of essential references
+- 81-100: Complete coverage of all key references in the field
+
+### 3. Verifiability (30% Weight)
+
+**V1. Citation Precision** (0-100)
+- Percentage of cited sources that actually support their accompanying claim
+- Score = (supported claim-citation pairs / total verified pairs) 脳 100
+- 0-20: Many citations are incorrect or do not support the claims
+- 21-40: Some citations are correct but notable errors exist
+- 41-60: Most citations correctly support their claims
+- 61-80: High citation precision; claims consistently well-supported
+- 81-100: Exceptional precision; every claim has appropriate supporting citation
+
+**V2. Claim Coverage** (0-100)
+- Percentage of claims that are fully supported by cited sources
+- Score = (claims with citations / total claims) 脳 100
+- 0-20: Most claims lack supporting citations
+- 21-40: Some claims are supported but many are not
+- 41-60: Majority of claims have supporting citations
+- 61-80: High claim coverage; nearly all claims are cited
+- 81-100: Complete claim coverage; every substantive claim is properly cited
+
+## Evaluation Protocol
+
+1. Read the generated "Related Work" section carefully
+2. For each dimension, assign a score 0-100 with specific evidence
+3. Quote relevant citations and claims to justify scores
+
+## Score Calculation
+
+Knowledge Synthesis = (KS1 + KS2) / 2
+Retrieval Quality = (RQ1 + RQ2 + RQ3) / 3
+Verifiability = (V1 + V2) / 2
+Overall Score (Geometric Mean) = exp((ln(KS脳0.4 + RQ脳0.3 + V脳0.3)))
+Overall = Knowledge Synthesis 脳 0.4 + Retrieval Quality 脳 0.3 + Verifiability 脳 0.3
+
+## Output Format
+
+```markdown
+# DeepScholar-Bench Evaluation Report
+
+## 1. Knowledge Synthesis
+
+### KS1. Organization & Coherency: [X/100]
+[Evidence and justification with quotes]
+
+### KS2. Nugget Coverage: [X/100]
+[Evidence and justification with quotes]
+
+**Knowledge Synthesis Score: X.XX/100**
+
+## 2. Retrieval Quality
+
+### RQ1. Relevance Rate: [X/100]
+[Evidence and justification with quotes]
+
+### RQ2. Document Importance: [X/100]
+[Evidence and justification with quotes]
+
+### RQ3. Reference Coverage: [X/100]
+[Evidence and justification with quotes]
+
+**Retrieval Quality Score: X.XX/100**
+
+## 3. Verifiability
+
+### V1. Citation Precision: [X/100]
+[Evidence and justification with quotes]
+
+### V2. Claim Coverage: [X/100]
+[Evidence and justification with quotes]
+
+**Verifiability Score: X.XX/100**
+
+## Score Summary
+
+| Dimension | Score | Weight | Weighted |
+|-----------|:-----:|:------:|:--------:|
+| Knowledge Synthesis | X.XX | 40% | X.XXX |
+| Retrieval Quality | X.XX | 30% | X.XXX |
+| Verifiability | X.XX | 30% | X.XXX |
+| **Overall** | 鈥?| **100%** | **X.XX** |
+
+## Assessment Summary
+[2-3 sentence overview]
+
+## Strengths
+1. [Strength 1]
+2. [Strength 2]
+3. [Strength 3]
+
+## Weaknesses/Gaps
+1. [Weakness 1]
+2. [Weakness 2]
+3. [Weakness 3]
+
+## Recommendations
+1. [Recommendation 1]
+2. [Recommendation 2]
+3. [Recommendation 3]
+```
+

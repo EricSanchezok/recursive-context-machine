@@ -1,0 +1,131 @@
+﻿﻿## Instruction
+
+You are in the survey's run directory. Use `fs->read` to read `07_survey.md` first, then evaluate the survey content according to the criteria below.
+
+---
+
+You are an expert evaluator conducting a **DeepSurvey-Bench** assessment following the protocol described in arXiv:2601.15307v1. This benchmark evaluates the academic value of automatically generated scientific surveys, going beyond surface-level text quality.
+
+## DeepSurvey-Bench Evaluation Dimensions (From Paper)
+
+### Layer 1: Surface Quality (40% Weight)
+
+**SQ1. Outline Quality** (1-5)
+- 1: No clear outline; content is disorganized
+- 2: Basic structure but lacks logical progression
+- 3: Generally well-organized with clear sections
+- 4: Well-structured with logical flow and appropriate granularity
+- 5: Expert-level organization with insightful taxonomy and seamless transitions
+
+**SQ2. Content Quality** (1-5)
+- 1: Superficial or inaccurate content
+- 2: Basic descriptions but lacks depth
+- 3: Accurate content with reasonable coverage
+- 4: Detailed, accurate content with good coverage and some critical analysis
+- 5: Comprehensive, accurate, and deeply analytical content
+
+**SQ3. Reference Quality** (1-5)
+- 1: Sparse or irrelevant references
+- 2: Some relevant references but key works missing
+- 3: Adequate reference coverage with most key works cited
+- 4: Comprehensive references with good balance of seminal and recent works
+- 5: Expert-curated references; appropriate coverage, relevance, and recency
+
+### Layer 2: Academic Value (60% Weight)
+
+**AV1. Informational Value** (1-5)
+- Does the survey provide accurate, comprehensive information about the field?
+- 1: Contains factual errors or misleading claims; significant gaps in coverage
+- 2: Mostly accurate but missing important information
+- 3: Accurate with reasonable breadth; some depth in key areas
+- 4: Highly informative with comprehensive coverage and accurate detail
+- 5: Exceptional informational value; serves as a definitive reference on the topic
+
+**AV2. Scholarly Communication Value** (1-5)
+- Does the survey properly contextualize contributions, identify open problems, and present balanced perspectives?
+- 1: No contextualization; papers listed without positioning or comparison
+- 2: Basic contextualization but lacks balanced treatment of competing approaches
+- 3: Reasonable contextualization with some comparison; open problems identified
+- 4: Strong scholarly framing; balanced comparison of approaches; clearly identified research gaps
+- 5: Expert-level scholarly communication; nuanced positioning; identifies tensions and unresolved debates
+
+**AV3. Research Guidance Value** (1-5)
+- Does the survey help readers identify promising research directions?
+- 1: No guidance for future work
+- 2: Vague or generic future work suggestions
+- 3: Concrete future directions that follow from the analysis
+- 4: Specific, well-motivated research directions with actionable suggestions
+- 5: Insightful future directions that would genuinely advance the field; prioritization and trade-offs explained
+
+## Evaluation Protocol
+
+1. Read the generated survey carefully
+2. For each dimension, assign a score 1-5
+3. Provide specific evidence from the survey text
+4. Quote relevant section headers or passages as justification
+
+## Score Calculation
+
+- Surface Quality Total = (SQ1 + SQ2 + SQ3) / 3
+- Academic Value Total = (AV1 + AV2 + AV3) / 3
+- Overall Score = Surface Quality 脳 0.4 + Academic Value 脳 0.6
+
+Academic value receives higher weight because DeepSurvey-Bench's core contribution is measuring depth beyond surface quality.
+
+## Output Format
+
+```markdown
+# DeepSurvey-Bench Evaluation Report
+
+## Layer 1: Surface Quality
+
+### SQ1. Outline Quality: [X/5]
+[Evidence and justification with quotes]
+
+### SQ2. Content Quality: [X/5]
+[Evidence and justification with quotes]
+
+### SQ3. Reference Quality: [X/5]
+[Evidence and justification with quotes]
+
+**Surface Quality Average: X.XX/5**
+
+## Layer 2: Academic Value
+
+### AV1. Informational Value: [X/5]
+[Evidence and justification with quotes]
+
+### AV2. Scholarly Communication Value: [X/5]
+[Evidence and justification with quotes]
+
+### AV3. Research Guidance Value: [X/5]
+[Evidence and justification with quotes]
+
+**Academic Value Average: X.XX/5**
+
+## Score Summary
+
+| Dimension | Score | Weight | Weighted |
+|-----------|:-----:|:------:|:--------:|
+| Surface Quality Average | X.XX | 40% | X.XXX |
+| Academic Value Average | X.XX | 60% | X.XXX |
+| **Overall** | 鈥?| **100%** | **X.XX** |
+
+## Assessment Summary
+[2-3 sentence overview focusing on academic depth]
+
+## Strengths
+1. [Strength 1]
+2. [Strength 2]
+3. [Strength 3]
+
+## Weaknesses/Gaps
+1. [Weakness 1]
+2. [Weakness 2]
+3. [Weakness 3]
+
+## Recommendations for Improving Academic Value
+1. [Recommendation 1]
+2. [Recommendation 2]
+3. [Recommendation 3]
+```
