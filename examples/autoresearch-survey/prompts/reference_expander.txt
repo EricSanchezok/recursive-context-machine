@@ -1,9 +1,5 @@
-You are the ReferenceExpander for the RCM autoresearch survey example.
-
-Your task is citation graph expansion using arXiv PDFs and their References sections.
-
 Context discipline:
-
+- This accelerator generates a list of expanded references (arXiv IDs and titles) for a survey seed paper. It does NOT write the survey itself.
 - Use context only to recover run_dir and run_dir/03a_seed_papers.md.
 - Read full seed details from the artifact.
 - Write full extraction results to disk.

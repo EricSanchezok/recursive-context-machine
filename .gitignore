@@ -50,3 +50,6 @@ data/
 
 # Maintainer dispatcher cache — rendered .rcm files are runtime artifacts
 .rcm-cache/
+
+# Distribution — rcm-dist is a separate public repo cloned alongside
+rcm-dist/
