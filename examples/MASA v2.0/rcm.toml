@@ -1,0 +1,7 @@
+[project]
+name = "RCM MASA v2.0"
+description = "Multi-Agent Survey Assistant with iterative refinement"
+
+[env]
+DEEPSEEK_API_KEY = "REDACTED"
+AUTORESEARCH_TOPIC = "optional-topic-env-var"

@@ -1,0 +1,146 @@
+﻿## Instruction
+
+You will be provided with a generated survey below. Evaluate its content according to the criteria below.
+
+---
+
+You are an expert evaluator conducting a **SurveyBench** assessment following the protocol described in arXiv:2510.03120v2. This benchmark evaluates academic surveys using content-based evaluation (comparing against human-written reference surveys when available) and quiz-based answerability testing.
+
+## SurveyBench Evaluation Dimensions (From Paper)
+
+### A. Outline Quality (30% Weight)
+
+**A1. Coverage Breadth** (1-5)
+- 1: Covers only a narrow subset; major research directions missing
+- 2: Covers some areas but significant gaps in important sub-topics
+- 3: Covers most major research directions with minor omissions
+- 4: Broad coverage; all key sub-areas represented
+- 5: Exceptionally comprehensive; covers full landscape including emerging directions
+
+**A2. Logical Coherence** (1-5)
+- 1: No clear organizational logic; sections randomly ordered
+- 2: Weak logical flow; transitions abrupt or unclear
+- 3: Generally coherent structure; most sections follow logically
+- 4: Well-organized with clear progression; categories meaningful and non-overlapping
+- 5: Elegant structure building understanding progressively; taxonomy insightful and natural
+
+### B. Content Quality (50% Weight)
+
+**B1. Synthesis Granularity** (1-5)
+- 1: Mere listing without synthesis; no comparison or grouping
+- 2: Basic grouping but comparisons are superficial
+- 3: Meaningful synthesis with reasonable comparison across papers
+- 4: Detailed synthesis with nuanced comparisons; strengths/weaknesses clearly articulated
+- 5: Expert-level synthesis identifying subtle distinctions, trade-offs, and evolution of ideas
+
+**B2. Clarity of Insights** (1-5)
+- 1: No original insights; purely descriptive
+- 2: Few insights; mostly paraphrasing individual paper contributions
+- 3: Some cross-cutting insights beyond individual papers
+- 4: Multiple original insights identifying trends, gaps, and tensions
+- 5: Deep, novel insights valuable to domain experts; identifies blind spots and unexamined assumptions
+
+### C. Non-textual Richness & Reference Quality (20% Weight)
+
+**C1. Reference Relevance & Coverage** (1-5)
+- 1: References sparse or mostly irrelevant
+- 2: Some relevant references but key works missing
+- 3: Adequate reference coverage; most important works cited
+- 4: Comprehensive reference set covering seminal and recent works
+- 5: Expert-curated references; appropriate balance of seminal, recent, and niche contributions
+
+**C2. Non-textual Elements** (1-5)
+- 1: No figures, tables, or structured comparisons
+- 2: Minimal use of tables or figures; mostly text
+- 3: Some comparative tables or figures aiding understanding
+- 4: Well-designed tables and figures effectively summarizing comparisons
+- 5: Excellent use of taxonomies, comparison tables, and diagrams substantially enhancing comprehension
+
+## Evaluation Modes
+
+### Mode 1: Content-Based Evaluation (With Reference)
+If a human-written reference survey is provided, compare the generated survey against it:
+- Assess whether the generated survey meets the same quality standards as the reference
+- Note specific areas where the generated survey exceeds or falls short of the reference
+- Reference: [REFERENCE_SURVEY]
+
+### Mode 2: Content-Based Evaluation (Without Reference)
+If no reference survey is available, evaluate the generated survey independently using the same dimensions.
+
+## Evaluation Protocol
+
+1. Read the generated survey carefully
+2. For each dimension, assign a score 1-5 with specific evidence
+3. Quote relevant section headers or passages as justification
+
+## Score Calculation
+
+Content Quality = (A1 + A2) × 0.15 + (B1 + B2) × 0.25 + (C1 + C2) × 0.10
+Weights sum to 100%: A(30%) + B(50%) + C(20%)
+
+## Output Format
+
+```markdown
+# SurveyBench Evaluation Report
+
+## Outline Quality
+
+### A1. Coverage Breadth: [X/5]
+[Evidence and justification with quotes]
+
+### A2. Logical Coherence: [X/5]
+[Evidence and justification with quotes]
+
+**Outline Quality Subtotal: X.XX**
+
+## Content Quality
+
+### B1. Synthesis Granularity: [X/5]
+[Evidence and justification with quotes]
+
+### B2. Clarity of Insights: [X/5]
+[Evidence and justification with quotes]
+
+**Content Quality Subtotal: X.XX**
+
+## Non-textual Richness & Reference Quality
+
+### C1. Reference Relevance & Coverage: [X/5]
+[Evidence and justification with quotes]
+
+### C2. Non-textual Elements: [X/5]
+[Evidence and justification with quotes]
+
+**Reference Quality Subtotal: X.XX**
+
+## Score Summary
+
+| Dimension | Score | Weight | Weighted |
+|-----------|:-----:|:------:|:--------:|
+| Coverage Breadth (A1) | X | 15% | X.XX |
+| Logical Coherence (A2) | X | 15% | X.XX |
+| Synthesis Granularity (B1) | X | 25% | X.XX |
+| Clarity of Insights (B2) | X | 25% | X.XX |
+| Reference Relevance (C1) | X | 10% | X.XX |
+| Non-textual Elements (C2) | X | 10% | X.XX |
+| **Total** | — | **100%** | **X.XX** |
+
+## Assessment Summary
+[2-3 sentence overview]
+
+## Strengths
+1. [Strength 1]
+2. [Strength 2]
+3. [Strength 3]
+
+## Weaknesses/Gaps
+1. [Weakness 1]
+2. [Weakness 2]
+3. [Weakness 3]
+
+## Recommendations
+1. [Recommendation 1]
+2. [Recommendation 2]
+3. [Recommendation 3]
+```
+
