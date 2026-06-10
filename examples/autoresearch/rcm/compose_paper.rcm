@@ -1,0 +1,88 @@
+name = "Autoresearch Compose — Paper (Phase 2)"
+
+use "./shared/section_writer.rcm" as SectionWriter
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+graph {
+    // ── Load the technical report + grounded story (the evidence base) ───────
+    accelerator load {
+        purpose = "rewrite the technical report into a claim-driven paper"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/paper_load.txt" }
+        tools = ["fs"]
+    }
+
+    // ── Extract the few core claims (the load-bearing arguments) ─────────────
+    accelerator claims {
+        purpose = "autoresearch paper claims"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/paper_claims.txt" }
+        tools = ["fs"]
+    }
+
+    // ── Build the claim-driven spine and fan out the section writers ─────────
+    accelerator spine {
+        purpose = "autoresearch paper spine"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/paper_spine.txt" }
+        tools = ["fs"]
+        spawns = ["SectionWriter"]
+    }
+
+    // ── Assemble, then a dedicated prose/integrity polish pass ───────────────
+    accelerator assemble {
+        purpose = "autoresearch paper assemble"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/paper_assemble.txt" }
+        tools = ["fs"]
+    }
+
+    accelerator polish {
+        purpose = "autoresearch paper polish"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/paper_polish.txt" }
+        tools = ["fs"]
+    }
+
+    accelerator gate {
+        purpose = "autoresearch paper gate"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/paper_gate.txt" }
+        tools = ["fs"]
+    }
+
+    // ── Wiring ───────────────────────────────────────────────────────────────
+    input.purpose -> load.purpose
+
+    load.context -> claims.context
+    load.done -> claims.trigger
+
+    claims.context -> spine.context
+    claims.done -> spine.trigger
+
+    spine.context -> assemble.context
+    spine.done -> assemble.trigger
+
+    assemble.context -> polish.context
+    assemble.done -> polish.trigger
+
+    polish.context -> gate.context
+    polish.done -> gate.trigger
+
+    gate.done -> output.done
+    gate.context -> output.context
+    gate.purpose -> output.purpose
+}
