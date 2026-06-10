@@ -17,7 +17,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_anchor.txt" }
-        tools = ["fs", "shell"]
+        tools = ["rdc_read", "fs", "shell"]
     }
 
     // ── Landscape: four parallel scouts hunting friction ─────────────────────
@@ -155,7 +155,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_gate.txt" }
-        tools = ["fs"]
+        tools = ["rdc_write", "fs"]
     }
 
     // ── Wiring ───────────────────────────────────────────────────────────────

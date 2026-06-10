@@ -15,7 +15,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/review_load.txt" }
-        tools = ["fs"]
+        tools = ["rdc_read", "fs"]
     }
 
     // ── Four independent reviewers (Reviewer Independence Protocol) ──────────
@@ -64,7 +64,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/review_synthesis.txt" }
-        tools = ["fs"]
+        tools = ["rdc_write", "fs"]
     }
 
     accelerator gate {
@@ -72,7 +72,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/review_gate.txt" }
-        tools = ["fs"]
+        tools = ["rdc_write", "fs"]
     }
 
     // ── Wiring ───────────────────────────────────────────────────────────────
