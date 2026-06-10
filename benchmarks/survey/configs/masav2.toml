@@ -1,0 +1,34 @@
+# MASA v2.0 Survey Pipeline Configuration
+#
+# Schema:
+#   [pipeline]
+#     name            — human-readable label for this pipeline
+#     description     — what the pipeline does
+#
+#   [generation]
+#     working_dir     — relative path from repo root to the RCM project directory
+#     entry_graph     — path to the .rcm entry-point file (within working_dir)
+#     final_output    — filename the pipeline writes upon completion
+#     timeout_seconds — max wall-clock seconds for generation (integer)
+#     env             — list of env var names to forward from the host
+#
+#   [output]
+#     format          — output format: "markdown" | "json"
+#     target_name     — filename to copy the final output to
+#     copy_artifacts  — if true, copy all run artifacts; if false, only final_output
+
+[pipeline]
+name = "MASA v2.0"
+description = "Multi-Agent Survey Automation pipeline with iterative refinement"
+
+[generation]
+working_dir = "examples/MASA v2.0"
+entry_graph = "rcm/masa_phase0.rcm"
+final_output = "08_survey.md"
+timeout_seconds = 7200
+env = ["DEEPSEEK_API_KEY"]
+
+[output]
+format = "markdown"
+target_name = "output.md"
+copy_artifacts = false
