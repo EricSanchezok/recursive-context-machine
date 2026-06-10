@@ -5,9 +5,17 @@ use "./query_plan.rcm" as QueryPlan
 use "./discovery.rcm" as Discovery
 use "./expansion.rcm" as Expansion
 use "./rank_pool.rcm" as RankPool
+use "./card_plan.rcm" as CardPlan
+use "./paper_card.rcm" as PaperCard
 use "./research_map.rcm" as ResearchMap
 use "./judge_panel.rcm" as JudgePanel
-use "./survey_writer.rcm" as SurveyWriter
+use "./image_planner.rcm" as ImagePlanner
+use "./survey_outline.rcm" as SurveyOutline
+use "./section_expander.rcm" as SectionExpander
+use "./survey_assembler.rcm" as SurveyAssembler
+use "./zh_frame.rcm" as ZhFrame
+use "./section_translator.rcm" as SectionTranslator
+use "./zh_assemble.rcm" as ZhAssemble
 
 graph {
     accelerator anchor = Anchor
@@ -15,81 +23,57 @@ graph {
     accelerator discovery = Discovery
     accelerator expansion = Expansion
     accelerator rank_pool = RankPool
+    // CardPlan gets spawn_PaperCard so its LLM dispatches paper_card workers.
+    accelerator card_plan = CardPlan { spawns = ["PaperCard"] }
     accelerator research_map = ResearchMap
     accelerator judge_panel = JudgePanel
-    accelerator survey_writer = SurveyWriter
+    accelerator image_planner = ImagePlanner
+    // SurveyOutline gets spawn_SectionExpander so its LLM dispatches section writers.
+    accelerator survey_outline = SurveyOutline { spawns = ["SectionExpander"] }
+    accelerator survey_assembler = SurveyAssembler
+    // ZhFrame gets spawn_SectionTranslator so its LLM dispatches translators.
+    accelerator zh_frame = ZhFrame { spawns = ["SectionTranslator"] }
+    accelerator zh_assemble = ZhAssemble
 
-    flux anchor_handoff {
-        channel = context
-        mode = last
-        arity = 1
-    }
+    input.purpose -> anchor.purpose
 
-    flux query_handoff {
-        channel = context
-        mode = last
-        arity = 1
-    }
-
-    flux discovery_handoff {
-        channel = context
-        mode = last
-        arity = 1
-    }
-
-    flux expansion_handoff {
-        channel = context
-        mode = last
-        arity = 1
-    }
-
-    flux rank_handoff {
-        channel = context
-        mode = last
-        arity = 1
-    }
-
-    flux map_handoff {
-        channel = context
-        mode = last
-        arity = 1
-    }
-
-    flux judge_handoff {
-        channel = context
-        mode = last
-        arity = 1
-    }
-
-    anchor.context -> anchor_handoff.slot(0)
-    anchor_handoff.out -> query_plan.context
+    anchor.context -> query_plan.context
     anchor.done -> query_plan.trigger
 
-    query_plan.context -> query_handoff.slot(0)
-    query_handoff.out -> discovery.context
+    query_plan.context -> discovery.context
     query_plan.done -> discovery.trigger
 
-    discovery.context -> discovery_handoff.slot(0)
-    discovery_handoff.out -> expansion.context
+    discovery.context -> expansion.context
     discovery.done -> expansion.trigger
 
-    expansion.context -> expansion_handoff.slot(0)
-    expansion_handoff.out -> rank_pool.context
+    expansion.context -> rank_pool.context
     expansion.done -> rank_pool.trigger
 
-    rank_pool.context -> rank_handoff.slot(0)
-    rank_handoff.out -> research_map.context
-    rank_pool.done -> research_map.trigger
+    rank_pool.context -> card_plan.context
+    rank_pool.done -> card_plan.trigger
 
-    research_map.context -> map_handoff.slot(0)
-    map_handoff.out -> judge_panel.context
+    card_plan.context -> research_map.context
+    card_plan.done -> research_map.trigger
+
+    research_map.context -> judge_panel.context
     research_map.done -> judge_panel.trigger
 
-    judge_panel.context -> judge_handoff.slot(0)
-    judge_handoff.out -> survey_writer.context
-    judge_panel.done -> survey_writer.trigger
+    judge_panel.context -> image_planner.context
+    judge_panel.done -> image_planner.trigger
 
-    survey_writer.done -> output.done
-    survey_writer.context -> output.context
-    survey_writer.purpose -> output.purpose
+    image_planner.context -> survey_outline.context
+    image_planner.done -> survey_outline.trigger
+
+    survey_outline.context -> survey_assembler.context
+    survey_outline.done -> survey_assembler.trigger
+
+    survey_assembler.context -> zh_frame.context
+    survey_assembler.done -> zh_frame.trigger
+
+    zh_frame.context -> zh_assemble.context
+    zh_frame.done -> zh_assemble.trigger
+
+    survey_assembler.done -> output.done
+    survey_assembler.context -> output.context
+    survey_assembler.purpose -> output.purpose
 }

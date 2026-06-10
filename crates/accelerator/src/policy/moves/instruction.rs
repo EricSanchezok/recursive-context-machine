@@ -57,13 +57,22 @@ fn find_instruction_files() -> Vec<(PathBuf, String)> {
             if !seen.insert(current.clone()) {
                 break;
             }
+            let mut found_here = false;
             for name in &FILE_NAMES {
                 let path = current.join(name);
                 if path.is_file()
                     && let Ok(content) = std::fs::read_to_string(&path)
                 {
                     results.push((path, content));
+                    found_here = true;
                 }
+            }
+            // Stop at the nearest directory that has instruction files: a local
+            // AGENTS.md is meant to override ancestors, not stack on top of them.
+            // This lets an example carry its own instructions without inheriting
+            // the host repo's development guide.
+            if found_here {
+                break;
             }
             directory = current.parent().map(|parent| parent.to_path_buf());
         }

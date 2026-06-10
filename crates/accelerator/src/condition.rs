@@ -1,8 +1,6 @@
-use machine::{Content, Environment, Fragment, Resources, Role};
+use machine::{Content, Environment, Fragment, Resources, Role, RunState};
 use serde::{Deserialize, Serialize};
 use utils::{ConditionId, Name};
-
-use crate::state::State;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ConditionBranch {
@@ -30,7 +28,7 @@ impl Condition {
         &self.id
     }
 
-    pub fn route(&self, state: &State) -> ConditionBranch {
+    pub fn route(&self, state: &RunState) -> ConditionBranch {
         if self.predicate.evaluate(state) {
             ConditionBranch::True
         } else {
@@ -51,12 +49,12 @@ pub enum Predicate {
 }
 
 impl Predicate {
-    pub fn evaluate(&self, state: &State) -> bool {
+    pub fn evaluate(&self, state: &RunState) -> bool {
         match self {
-            Self::Purpose(predicate) => predicate.evaluate(&state.purpose),
-            Self::Context(predicate) => predicate.evaluate(&state.ctx),
-            Self::Environment(predicate) => predicate.evaluate(&state.env),
-            Self::Resources(predicate) => predicate.evaluate(&state.res),
+            Self::Purpose(predicate) => predicate.evaluate(&state.purpose.text),
+            Self::Context(predicate) => predicate.evaluate(&state.context),
+            Self::Environment(predicate) => predicate.evaluate(&state.environment),
+            Self::Resources(predicate) => predicate.evaluate(&state.resources),
             Self::All(predicates) => predicates.iter().all(|predicate| predicate.evaluate(state)),
             Self::Any(predicates) => predicates.iter().any(|predicate| predicate.evaluate(state)),
             Self::Not(predicate) => !predicate.evaluate(state),
@@ -132,12 +130,12 @@ pub enum EnvironmentPredicate {
 }
 
 impl EnvironmentPredicate {
-    fn evaluate(&self, env: &Environment) -> bool {
+    fn evaluate(&self, environment: &Environment) -> bool {
         match self {
-            Self::VarExists(key) => env.vars.contains_key(key),
-            Self::VarEquals(key, value) => env.vars.get(key) == Some(value),
-            Self::CwdContains(value) => env.cwd.to_string_lossy().contains(value),
-            Self::PlatformIs(value) => env.platform == *value,
+            Self::VarExists(key) => environment.vars.contains_key(key),
+            Self::VarEquals(key, value) => environment.vars.get(key) == Some(value),
+            Self::CwdContains(value) => environment.cwd.to_string_lossy().contains(value),
+            Self::PlatformIs(value) => environment.platform == *value,
         }
     }
 }
@@ -156,7 +154,7 @@ impl ResourcesPredicate {
         match self {
             Self::HasModel(name) => resources.models.contains_key(name),
             Self::ActiveModelIs(name) => resources.active_model == *name,
-            Self::HasTool(name) => resources.tools.contains_key(name),
+            Self::HasTool(name) => resources.tool_definitions.contains_key(name),
             Self::ToolEnabled(name) => resources.active_tools.contains(name),
             Self::HasPrompt(name) => resources.prompts.contains_key(name),
         }

@@ -11,9 +11,10 @@ on:
     types: [created]
   workflow_dispatch:
 
-# Each issue / PR gets its own lane; superseded runs are cancelled so a rapid
-# series of PR pushes only triggers one review at the end. Schedule and manual
-# triggers fall back to run_id so they never cancel each other.
+# Each issue / PR gets its own lane. A new push or comment on the same PR
+# cancels the in-progress run so the review always runs against the latest
+# code. Schedule and manual triggers fall back to run_id so they never cancel
+# each other.
 concurrency:
   group: maintainer-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
@@ -43,7 +44,7 @@ jobs:
         github.actor != 'github-actions[bot]'
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       KIMI_CODING_API_KEY: ${{ secrets.KIMI_CODING_API_KEY }}
@@ -87,6 +88,17 @@ jobs:
             echo "rendered=$RENDERED" >> "$GITHUB_OUTPUT"
             echo "Rendered: $RENDERED"
           fi
+
+      - name: Check out PR head for in-context review reads
+        # pr_review's diff_review / intent_check read PR files via the fs tool, so
+        # the working tree must hold the PR's code — not the base we rendered from.
+        # Done AFTER rendering (templates + dispatch.toml come from base) and only
+        # for pull_request events. Files are only read, never built or executed,
+        # so PR code on disk is not run. The rendered .rcm lives in the gitignored
+        # .rcm-cache/ and survives the branch switch. Internal/branch PRs only —
+        # forks can't run this pipeline today (no secrets on fork pull_request).
+        if: ${{ steps.dispatch.outputs.rendered != '' && github.event_name == 'pull_request' }}
+        run: gh pr checkout ${{ github.event.pull_request.number }}
 
       - name: Run rendered pipeline
         if: steps.dispatch.outputs.rendered != ''

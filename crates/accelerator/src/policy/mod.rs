@@ -13,9 +13,8 @@ pub(crate) enum Step {
     Ready,
 }
 
-/// Register all built-in policies in the catalog.
 pub fn register(catalog: &mut Catalog) {
     catalog
-        .policies
-        .insert("captain".into(), || Box::new(Captain::new()));
+        .register_policy("captain", || Box::new(Captain::new()))
+        .expect("built-in policy names must be unique");
 }
