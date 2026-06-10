@@ -75,7 +75,7 @@ If no reference survey is available, evaluate the generated survey independently
 
 ## Score Calculation
 
-Content Quality = (A1 + A2) 脳 0.15 + (B1 + B2) 脳 0.25 + (C1 + C2) 脳 0.10
+Content Quality = (A1 + A2) × 0.15 + (B1 + B2) × 0.25 + (C1 + C2) × 0.10
 Weights sum to 100%: A(30%) + B(50%) + C(20%)
 
 ## Output Format
