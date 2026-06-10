@@ -176,7 +176,7 @@ async fn execute_read(args: Value, env: &Environment) -> Result<ToolResult, Stri
 }
 
 /// Simple percent-encode for query parameter values.
-fn url_encode(input: &str) -> String {
+pub(crate) fn url_encode(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     for byte in input.bytes() {
         match byte {
@@ -192,7 +192,7 @@ fn url_encode(input: &str) -> String {
 }
 
 /// Map entity_type singular to its REST plural form.
-fn pluralize(entity_type: &str) -> &str {
+pub(crate) fn pluralize(entity_type: &str) -> &str {
     match entity_type {
         "research" => "research",
         "ideas" | "idea" => "ideas",
@@ -278,5 +278,96 @@ fn format_response(entity_type: &str, data: &Value) -> String {
             serde_json::to_string_pretty(data)
                 .unwrap_or_else(|_| "Invalid response".to_string())
         }
+    }
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pluralize_idea_singular() {
+        assert_eq!(pluralize("idea"), "ideas");
+    }
+
+    #[test]
+    fn pluralize_ideas_already_plural() {
+        assert_eq!(pluralize("ideas"), "ideas");
+    }
+
+    #[test]
+    fn pluralize_claim_singular() {
+        assert_eq!(pluralize("claim"), "claims");
+    }
+
+    #[test]
+    fn pluralize_claims_already_plural() {
+        assert_eq!(pluralize("claims"), "claims");
+    }
+
+    #[test]
+    fn pluralize_experiment_singular() {
+        assert_eq!(pluralize("experiment"), "experiments");
+    }
+
+    #[test]
+    fn pluralize_experiments_already_plural() {
+        assert_eq!(pluralize("experiments"), "experiments");
+    }
+
+    #[test]
+    fn pluralize_research() {
+        assert_eq!(pluralize("research"), "research");
+    }
+
+    #[test]
+    fn pluralize_lit_papers_to_literature() {
+        assert_eq!(pluralize("lit_papers"), "literature");
+    }
+
+    #[test]
+    fn pluralize_lit_search_to_literature() {
+        assert_eq!(pluralize("lit_search"), "literature");
+    }
+
+    #[test]
+    fn pluralize_unknown_entity_is_identity() {
+        assert_eq!(pluralize("paper_spines"), "paper_spines");
+        assert_eq!(pluralize("positionings"), "positionings");
+        assert_eq!(pluralize("unknown_entity"), "unknown_entity");
+    }
+
+    // ── url_encode ──
+
+    #[test]
+    fn url_encode_preserves_unreserved_chars() {
+        let input = "hello_world-123.~";
+        assert_eq!(url_encode(input), "hello_world-123.~");
+    }
+
+    #[test]
+    fn url_encode_encodes_space() {
+        assert_eq!(url_encode("hello world"), "hello%20world");
+    }
+
+    #[test]
+    fn url_encode_encodes_special_chars() {
+        let input = "test?q=a&b=c";
+        let encoded = url_encode(input);
+        assert!(encoded.contains("%3F")); // ?
+        assert!(encoded.contains("%26")); // &
+        assert!(encoded.contains("%3D")); // =
+    }
+
+    #[test]
+    fn url_encode_empty_string() {
+        assert_eq!(url_encode(""), "");
+    }
+
+    #[test]
+    fn url_encode_alphanumeric_only() {
+        assert_eq!(url_encode("ABCDEF123"), "ABCDEF123");
     }
 }

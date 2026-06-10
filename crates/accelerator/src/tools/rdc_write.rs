@@ -84,7 +84,7 @@ fn rdc_config(env: &Environment) -> (String, String) {
 }
 
 /// Build the REST endpoint for a given entity_type, action, and optional entity_id.
-fn build_endpoint(
+pub(crate) fn build_endpoint(
     entity_type: &str,
     action: &str,
     entity_id: Option<&str>,
@@ -140,7 +140,7 @@ fn build_endpoint(
 }
 
 /// Map entity_type singular to its REST plural form.
-fn pluralize(entity_type: &str) -> &str {
+pub(crate) fn pluralize(entity_type: &str) -> &str {
     match entity_type {
         "research" => "research",
         "ideas" | "idea" => "ideas",
@@ -248,4 +248,170 @@ async fn execute_write(args: Value, env: &Environment) -> Result<ToolResult, Str
         content: success_msg,
         title: Some(format!("RDC {action} {entity_type}")),
     })
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── pluralize ──
+
+    #[test]
+    fn pluralize_idea_singular() {
+        assert_eq!(pluralize("idea"), "ideas");
+    }
+
+    #[test]
+    fn pluralize_claim_singular() {
+        assert_eq!(pluralize("claim"), "claims");
+    }
+
+    #[test]
+    fn pluralize_paper_singular() {
+        assert_eq!(pluralize("paper"), "papers");
+    }
+
+    #[test]
+    fn pluralize_paper_spine_kebab() {
+        assert_eq!(pluralize("paper_spine"), "paper-spines");
+    }
+
+    #[test]
+    fn pluralize_tech_report_kebab() {
+        assert_eq!(pluralize("tech_report"), "tech-reports");
+    }
+
+    #[test]
+    fn pluralize_positioning_singular() {
+        assert_eq!(pluralize("positioning"), "positionings");
+    }
+
+    #[test]
+    fn pluralize_lit_papers_to_literature() {
+        assert_eq!(pluralize("lit_papers"), "literature");
+    }
+
+    #[test]
+    fn pluralize_research_invariant() {
+        assert_eq!(pluralize("research"), "research");
+    }
+
+    // ── build_endpoint: create ──
+
+    #[test]
+    fn create_idea_endpoint() {
+        let result = build_endpoint("ideas", "create", None, "res_1");
+        assert!(result.is_ok());
+        let (endpoint, method) = result.unwrap();
+        assert_eq!(endpoint, "/api/v1/research/res_1/ideas");
+        assert_eq!(method, "POST");
+    }
+
+    #[test]
+    fn create_positioning_endpoint() {
+        let result = build_endpoint("positionings", "create", None, "res_1");
+        let (endpoint, method) = result.unwrap();
+        assert_eq!(endpoint, "/api/v1/research/res_1/positionings");
+        assert_eq!(method, "POST");
+    }
+
+    #[test]
+    fn create_claim_endpoint() {
+        let result = build_endpoint("claims", "create", None, "res_1");
+        let (endpoint, method) = result.unwrap();
+        assert_eq!(endpoint, "/api/v1/research/res_1/claims");
+        assert_eq!(method, "POST");
+    }
+
+    // ── build_endpoint: update ──
+
+    #[test]
+    fn update_idea_endpoint() {
+        let result = build_endpoint("ideas", "update", Some("idea_001"), "res_1");
+        let (endpoint, method) = result.unwrap();
+        assert_eq!(endpoint, "/api/v1/research/res_1/ideas/idea_001");
+        assert_eq!(method, "PATCH");
+    }
+
+    #[test]
+    fn update_without_entity_id_is_error() {
+        let result = build_endpoint("ideas", "update", None, "res_1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("'update' action requires 'entity_id'"));
+    }
+
+    // ── build_endpoint: select ──
+
+    #[test]
+    fn select_idea_endpoint() {
+        let result = build_endpoint("ideas", "select", Some("idea_001"), "res_1");
+        let (endpoint, method) = result.unwrap();
+        assert_eq!(endpoint, "/api/v1/research/res_1/ideas/idea_001/select");
+        assert_eq!(method, "POST");
+    }
+
+    #[test]
+    fn select_without_entity_id_is_error() {
+        let result = build_endpoint("ideas", "select", None, "res_1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("'select' action requires 'entity_id'"));
+    }
+
+    #[test]
+    fn select_on_non_idea_is_error() {
+        let result = build_endpoint("claims", "select", Some("c1"), "res_1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("only valid for entity_type='ideas'"));
+    }
+
+    // ── build_endpoint: finalize ──
+
+    #[test]
+    fn finalize_claim_endpoint() {
+        let result = build_endpoint("claims", "finalize", Some("claim_001"), "res_1");
+        let (endpoint, method) = result.unwrap();
+        assert_eq!(endpoint, "/api/v1/research/res_1/claims/claim_001/finalize");
+        assert_eq!(method, "POST");
+    }
+
+    #[test]
+    fn finalize_without_entity_id_is_error() {
+        let result = build_endpoint("claims", "finalize", None, "res_1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("'finalize' action requires 'entity_id'"));
+    }
+
+    #[test]
+    fn finalize_on_non_claim_is_error() {
+        let result = build_endpoint("ideas", "finalize", Some("i1"), "res_1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("only valid for entity_type='claims'"));
+    }
+
+    // ── build_endpoint: unknown action ──
+
+    #[test]
+    fn unknown_action_is_error() {
+        let result = build_endpoint("ideas", "delete", Some("i1"), "res_1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown action"));
+    }
+
+    // ── build_endpoint: kebab-case plurals ──
+
+    #[test]
+    fn create_paper_spine_uses_kebab_path() {
+        let result = build_endpoint("paper_spines", "create", None, "res_1");
+        let (endpoint, _) = result.unwrap();
+        assert_eq!(endpoint, "/api/v1/research/res_1/paper-spines");
+    }
+
+    #[test]
+    fn create_tech_report_uses_kebab_path() {
+        let result = build_endpoint("tech_reports", "create", None, "res_1");
+        let (endpoint, _) = result.unwrap();
+        assert_eq!(endpoint, "/api/v1/research/res_1/tech-reports");
+    }
 }
