@@ -1,6 +1,6 @@
-﻿﻿## Instruction
+﻿## Instruction
 
-You are in the survey's run directory. Use `fs->read` to read `07_survey.md` first, then evaluate the survey content according to the criteria below.
+You will be provided with a generated survey below. Evaluate its content according to the criteria below.
 
 ---
 
