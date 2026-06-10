@@ -85,8 +85,8 @@ You are an expert evaluator conducting a **DeepScholar-Bench** assessment follow
 Knowledge Synthesis = (KS1 + KS2) / 2
 Retrieval Quality = (RQ1 + RQ2 + RQ3) / 3
 Verifiability = (V1 + V2) / 2
-Overall Score (Geometric Mean) = exp((ln(KS脳0.4 + RQ脳0.3 + V脳0.3)))
-Overall = Knowledge Synthesis 脳 0.4 + Retrieval Quality 脳 0.3 + Verifiability 脳 0.3
+Overall Score (Geometric Mean) = exp((ln(KS × 0.4 + RQ × 0.3 + V × 0.3)))
+Overall = Knowledge Synthesis × 0.4 + Retrieval Quality × 0.3 + Verifiability × 0.3
 
 ## Output Format
 

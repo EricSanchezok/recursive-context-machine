@@ -68,7 +68,7 @@ You are an expert evaluator conducting a **DeepSurvey-Bench** assessment followi
 
 - Surface Quality Total = (SQ1 + SQ2 + SQ3) / 3
 - Academic Value Total = (AV1 + AV2 + AV3) / 3
-- Overall Score = Surface Quality 脳 0.4 + Academic Value 脳 0.6
+- Overall Score = Surface Quality × 0.4 + Academic Value × 0.6
 
 Academic value receives higher weight because DeepSurvey-Bench's core contribution is measuring depth beyond surface quality.
 
