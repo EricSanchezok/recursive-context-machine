@@ -17,7 +17,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_load.txt" }
-        tools = ["fs"]
+        tools = ["rdc_read", "fs"]
     }
 
     // ── Closest-work search: two parallel lenses ─────────────────────────────
@@ -59,7 +59,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_position.txt" }
-        tools = ["fs"]
+        tools = ["rdc_write", "fs"]
     }
 
     // ── Review: critic (overclaim) + scholar (novelty) in parallel ───────────
@@ -99,7 +99,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_grounded.txt" }
-        tools = ["fs"]
+        tools = ["rdc_write", "fs"]
     }
 
     accelerator gate {
@@ -107,7 +107,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_gate.txt" }
-        tools = ["fs"]
+        tools = ["rdc_write", "fs"]
     }
 
     // ── Wiring ───────────────────────────────────────────────────────────────
