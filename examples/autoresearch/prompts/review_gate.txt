@@ -41,3 +41,12 @@ Workflow:
 
 Never upgrade the verdict to "ready" while a blocker stands. The honest synthesised
 verdict, with findings routed to who must fix them, is the gate doing its job.
+
+=== RDC Integration (rdc_write tool) ===
+
+After completing the gate checklist above, write results to RDC:
+
+- Write reviews: rdc_write(entity_type="reviews", action="create", data={entityType:"paper", entityId, verdict, scores, reviewBody, routedFindings})
+- Record verdict with routing: rdc_write(entity_type="gate_records", action="create", data={stage:"review", verdict, checklist, nextAction:"promote|redirect:compose|redirect:experiment", routedFindings, source:"rcm"})
+
+IMPORTANT: Only write entities that this pipeline phase OWNS. Do NOT modify entities from other phases.

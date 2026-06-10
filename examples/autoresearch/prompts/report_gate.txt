@@ -43,3 +43,12 @@ Workflow:
 
 Never write pass for a number you did not trace or a method claim you did not find in
 the code. A truthful insufficient/blocked is the gate doing its job.
+
+=== RDC Integration (rdc_write tool) ===
+
+After completing the gate checklist above, write results to RDC:
+
+- Write tech report: rdc_write(entity_type="tech_reports", action="create", data={content, evidenceIndex, resultCount, alignmentGaps, traceResults})
+- Record verdict: rdc_write(entity_type="gate_records", action="create", data={stage:"compose", verdict, checklist, nextAction, source:"rcm"})
+
+IMPORTANT: Only write entities that this pipeline phase OWNS. Do NOT modify entities from other phases.
