@@ -1,9 +1,43 @@
 # RCM — Composable AI Pipelines
 
-RCM (Recursive Context Machine) is a tool for building composable AI pipelines using `.rcm` files. Each `.rcm` file exports an accelerator — either a primitive (single LLM call with tools) or a composite graph (multiple accelerators wired together).
+RCM (Recursive Context Machine) is a tool for building composable AI pipelines
+using `.rcm` files. Each `.rcm` file exports an accelerator — either a
+primitive (single LLM call with tools) or a composite graph (multiple
+accelerators wired together).
+
+## Install
+
+### macOS / Linux
+
+```bash
+# Homebrew
+brew tap EricSanchezok/rcm-dist
+brew install rcm
+
+# or one-line install
+curl -fsSL https://raw.githubusercontent.com/EricSanchezok/rcm-dist/main/install.sh | sh
+```
+
+### Windows
+
+```powershell
+irm https://raw.githubusercontent.com/EricSanchezok/rcm-dist/main/install.ps1 | iex
+```
+
+### Manual download
+
+Pre-built binaries for all platforms are available on the
+[rcm-dist releases page](https://github.com/EricSanchezok/rcm-dist/releases/latest).
+Download the archive for your platform, extract it, and place `accelerate` on
+your `PATH`.
+
+Verify your installation:
+
+```bash
+accelerate --version
+```
 
 ---
-
 ## Examples
 
 ```bash
