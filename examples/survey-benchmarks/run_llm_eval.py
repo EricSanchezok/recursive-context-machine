@@ -9,8 +9,34 @@ import time
 # Ensure we can import evaluators
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Set the API key from user
-os.environ["CROSS_JUDGE_API_KEY"] = "sk-73f1b9dcf4d6ca55e987cddcac4ce1a313b7269e37d6e3658b7ed6c28f9e8de3"
+# API key from environment (set EVA_API_KEY env var or create .env file)
+# Supported env vars (priority order): EVA_API_KEY > OPENAI_API_KEY > CROSS_JUDGE_API_KEY > DEEPSEEK_API_KEY
+_api_key = None
+for _var in ["EVA_API_KEY", "OPENAI_API_KEY", "CROSS_JUDGE_API_KEY", "DEEPSEEK_API_KEY"]:
+    _val = os.environ.get(_var)
+    if _val:
+        _api_key = _val
+        break
+
+if not _api_key:
+    _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(_env_path):
+        with open(_env_path, "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line and not _line.startswith("#") and "=" in _line:
+                    _k, _v = _line.split("=", 1)
+                    _k = _k.strip()
+                    _v = _v.strip()
+                    if _k in ["EVA_API_KEY", "OPENAI_API_KEY", "CROSS_JUDGE_API_KEY", "DEEPSEEK_API_KEY"]:
+                        _api_key = _v
+                        break
+
+if not _api_key:
+    print("ERROR: No API key found. Set EVA_API_KEY env var or create .env file.")
+    sys.exit(1)
+
+os.environ["CROSS_JUDGE_API_KEY"] = _api_key
 
 from evaluators.llm_judge import run_benchmark_evaluation, extract_scores
 
