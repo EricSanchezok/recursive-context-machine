@@ -14,6 +14,8 @@ param(
 
     [string]$Endpoint = "",
 
+    [string]$TestSet = "",             # Path to test set JSON (enables benchmark mode)
+
     [switch]$SkipQuiz,
     [switch]$SkipComparative,
     [switch]$SkipVerifiability,
@@ -82,6 +84,55 @@ if (Test-Path $envFile) {
     }
 }
 
+# ── Load test set (if provided) ──
+$TestSetQuizFile = ""
+$TestSetReference = ""
+$TestSetMatchedTopic = $Topic
+
+if ($TestSet -and (Test-Path $TestSet)) {
+    Write-Host "  Loading test set: $TestSet" -ForegroundColor DarkGray
+    $testSetData = Get-Content $TestSet -Raw -Encoding utf8 | ConvertFrom-Json
+    $matched = $null
+    foreach ($t in $testSetData.topics) {
+        if ($Topic -and $t.topic -like "*$Topic*") {
+            $matched = $t
+            break
+        }
+    }
+    if (-not $matched -and -not $Topic) {
+        $matched = $testSetData.topics[0]
+        $TestSetMatchedTopic = $matched.topic
+        Write-Host "  No topic specified, using first: $($matched.topic)" -ForegroundColor DarkGray
+    } elseif ($matched) {
+        $TestSetMatchedTopic = $matched.topic
+        Write-Host "  Matched topic: $($matched.topic)" -ForegroundColor Green
+    }
+
+    if ($matched) {
+        # Save quiz questions to temp file
+        $TestSetQuizFile = Join-Path $OutputDir "_testset_quiz_$($matched.id).json"
+        $matched.quiz | ConvertTo-Json -Depth 5 | Out-File $TestSetQuizFile -Encoding utf8
+        Write-Host "  Quiz questions: $((@($matched.quiz)).Count) predefined" -ForegroundColor Green
+
+        # Store reference excerpt
+        if ($matched.reference_excerpt) {
+            $TestSetReference = $matched.reference_excerpt
+            $refFile = Join-Path $OutputDir "_testset_reference_$($matched.id).md"
+            "# Reference Survey: $($matched.topic)`n`n$($matched.reference_excerpt)" | Out-File $refFile -Encoding utf8
+            Write-Host "  Reference excerpt: available" -ForegroundColor Green
+        }
+    }
+} elseif ($TestSet) {
+    Write-Host "  Warning: Test set file not found: $TestSet" -ForegroundColor DarkYellow
+}
+
+# Override Topic if test set matched
+if ($TestSetMatchedTopic) { $Topic = $TestSetMatchedTopic }
+# Override QuizFile if test set provided one
+if ($TestSetQuizFile -and -not $QuizFile) {
+    $QuizFile = $TestSetQuizFile
+}
+
 # ── Validate ──
 if (-not (Test-Path $SurveyPath)) { Write-Error "Survey not found: $SurveyPath"; exit 1 }
 
@@ -101,6 +152,8 @@ Write-Host "Output: $OutputDir"
 Write-Host "Model: $Model"
 Write-Host "Endpoint: $($apiUrl -replace '/v1/chat/completions', '...')"
 Write-Host "ApiKey: $($ApiKey.Substring(0, [Math]::Min(8, $ApiKey.Length)) + '...')"
+Write-Host "TestSet: $(if ($TestSet -and (Test-Path $TestSet)) { Split-Path $TestSet -Leaf } else { '(none)' })"
+Write-Host "Quiz: $(if ($QuizFile) { Split-Path $QuizFile -Leaf } else { 'dynamic (exploratory mode)' })"
 Write-Host ""
 
 # ── Helper function: call LLM API ──
@@ -251,7 +304,25 @@ if (-not $SkipQuiz -and $Topic) {
     $outputDirPy = (Join-Path $OutputDir "04_quiz_report.md") -replace '\\', '/'
     $benchDirPy = $benchDir -replace '\\', '/'
 
-    & python -c @"
+    if ($QuizFile) {
+        # Benchmark mode: use predefined quiz questions
+        $quizFilePy = $QuizFile -replace '\\', '/'
+        Write-Host "  Using predefined quiz: $(Split-Path $QuizFile -Leaf)" -ForegroundColor Cyan
+        & python -c @"
+import sys
+sys.path.insert(0, '$benchDirPy')
+from evaluators.quiz_evaluator import QuizEvaluator
+import json
+survey = open('$surveyPathPy', encoding='utf-8').read()
+quiz = json.load(open('$quizFilePy', encoding='utf-8'))
+e = QuizEvaluator()
+report = e.generate_report(survey, '$Topic', predefined_quiz=quiz)
+open('$outputDirPy', 'w', encoding='utf-8').write(report)
+print('Quiz evaluation complete (benchmark mode)')
+"@ 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor Green }
+    } else {
+        # Exploratory mode: dynamic quiz generation
+        & python -c @"
 import sys
 sys.path.insert(0, '$benchDirPy')
 from evaluators.quiz_evaluator import QuizEvaluator
@@ -259,8 +330,9 @@ survey = open('$surveyPathPy', encoding='utf-8').read()
 e = QuizEvaluator()
 report = e.generate_report(survey, '$Topic')
 open('$outputDirPy', 'w', encoding='utf-8').write(report)
-print('Quiz evaluation complete')
+print('Quiz evaluation complete (exploratory mode)')
 "@ 2>&1 | ForEach-Object { Write-Host "  $_" -ForegroundColor Green }
+    }
 }
 else {
     if (-not $Topic) { Write-Host "  Skipped (no --Topic)" -ForegroundColor DarkGray }
@@ -284,8 +356,36 @@ if (-not $SkipComparative) {
     $surveyPathPy = $SurveyPath -replace '\\', '/'
     $compRefTopic = $refTopic
     $benchDirPy = $benchDir -replace '\\', '/'
+    $compOk = $false
 
-    try {
+    # If test set reference is available, use it directly
+    if ($TestSetReference) {
+        $refFile = Get-ChildItem $OutputDir -Filter "_testset_reference_*.md" | Select-Object -First 1
+        if ($refFile) {
+            Write-Host "  Using test set reference: $($refFile.Name)" -ForegroundColor Green
+            try {
+                & python -c @"
+import sys; sys.path.insert(0, '$benchDirPy'); sys.path.insert(0, '$benchDirPy/evaluators')
+from evaluators.comparative_evaluator import ComparativeEvaluator
+from loaders.scireviewgen_loader import ReferenceSurvey
+ref_text = open('$($refFile.FullName -replace "'", "''")', encoding='utf-8').read()
+ref = ReferenceSurvey('$compRefTopic', '', {'reference': ref_text}, [])
+e = ComparativeEvaluator('$surveyPathPy', reference_survey=ref)
+result = e.compare_key_points()
+with open('$compOut', 'w', encoding='utf-8') as f:
+    f.write('# Comparative Evaluation (Test Set Reference)\n\n')
+    f.write(f'**Reference:** $($compRefTopic -replace "'", "''")\n\n')
+    f.write(json.dumps(result, indent=2))
+print('Comparative complete')
+"@ 2>&1 | Out-Null
+                if (Test-Path $compOut) { Write-Host "  Done (test set)" -ForegroundColor Green; $compOk = $true }
+            } catch { Write-Host "  Error: $_" -ForegroundColor Red }
+        }
+    }
+
+    # Fallback to SciReviewGen dataset
+    if (-not $compOk) {
+        try {
         & python -c @"
 import sys; sys.path.insert(0, '$benchDirPy'); sys.path.insert(0, '$benchDirPy/evaluators')
 sys.argv = ['comparative_evaluator.py', '--generated', '$surveyPathPy', '--topic', '$compRefTopic', '--output', '$compOut']
