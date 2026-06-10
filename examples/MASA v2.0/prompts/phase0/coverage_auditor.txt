@@ -30,16 +30,29 @@ Read `02_candidate_pool.md`. Collect the set of arXiv IDs already in the pool.
 
 Based on the survey topic and your knowledge of the field:
 
-1. List 8-15 canonical or highly-influential papers that should be in any comprehensive survey on this topic.
-2. For each, check if its arXiv ID is already in the candidate pool.
-3. For missing papers, search via `arxiv_search` using the provided keywords or title.
-4. If found, add to the candidate pool. If not found, log as "unable to locate".
+1. List **20-30 canonical or highly-influential papers** that should be in any comprehensive survey on this topic, organized by sub-area relevance:
+   - **Essential (must have)**: 8-12 papers that are foundational to the topic
+   - **Important (should have)**: 8-10 papers that are highly relevant
+   - **Contextual (nice to have)**: 4-8 papers from adjacent areas that provide methodological context
+
+2. **Breadth check**: Verify coverage across these sub-areas (each should have at least 2-3 papers):
+   - Core methodology / architecture papers
+   - Evaluation benchmarks and datasets
+   - Historical or foundational work (pre-LLM era where applicable)
+   - Adjacent methodological traditions (systematic reviews, scientometrics, etc.)
+   - Recent frontier work (2024-2025 timeframe)
+
+3. For each identified paper, check if its arXiv ID is already in the candidate pool.
+
+4. For missing papers, search via `arxiv_search` using the provided keywords or title.
+
+5. If found, add to the candidate pool. If not found, log as "unable to locate".
 
 ### Step 4: Add missing papers
 
 For each missing paper found via search, append to `02_candidate_pool.md`:
 ```
-- arXiv:XXXX.XXXXX — Title — Authors — Year — Abstract snippet — Source: coverage_auditor [canonical]
+- arXiv:XXXX.XXXXX — Title — Authors — Year — Abstract snippet — Source: coverage_auditor [canonical] [priority: essential/important/contextual]
 ```
 
 ### Step 5: Write audit log
@@ -54,12 +67,21 @@ Append to `memory/agent_coverage_auditor.md`:
 - Newly added: [N]
 - Still missing (search returned no results): [N]
 
+### Breadth Check Results
+| Sub-area | Papers in pool | Coverage |
+|----------|:--------------:|:--------:|
+| Core methodology | [N] | adequate / needs improvement |
+| Evaluation / benchmarks | [N] | adequate / needs improvement |
+| Historical foundations | [N] | adequate / needs improvement |
+| Adjacent traditions | [N] | adequate / needs improvement |
+| Recent frontier | [N] | adequate / needs improvement |
+
 ### Additions
-- [arXiv:XXXX.XXXXX] Title — added via arxiv_search
+- [arXiv:XXXX.XXXXX] Title — [essential/important/contextual] — added via arxiv_search
 ...
 
 ### Missing (unable to find)
-- [arXiv or title] — no results found
+- [arXiv or title] — priority — no results found
 ```
 
 ### Step 6: Final handoff
