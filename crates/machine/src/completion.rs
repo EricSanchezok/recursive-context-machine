@@ -34,7 +34,8 @@ use rig::client::CompletionClient;
 use rig::completion::message::Reasoning;
 use rig::completion::message::UserContent;
 use rig::completion::{
-    AssistantContent, CompletionError, CompletionModel, CompletionRequest, Message, ToolDefinition,
+    AssistantContent, CompletionError, CompletionModel, CompletionRequest, Message,
+    ToolDefinition as RigToolDefinition,
 };
 use rig::http_client;
 use tokio::time::{Duration, timeout};
@@ -43,11 +44,11 @@ use crate::context::Context;
 use crate::fragment::{Content, Fragment, Role};
 use crate::model::{Model, Protocol};
 use crate::resources::Resources;
-use crate::usage::Usage;
+use crate::usage::TokenUsage;
 use tracing::{debug, warn};
 
 /// Call the active LLM and return the response fragments or an error.
-pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, Usage) {
+pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, TokenUsage) {
     let Some(model) = resources.active_model() else {
         warn!("completion requested but no active model is set");
         let hitch = Fragment::hitch(
@@ -56,17 +57,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, U
             Role::System,
             None::<&str>,
         );
-        return (
-            vec![hitch],
-            Usage {
-                input_tokens: 0,
-                output_tokens: 0,
-                total_tokens: 0,
-                cached_input_tokens: 0,
-                cache_creation_input_tokens: 0,
-                fragment_ids: Vec::new(),
-            },
-        );
+        return (vec![hitch], TokenUsage::empty());
     };
 
     let messages: Vec<Message> = ctx
@@ -75,13 +66,13 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, U
         .filter_map(|frag| encode(frag, model.thinking))
         .collect();
 
-    let tools: Vec<ToolDefinition> = resources
-        .active_tools()
+    let tools: Vec<RigToolDefinition> = resources
+        .active_tool_definitions()
         .iter()
-        .map(|t| ToolDefinition {
-            name: t.name().to_string(),
-            description: t.description().to_string(),
-            parameters: t.parameters(),
+        .map(|definition| RigToolDefinition {
+            name: definition.name.clone(),
+            description: definition.description.clone(),
+            parameters: definition.parameters.clone(),
         })
         .collect();
 
@@ -149,17 +140,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, U
         }
         Err(hitch) => {
             warn!(?hitch, "completion failed");
-            (
-                vec![hitch],
-                Usage {
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    total_tokens: 0,
-                    cached_input_tokens: 0,
-                    cache_creation_input_tokens: 0,
-                    fragment_ids: Vec::new(),
-                },
-            )
+            (vec![hitch], TokenUsage::empty())
         }
     }
 }
@@ -168,8 +149,8 @@ async fn send(
     endpoint: &impl CompletionModel,
     model: &Model,
     messages: &[Message],
-    tools: &[ToolDefinition],
-) -> Result<(OneOrMany<AssistantContent>, Usage), Fragment> {
+    tools: &[RigToolDefinition],
+) -> Result<(OneOrMany<AssistantContent>, TokenUsage), Fragment> {
     let request = build_request(messages, tools, model)?;
 
     match timeout(
@@ -180,13 +161,12 @@ async fn send(
     {
         Ok(Ok(response)) => Ok((
             response.choice,
-            Usage {
+            TokenUsage {
                 input_tokens: response.usage.input_tokens,
                 output_tokens: response.usage.output_tokens,
                 total_tokens: response.usage.total_tokens,
                 cached_input_tokens: response.usage.cached_input_tokens,
                 cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
-                fragment_ids: Vec::new(),
             },
         )),
         Ok(Err(error)) => {
@@ -229,7 +209,7 @@ async fn send(
 #[allow(clippy::result_large_err)]
 pub fn build_request(
     messages: &[Message],
-    tools: &[ToolDefinition],
+    tools: &[RigToolDefinition],
     model: &Model,
 ) -> Result<CompletionRequest, Fragment> {
     let chat_history = OneOrMany::many(messages.iter().cloned()).map_err(|_| {

@@ -103,7 +103,7 @@ pub enum ToolEvent {
 pub enum FragmentEvent {
     Appended(FragmentMeta),
     Taken(FragmentMeta),
-    Inserted(FragmentMeta),
+    Inserted { meta: FragmentMeta, after: u64 },
     Replaced(FragmentMeta),
     Removed { id: u64 },
     Swapped { first: u64, second: u64 },
@@ -115,6 +115,7 @@ pub struct FragmentMeta {
     pub step: u64,
     pub role: String,
     pub kind: String,
+    pub tag: String,
     pub preview: String,
 }
 
@@ -169,7 +170,15 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> tracing_subscriber::layer::Layer<S>
 
         let mut fields = HookFields::default();
         if let Some(scope) = ctx.event_scope(event) {
-            for span in scope.from_root() {
+            // Walk innermost span -> root so the *nearest* component identity
+            // wins. With `merge_missing` (keep-first) a nested component — e.g.
+            // a scout inside the `discovery` composite, or any sub-graph node —
+            // then attributes its completion/tool/fragment events to itself,
+            // not to the enclosing composite. Walking `from_root()` instead lets
+            // the outer composite's fields win and lumps every child's work onto
+            // the parent tape, so children render with 0 cells and parallel
+            // sub-nodes look like one sequential node.
+            for span in scope {
                 if let Some(span_fields) = span.extensions().get::<HookFields>() {
                     fields.merge_missing(span_fields);
                 }
@@ -260,6 +269,7 @@ impl HookFields {
             step: self.u64("step").unwrap_or(0),
             role: self.string("role").unwrap_or_default(),
             kind: self.string("kind").unwrap_or_default(),
+            tag: self.string("tag").unwrap_or_default(),
             preview: self.string("preview").unwrap_or_default(),
         }
     }
@@ -359,7 +369,10 @@ impl HookEvent {
             }),
             "appended" => HookKind::Fragment(FragmentEvent::Appended(fields.fragment_meta())),
             "taken" => HookKind::Fragment(FragmentEvent::Taken(fields.fragment_meta())),
-            "inserted" => HookKind::Fragment(FragmentEvent::Inserted(fields.fragment_meta())),
+            "inserted" => HookKind::Fragment(FragmentEvent::Inserted {
+                meta: fields.fragment_meta(),
+                after: fields.u64("after").unwrap_or(0),
+            }),
             "replaced" => HookKind::Fragment(FragmentEvent::Replaced(fields.fragment_meta())),
             "removed" => HookKind::Fragment(FragmentEvent::Removed {
                 id: fields.u64("id").unwrap_or(0),

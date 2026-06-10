@@ -1,21 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use utils::{Name, ResourcesId};
 
 use crate::model::Model;
-use crate::tool::Tool;
+use crate::tool::ToolDefinition;
 
-/// Resources — the pool of available tools and models with activation state.
-///
-/// The Policy switches models and toggles tools via [`Action`](crate::Action).
-/// The completion reads the active state directly.
-#[derive(Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Resources {
     id: ResourcesId,
     pub name: Name,
-    pub tools: HashMap<String, Arc<dyn Tool>>,
+    pub tool_definitions: HashMap<String, ToolDefinition>,
     pub models: HashMap<String, Model>,
     pub model_order: Vec<String>,
     pub active_model: String,
@@ -42,7 +38,7 @@ impl Resources {
         Self {
             id: ResourcesId::new(),
             name: Name::new(name).expect("resources name must be valid"),
-            tools: HashMap::new(),
+            tool_definitions: HashMap::new(),
             models: HashMap::new(),
             model_order: Vec::new(),
             active_model: String::new(),
@@ -51,30 +47,17 @@ impl Resources {
         }
     }
 
-    /// Register a tool. Overwrites any tool with the same name.
-    pub fn with_tool(mut self, tool: Arc<dyn Tool>) -> Self {
-        let name = tool.name().to_string();
-        self.tools.insert(name, tool);
+    pub fn with_tool_definition(mut self, definition: ToolDefinition) -> Self {
+        self.tool_definitions
+            .insert(definition.name.clone(), definition);
         self
     }
 
-    /// Register a model. Overwrites any model with the same name.
     pub fn with_model(mut self, model: Model) -> Self {
         if !self.models.contains_key(&model.name) {
             self.model_order.push(model.name.clone());
         }
         self.models.insert(model.name.clone(), model);
-        self
-    }
-
-    pub fn replace_tools(mut self, tools: HashMap<String, Arc<dyn Tool>>) -> Self {
-        self.active_tools.retain(|name| tools.contains_key(name));
-        self.tools = tools;
-        self
-    }
-
-    pub fn replace_prompts(mut self, prompts: HashMap<String, String>) -> Self {
-        self.prompts = prompts;
         self
     }
 
@@ -86,10 +69,9 @@ impl Resources {
         self.active_tools.clear();
     }
 
-    /// Enable a tool. Idempotent.
     pub fn enable(&mut self, name: impl Into<String>) -> Result<(), ToolNotRegistered> {
         let name = name.into();
-        if self.tools.contains_key(&name) {
+        if self.tool_definitions.contains_key(&name) {
             self.active_tools.insert(name);
             Ok(())
         } else {
@@ -97,12 +79,10 @@ impl Resources {
         }
     }
 
-    /// Disable a tool.
     pub fn disable(&mut self, name: impl Into<String>) {
         self.active_tools.remove(&name.into());
     }
 
-    /// Switch the active model.
     pub fn use_model(&mut self, name: impl Into<String>) -> Result<(), ModelNotRegistered> {
         let name = name.into();
         if self.models.contains_key(&name) {
@@ -113,37 +93,19 @@ impl Resources {
         }
     }
 
-    /// The currently active model, if any.
     pub fn active_model(&self) -> Option<&Model> {
         self.models.get(&self.active_model)
     }
 
-    /// All active tools.
-    pub fn active_tools(&self) -> Vec<&dyn Tool> {
+    pub fn active_tool_definitions(&self) -> Vec<&ToolDefinition> {
         self.active_tools
             .iter()
-            .filter_map(|name| self.tools.get(name))
-            .map(|t| t.as_ref())
+            .filter_map(|name| self.tool_definitions.get(name))
             .collect()
     }
-}
 
-/// Result of looking up a tool by name.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LookupResult {
-    /// Tool is registered and active.
-    Active,
-    /// Tool is registered but currently disabled.
-    Inactive,
-    /// Tool is not registered at all.
-    NotFound,
-}
-
-impl Resources {
-    /// Look up a tool by name, returning whether it's active, inactive, or
-    /// not found.
     pub fn lookup(&self, name: &str) -> LookupResult {
-        if !self.tools.contains_key(name) {
+        if !self.tool_definitions.contains_key(name) {
             LookupResult::NotFound
         } else if self.active_tools.contains(name) {
             LookupResult::Active
@@ -152,34 +114,35 @@ impl Resources {
         }
     }
 
-    /// Look up an active tool and return a reference.
-    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
-        if !self.active_tools.contains(name) {
-            return None;
-        }
-        self.tools.get(name).map(|t| t.as_ref())
+    pub fn tool_definition(&self, name: &str) -> Option<&ToolDefinition> {
+        self.tool_definitions.get(name)
     }
 }
 
-/// Error returned when switching to a model that has not been registered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LookupResult {
+    Active,
+    Inactive,
+    NotFound,
+}
+
 #[derive(Debug)]
 pub struct ModelNotRegistered(pub String);
 
 impl fmt::Display for ModelNotRegistered {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "model '{}' not registered", self.0)
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "model '{}' not registered", self.0)
     }
 }
 
 impl std::error::Error for ModelNotRegistered {}
 
-/// Error returned when enabling a tool that has not been registered.
 #[derive(Debug)]
 pub struct ToolNotRegistered(pub String);
 
 impl fmt::Display for ToolNotRegistered {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "tool '{}' not registered", self.0)
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "tool '{}' not registered", self.0)
     }
 }
 

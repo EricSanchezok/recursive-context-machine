@@ -1,0 +1,18 @@
+name = "Autoresearch Section Translator"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+    timeout = "300"
+}
+
+accelerator {
+    purpose = "autoresearch section translator"
+    models = ["deepseek-v4-flash"]
+    policy = "captain"
+    prompts = { captain = file "../prompts/section_translator.txt" }
+    tools = ["fs"]
+}

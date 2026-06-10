@@ -1,5 +1,5 @@
-use accelerator::Catalog;
-use machine::{Inbox, Machine};
+use accelerator::{Catalog, ResourceSelection};
+use machine::{ExecutionMode, Machine, MachineFrame, MachineState, Purpose, RunState};
 use tonic::{Request, Response, Status};
 
 use crate::action_space::build_action_space;
@@ -17,9 +17,13 @@ pub struct RcmService {
 
 impl RcmService {
     pub fn new(manager: MachineManager) -> Self {
+        Self::with_catalog(manager, Catalog::new())
+    }
+
+    pub fn with_catalog(manager: MachineManager, catalog: Catalog) -> Self {
         Self {
             manager: std::sync::Arc::new(tokio::sync::Mutex::new(manager)),
-            catalog: Catalog::new(),
+            catalog,
         }
     }
 }
@@ -27,71 +31,61 @@ impl RcmService {
 #[tonic::async_trait]
 impl Rcm for RcmService {
     async fn open(&self, request: Request<OpenRequest>) -> Result<Response<OpenResponse>, Status> {
-        let req = request.into_inner();
+        let request = request.into_inner();
+        let mut catalog = self.catalog.clone();
 
-        let mut resources = if req.tools.is_empty() {
-            self.catalog.default_resources()
+        for spec in &request.model_definitions {
+            catalog
+                .register_model(build_model(spec)?)
+                .map_err(Status::invalid_argument)?;
+        }
+
+        for spec in &request.mcp_definitions {
+            catalog
+                .register_mcp_server(crate::mcp::mcp_config_from_spec(spec)?)
+                .map_err(Status::invalid_argument)?;
+        }
+
+        let environment_name = if request.environment.is_empty() {
+            "local"
         } else {
-            let mut res = machine::Resources::new();
-            for name in &req.tools {
-                let tool =
-                    self.catalog.tools.get(name).ok_or_else(|| {
-                        Status::invalid_argument(format!("unknown tool: {}", name))
-                    })?;
-                res = res.with_tool(tool.clone());
-            }
-            for (name, content) in &self.catalog.prompts {
-                res.prompts.entry(name.clone()).or_insert(content.clone());
-            }
-            res
+            request.environment.as_str()
         };
-
-        for spec in &req.models {
-            let model = build_model(spec)?;
-            resources = resources.with_model(model);
-        }
-
-        for (name, text) in &req.prompts {
-            resources.prompts.insert(name.clone(), text.clone());
-        }
-
-        if !req.mcps.is_empty() {
-            let configs: Vec<_> = req
-                .mcps
-                .iter()
-                .map(crate::mcp::build_mcp_config)
-                .collect::<Result<_, _>>()?;
-            let registry = accelerator::mcp::McpRegistry::start(&configs)
-                .await
-                .map_err(|e| Status::internal(format!("mcp start failed: {}", e)))?;
-            for spec in &req.mcps {
-                if let Some(tools) = registry.tools_for(&spec.label) {
-                    for tool in tools {
-                        resources = resources.with_tool(tool);
-                    }
-                }
-            }
-        }
+        let environment = catalog
+            .environment(environment_name)
+            .map_err(Status::invalid_argument)?;
+        let runtime_resources = catalog
+            .build_runtime_resources(ResourceSelection {
+                models: request.models,
+                tools: request.tools,
+                mcp_servers: request.mcps,
+                prompt_texts: request.prompts,
+            })
+            .await
+            .map_err(Status::invalid_argument)?;
 
         let machine_id = utils::MachineId::new();
-
         let run = Run {
-            purpose: req.purpose,
             machine: Machine::new(machine_id.as_str(), "rcm"),
-            ctx: machine::Context::new(),
-            env: self.catalog.default_environment(),
-            resources,
-            inbox: Inbox::new(),
-            step: 0,
-            done: false,
+            state: MachineState {
+                run: RunState {
+                    purpose: Purpose::new(request.purpose),
+                    context: machine::Context::new(),
+                    environment,
+                    resources: runtime_resources.resources,
+                    telemetry: machine::Telemetry::default(),
+                },
+                frame: MachineFrame::default(),
+            },
+            tool_runtime: runtime_resources.tool_runtime,
         };
 
         let action_space = build_action_space(&run);
         let state = build_state(&run);
 
         {
-            let mut mgr = self.manager.lock().await;
-            mgr.insert(machine_id.clone(), run);
+            let mut manager = self.manager.lock().await;
+            manager.insert(machine_id.clone(), run);
         }
 
         Ok(Response::new(OpenResponse {
@@ -102,34 +96,30 @@ impl Rcm for RcmService {
     }
 
     async fn step(&self, request: Request<StepRequest>) -> Result<Response<StepResponse>, Status> {
-        let req = request.into_inner();
-        let mid = utils::MachineId::from_raw(req.machine_id)
-            .map_err(|e| Status::invalid_argument(e.to_string()))?;
-        let command = req
+        let request = request.into_inner();
+        let machine_id = utils::MachineId::from_raw(request.machine_id)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let command = request
             .command
             .ok_or(Status::invalid_argument("command required"))?;
         let action = decode_command(&command)?;
-        let mut mgr = self.manager.lock().await;
-        let run = mgr
-            .get_mut(&mid)
+        let mut manager = self.manager.lock().await;
+        let run = manager
+            .get_mut(&machine_id)
             .ok_or(Status::not_found("machine_id not found"))?;
 
-        run.step += 1;
-        run.done = run
-            .machine
+        run.machine
             .apply(
                 action,
-                run.step,
-                &mut run.ctx,
-                &mut run.env,
-                &mut run.resources,
-                &mut run.inbox,
+                &mut run.state,
+                ExecutionMode::Live {
+                    tool_runtime: &run.tool_runtime,
+                },
             )
             .await;
 
         let action_space = build_action_space(run);
         let state = build_state(run);
-
         Ok(Response::new(StepResponse {
             state: Some(state),
             action_space: Some(action_space),
@@ -137,10 +127,10 @@ impl Rcm for RcmService {
     }
 
     async fn destroy(&self, request: Request<DestroyRequest>) -> Result<Response<()>, Status> {
-        let req = request.into_inner();
-        let mid = utils::MachineId::from_raw(req.machine_id)
-            .map_err(|e| Status::invalid_argument(e.to_string()))?;
-        self.manager.lock().await.destroy(&mid);
+        let machine_id = utils::MachineId::from_raw(request.into_inner().machine_id)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
+        let mut manager = self.manager.lock().await;
+        manager.destroy(&machine_id);
         Ok(Response::new(()))
     }
 }

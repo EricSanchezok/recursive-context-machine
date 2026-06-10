@@ -2,14 +2,16 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::Arc;
 
-use accelerator::mcp::{McpRegistry, McpServerConfig, McpTransportConfig};
+use accelerator::mcp::{McpServerConfig, McpTransportConfig};
+use accelerator::tools::SpawnTool;
 use accelerator::{
-    Accelerator, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate, Endpoint, EnvFlux,
-    EnvironmentPredicate, FluxMode, Graph, Port, Predicate as AccelPredicate, PurposeFlux,
-    PurposePredicate, ResFlux, ResourcesPredicate, State,
+    Accelerator, BridgeKind, Catalog, Channel, ComponentRef, ContextFlux, ContextPredicate,
+    Endpoint, EnvFlux, EnvironmentPredicate, FluxMode, Graph, Port, Predicate as AccelPredicate,
+    PurposeFlux, PurposePredicate, ResFlux, ResourceSelection, ResourcesPredicate,
 };
-use machine::{Limit, Modalities, Modality, Model, Policy, Protocol};
+use machine::{Limit, Modalities, Modality, Model, Policy, Protocol, Purpose, RunState};
 
 use super::ast::{
     self, AcceleratorBodyDef, AcceleratorSourceDef, EndpointDef, McpTransportDef, McpValueDef,
@@ -19,23 +21,32 @@ use super::ast::{
 pub fn compile_file(
     path: impl AsRef<Path>,
 ) -> Pin<Box<dyn Future<Output = Result<Accelerator, String>> + Send>> {
+    compile_file_with_catalog(path, Catalog::new())
+}
+
+pub fn compile_file_with_catalog(
+    path: impl AsRef<Path>,
+    catalog: Catalog,
+) -> Pin<Box<dyn Future<Output = Result<Accelerator, String>> + Send>> {
     let path = path.as_ref().to_path_buf();
     Box::pin(async move {
-        let mut compiler = Compiler::new(PathBuf::from("."));
+        let mut compiler = Compiler::new(PathBuf::from("."), catalog);
         compiler.compile_path(&path).await
     })
 }
 
 struct Compiler {
     root: PathBuf,
+    base_catalog: Catalog,
     cache: HashMap<PathBuf, Accelerator>,
     active: HashSet<PathBuf>,
 }
 
 impl Compiler {
-    fn new(root: PathBuf) -> Self {
+    fn new(root: PathBuf, catalog: Catalog) -> Self {
         Self {
             root,
+            base_catalog: catalog,
             cache: HashMap::new(),
             active: HashSet::new(),
         }
@@ -77,9 +88,14 @@ impl Compiler {
     }
 
     async fn compile_file_ast(&mut self, file: &RcmFile) -> Result<Accelerator, String> {
-        let catalog = Catalog::new();
-        let models = build_models(&file.models)?;
-        let mut mcp_scope = McpScope::new(&file.mcps, &self.root)?;
+        let mut catalog = self.base_catalog.clone();
+        for model in build_models(&file.models)? {
+            catalog.register_model(model)?;
+        }
+        for mcp_def in &file.mcps {
+            catalog.register_mcp_server(mcp_config_from_def(mcp_def, &self.root)?)?;
+        }
+
         let mut imports = HashMap::new();
         for use_def in &file.uses {
             let accelerator = self.compile_path(Path::new(&use_def.path)).await?;
@@ -90,20 +106,18 @@ impl Compiler {
 
         match &file.body {
             AcceleratorBodyDef::Primitive(primitive) => {
-                let (state, policy) =
-                    build_state(&catalog, &models, &mut mcp_scope, primitive, &self.root).await?;
-                Ok(Accelerator::primitive(state, policy, file.name.as_str()))
+                let (state, policy, tool_runtime) =
+                    build_state(&catalog, primitive, &self.root).await?;
+                Ok(Accelerator::primitive(
+                    state,
+                    policy,
+                    tool_runtime,
+                    file.name.as_str(),
+                ))
             }
             AcceleratorBodyDef::Graph(graph_def) => {
                 let graph = self
-                    .compile_graph(
-                        file.name.as_str(),
-                        graph_def,
-                        &catalog,
-                        &models,
-                        &mut mcp_scope,
-                        &imports,
-                    )
+                    .compile_graph(file.name.as_str(), graph_def, &catalog, &imports)
                     .await?;
                 Ok(Accelerator::composite_named(file.name.as_str(), graph))
             }
@@ -115,8 +129,6 @@ impl Compiler {
         name: &str,
         graph_def: &ast::GraphDef,
         catalog: &Catalog,
-        models: &HashMap<String, Model>,
-        mcp_scope: &mut McpScope,
         imports: &HashMap<String, Accelerator>,
     ) -> Result<Graph, String> {
         let mut graph = Graph::named(name);
@@ -126,14 +138,25 @@ impl Compiler {
         for accelerator_def in &graph_def.accelerators {
             let accelerator = match &accelerator_def.source {
                 AcceleratorSourceDef::Inline(primitive) => {
-                    let (state, policy) =
-                        build_state(catalog, models, mcp_scope, primitive, &self.root).await?;
-                    Accelerator::primitive(state, policy, accelerator_def.id.as_str())
+                    let (state, policy, tool_runtime) =
+                        build_state(catalog, primitive, &self.root).await?;
+                    let mut acc = Accelerator::primitive(
+                        state,
+                        policy,
+                        tool_runtime,
+                        accelerator_def.id.as_str(),
+                    );
+                    inject_spawns(&primitive.spawns, imports, &mut acc).await?;
+                    acc
                 }
-                AcceleratorSourceDef::Import { alias, .. } => imports
-                    .get(alias)
-                    .ok_or_else(|| format!("unknown accelerator import: {}", alias))?
-                    .clone(),
+                AcceleratorSourceDef::Import { alias, overrides } => {
+                    let mut acc = imports
+                        .get(alias)
+                        .ok_or_else(|| format!("unknown accelerator import: {}", alias))?
+                        .clone();
+                    inject_spawns(&overrides.spawns, imports, &mut acc).await?;
+                    acc
+                }
             };
             let component = graph.add_accelerator(accelerator_def.id.as_str(), accelerator);
             insert_symbol(&mut symbols, accelerator_def.id.as_str(), component)?;
@@ -147,8 +170,9 @@ impl Compiler {
                     flux_def.id
                 ));
             }
-            let mode = resolve_flux_mode(flux_def)?;
-            let channel = mode.channel();
+            let mode = flux_mode_from_def(flux_def)?;
+            let input_channel = mode.input_channel();
+            let output_channel = mode.output_channel();
             let component = graph.add_flux(
                 flux_def.name.as_deref().unwrap_or(flux_def.id.as_str()),
                 mode,
@@ -158,7 +182,8 @@ impl Compiler {
             component_kinds.insert(
                 flux_def.id.clone(),
                 ComponentTag::Flux {
-                    channel,
+                    input_channel,
+                    output_channel,
                     arity: flux_def.arity,
                 },
             );
@@ -179,8 +204,8 @@ impl Compiler {
 
         let mut flux_slots = flux_slot_map(graph_def);
         for wire in &graph_def.wires {
-            let from = resolve_port(&wire.from, &symbols, &component_kinds)?;
-            let to = resolve_port(&wire.to, &symbols, &component_kinds)?;
+            let from = port_from_def(&wire.from, &symbols, &component_kinds)?;
+            let to = port_from_def(&wire.to, &symbols, &component_kinds)?;
             validate_wire(&from, &to)?;
             mark_flux_slot(&wire.to, &mut flux_slots)?;
             graph.wire(from, to);
@@ -195,7 +220,11 @@ impl Compiler {
 #[derive(Clone, Copy)]
 enum ComponentTag {
     Accelerator,
-    Flux { channel: Channel, arity: usize },
+    Flux {
+        input_channel: Channel,
+        output_channel: Channel,
+        arity: usize,
+    },
     Condition,
 }
 
@@ -210,46 +239,7 @@ fn insert_symbol(
     Ok(())
 }
 
-struct McpScope {
-    configs: HashMap<String, McpServerConfig>,
-    tools: HashMap<String, Vec<std::sync::Arc<dyn machine::Tool>>>,
-}
-
-impl McpScope {
-    fn new(mcps: &[ast::McpDef], root: &Path) -> Result<Self, String> {
-        let mut configs = HashMap::new();
-        for mcp in mcps {
-            let config = build_mcp_config(mcp, root)?;
-            if configs.insert(mcp.label.clone(), config).is_some() {
-                return Err(format!("duplicate mcp server: {}", mcp.label));
-            }
-        }
-        Ok(Self {
-            configs,
-            tools: HashMap::new(),
-        })
-    }
-
-    async fn ensure_tools(
-        &mut self,
-        label: &str,
-    ) -> Result<Vec<std::sync::Arc<dyn machine::Tool>>, String> {
-        if let Some(tools) = self.tools.get(label) {
-            return Ok(tools.clone());
-        }
-        let config = self
-            .configs
-            .get(label)
-            .ok_or_else(|| format!("unknown mcp server: {}", label))?
-            .clone();
-        let registry = McpRegistry::start(&[config]).await?;
-        let tools = registry.tools_for(label).unwrap_or_default();
-        self.tools.insert(label.to_string(), tools.clone());
-        Ok(tools)
-    }
-}
-
-fn build_mcp_config(def: &ast::McpDef, root: &Path) -> Result<McpServerConfig, String> {
+fn mcp_config_from_def(def: &ast::McpDef, root: &Path) -> Result<McpServerConfig, String> {
     let transport = match &def.transport {
         McpTransportDef::Stdio {
             command,
@@ -259,16 +249,16 @@ fn build_mcp_config(def: &ast::McpDef, root: &Path) -> Result<McpServerConfig, S
         } => McpTransportConfig::Stdio {
             command: command.clone(),
             args: args.clone(),
-            env: resolve_mcp_values(env)?,
+            env: mcp_env_from_def(env)?,
             cwd: cwd.as_ref().map(|path| root.join(path)),
         },
         McpTransportDef::Http { url, headers } => McpTransportConfig::Http {
             url: url.clone(),
-            headers: resolve_mcp_headers(headers)?,
+            headers: mcp_headers_from_def(headers)?,
         },
         McpTransportDef::Sse { url, headers } => McpTransportConfig::Sse {
             url: url.clone(),
-            headers: resolve_mcp_headers(headers)?,
+            headers: mcp_headers_from_def(headers)?,
         },
     };
     Ok(McpServerConfig {
@@ -277,25 +267,25 @@ fn build_mcp_config(def: &ast::McpDef, root: &Path) -> Result<McpServerConfig, S
     })
 }
 
-fn resolve_mcp_values(
+fn mcp_env_from_def(
     values: &HashMap<String, McpValueDef>,
 ) -> Result<HashMap<String, String>, String> {
     values
         .iter()
-        .map(|(name, value)| Ok((name.clone(), resolve_mcp_value(value)?)))
+        .map(|(name, value)| Ok((name.clone(), mcp_value_text(value)?)))
         .collect()
 }
 
-fn resolve_mcp_headers(
+fn mcp_headers_from_def(
     values: &HashMap<String, McpValueDef>,
 ) -> Result<Vec<(String, String)>, String> {
     values
         .iter()
-        .map(|(name, value)| Ok((name.clone(), resolve_mcp_value(value)?)))
+        .map(|(name, value)| Ok((name.clone(), mcp_value_text(value)?)))
         .collect()
 }
 
-fn resolve_mcp_value(value: &McpValueDef) -> Result<String, String> {
+fn mcp_value_text(value: &McpValueDef) -> Result<String, String> {
     match value {
         McpValueDef::Literal(value) => expand_env_placeholders(value),
         McpValueDef::Env(name) => {
@@ -323,8 +313,9 @@ fn expand_env_placeholders(value: &str) -> Result<String, String> {
     Ok(result)
 }
 
-fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String> {
-    let mut models = HashMap::new();
+fn build_models(defs: &[ast::ModelDef]) -> Result<Vec<Model>, String> {
+    let mut model_names = HashSet::new();
+    let mut models = Vec::new();
     for def in defs {
         let protocol = parse_protocol(&def.protocol)?;
         let modalities = build_modalities(&def.modalities_input, &def.modalities_output)?;
@@ -349,7 +340,7 @@ fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String
         } else {
             Some(def.headers.clone())
         };
-        let model = Model {
+        let mut model = Model {
             name: def.id.clone(),
             protocol,
             endpoint: def.endpoint.clone(),
@@ -365,9 +356,13 @@ fn build_models(defs: &[ast::ModelDef]) -> Result<HashMap<String, Model>, String
             thinking: def.thinking,
             ..Default::default()
         };
-        if models.insert(def.id.clone(), model).is_some() {
+        if let Some(timeout) = def.timeout {
+            model.timeout = timeout;
+        }
+        if !model_names.insert(def.id.clone()) {
             return Err(format!("duplicate model: {}", def.id));
         }
+        models.push(model);
     }
     Ok(models)
 }
@@ -404,76 +399,43 @@ fn parse_modalities(names: &[String]) -> Result<Vec<Modality>, String> {
 
 async fn build_state(
     catalog: &Catalog,
-    models: &HashMap<String, Model>,
-    mcp_scope: &mut McpScope,
     def: &PrimitiveDef,
     root: &Path,
-) -> Result<(State, Box<dyn Policy>), String> {
+) -> Result<(RunState, Box<dyn Policy>, machine::ToolRuntime), String> {
     if def.models.is_empty() {
         return Err("accelerator requires at least one model".to_string());
     }
 
     let policy_name = def.policy.as_deref().unwrap_or("captain");
-    let policy = catalog
-        .policies
-        .get(policy_name)
-        .ok_or_else(|| format!("unknown policy: {}", policy_name))?;
-    let mut resources = catalog.default_resources();
-
-    if let Some(tool_names) = &def.tools {
-        let tools = select_tools(&resources, tool_names)?;
-        resources = resources.replace_tools(tools);
-    }
-    if let Some(mcp_labels) = &def.mcps {
-        for label in mcp_labels {
-            for tool in mcp_scope.ensure_tools(label).await? {
-                resources = resources.with_tool(tool);
-            }
-        }
-    }
+    let policy = catalog.policy(policy_name)?;
+    let runtime_resources = catalog
+        .build_runtime_resources(ResourceSelection {
+            models: def.models.clone(),
+            tools: def.tools.clone().unwrap_or_default(),
+            mcp_servers: def.mcps.clone().unwrap_or_default(),
+            prompt_texts: match &def.prompts {
+                Some(prompt_sources) => prompt_texts_from_sources(prompt_sources, root)?,
+                None => HashMap::new(),
+            },
+        })
+        .await?;
+    let mut resources = runtime_resources.resources;
+    resources.deactivate_model();
     resources.deactivate_tools();
 
-    if let Some(prompt_sources) = &def.prompts {
-        resources = resources.replace_prompts(resolve_prompts(prompt_sources, root)?);
-    }
-
-    for model_name in &def.models {
-        let model = models
-            .get(model_name)
-            .cloned()
-            .ok_or_else(|| format!("unknown model: {}", model_name))?;
-        resources = resources.with_model(model);
-    }
-    resources.deactivate_model();
-
     Ok((
-        State {
-            purpose: def.purpose.clone().unwrap_or_default(),
-            env: catalog.default_environment(),
-            res: resources,
-            ..State::default()
+        RunState {
+            purpose: Purpose::new(def.purpose.clone().unwrap_or_default()),
+            environment: catalog.environment(def.environment.as_deref().unwrap_or("local"))?,
+            resources,
+            ..RunState::default()
         },
-        policy(),
+        policy,
+        runtime_resources.tool_runtime,
     ))
 }
 
-fn select_tools(
-    resources: &machine::Resources,
-    tool_names: &[String],
-) -> Result<HashMap<String, std::sync::Arc<dyn machine::Tool>>, String> {
-    let mut tools = HashMap::new();
-    for tool_name in tool_names {
-        let tool = resources
-            .tools
-            .get(tool_name)
-            .cloned()
-            .ok_or_else(|| format!("unknown tool: {}", tool_name))?;
-        tools.insert(tool_name.clone(), tool);
-    }
-    Ok(tools)
-}
-
-fn resolve_prompts(
+fn prompt_texts_from_sources(
     prompt_sources: &HashMap<String, PromptSourceDef>,
     root: &Path,
 ) -> Result<HashMap<String, String>, String> {
@@ -493,7 +455,25 @@ fn resolve_prompts(
     Ok(prompts)
 }
 
-fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {
+/// Inject `spawn_<alias>` tools into a planner accelerator for each name in
+/// `spawn_names`. Each tool wraps the imported worker accelerator.
+/// Aliases not found in `imports` produce a compile error.
+async fn inject_spawns(
+    spawn_names: &[String],
+    imports: &HashMap<String, Accelerator>,
+    planner: &mut Accelerator,
+) -> Result<(), String> {
+    for alias in spawn_names {
+        let worker = imports
+            .get(alias)
+            .ok_or_else(|| format!("spawns references unknown accelerator import: {alias}"))?;
+        let tool = Arc::new(SpawnTool::new(format!("spawn_{alias}"), worker.clone()));
+        planner.inject_tool(tool);
+    }
+    Ok(())
+}
+
+fn flux_mode_from_def(def: &ast::FluxDef) -> Result<FluxMode, String> {
     match (def.channel.as_str(), def.mode.as_str()) {
         ("purpose", "concat") => Ok(FluxMode::Purpose(PurposeFlux::Concat)),
         ("context", "append") => Ok(FluxMode::Context(ContextFlux::Append)),
@@ -502,11 +482,34 @@ fn resolve_flux_mode(def: &ast::FluxDef) -> Result<FluxMode, String> {
         ("context", "thread") => Ok(FluxMode::Context(ContextFlux::Thread)),
         ("environment", "overlay") => Ok(FluxMode::Environment(EnvFlux::Overlay)),
         ("resources", "merge") => Ok(FluxMode::Resources(ResFlux::Merge)),
+        ("bridge", "flatten") => {
+            let from_str = def
+                .from
+                .as_deref()
+                .ok_or_else(|| "bridge flux requires 'from'".to_string())?;
+            let to_str = def
+                .to
+                .as_deref()
+                .ok_or_else(|| "bridge flux requires 'to'".to_string())?;
+            let from = parse_channel(from_str)?;
+            let to = parse_channel(to_str)?;
+            match (from, to) {
+                (Channel::Context, Channel::Purpose) => Ok(FluxMode::Bridge {
+                    from,
+                    to,
+                    kind: BridgeKind::ContextToPurpose,
+                }),
+                _ => Err(format!(
+                    "unsupported bridge direction: {} → {} (only context → purpose is implemented)",
+                    from_str, to_str
+                )),
+            }
+        }
         _ => Err(format!("unknown flux mode: {} {}", def.channel, def.mode)),
     }
 }
 
-fn resolve_port(
+fn port_from_def(
     def: &PortDef,
     symbols: &HashMap<String, ComponentRef>,
     kinds: &HashMap<String, ComponentTag>,
@@ -555,14 +558,21 @@ fn component_port(
         (ComponentTag::Accelerator, EndpointDef::State(channel)) => {
             Ok(component.port_state(parse_channel(channel)?))
         }
-        (ComponentTag::Flux { channel, .. }, EndpointDef::FluxOut) => {
-            Ok(component.flux_out(channel))
+        (ComponentTag::Flux { output_channel, .. }, EndpointDef::FluxOut) => {
+            Ok(component.flux_out(output_channel))
         }
-        (ComponentTag::Flux { channel, arity }, EndpointDef::FluxSlot(slot)) => {
+        (
+            ComponentTag::Flux {
+                input_channel,
+                arity,
+                ..
+            },
+            EndpointDef::FluxSlot(slot),
+        ) => {
             if *slot >= arity {
                 return Err(format!("flux slot {} is out of range", slot));
             }
-            Ok(component.slot(*slot, channel))
+            Ok(component.slot(*slot, input_channel))
         }
         (ComponentTag::Condition, EndpointDef::Trigger) => Ok(component.condition_in()),
         (ComponentTag::Condition, EndpointDef::ConditionTrue) => {

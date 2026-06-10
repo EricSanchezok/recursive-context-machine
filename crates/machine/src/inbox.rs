@@ -1,57 +1,83 @@
 use std::collections::VecDeque;
 
-use crate::fragment::Fragment;
+use serde::{Deserialize, Serialize};
 
-/// Inbox — the pending queue between reactor and policy.
-///
-/// The reactor produces fragments and places them into the inbox.
-/// The machine drains them into the context.
-#[derive(Debug, Clone, Default)]
+use crate::fragment::Fragment;
+use crate::usage::CompletionId;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InboxItem {
+    pub fragment: Fragment,
+    pub source_completion: Option<CompletionId>,
+}
+
+impl InboxItem {
+    pub fn new(fragment: Fragment, source_completion: Option<CompletionId>) -> Self {
+        Self {
+            fragment,
+            source_completion,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Inbox {
-    fragments: VecDeque<Fragment>,
+    items: VecDeque<InboxItem>,
 }
 
 impl Inbox {
     pub fn new() -> Self {
         Self {
-            fragments: VecDeque::new(),
+            items: VecDeque::new(),
         }
     }
 
     pub fn push(&mut self, fragment: Fragment) {
-        self.fragments.push_back(fragment);
+        self.push_item(InboxItem::new(fragment, None));
     }
 
-    pub fn pop(&mut self) -> Option<Fragment> {
-        self.fragments.pop_front()
+    pub fn push_item(&mut self, item: InboxItem) {
+        self.items.push_back(item);
     }
 
-    pub fn peek(&self) -> Option<&Fragment> {
-        self.fragments.front()
+    pub fn extend_items(&mut self, items: impl IntoIterator<Item = InboxItem>) {
+        self.items.extend(items);
+    }
+
+    pub fn pop(&mut self) -> Option<InboxItem> {
+        self.items.pop_front()
+    }
+
+    pub fn peek(&self) -> Option<&InboxItem> {
+        self.items.front()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.fragments.is_empty()
+        self.items.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.fragments.len()
+        self.items.len()
+    }
+
+    pub fn items(&self) -> impl Iterator<Item = &InboxItem> {
+        self.items.iter()
     }
 }
 
 impl IntoIterator for Inbox {
-    type Item = Fragment;
-    type IntoIter = std::collections::vec_deque::IntoIter<Fragment>;
+    type Item = InboxItem;
+    type IntoIter = std::collections::vec_deque::IntoIter<InboxItem>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.fragments.into_iter()
+        self.items.into_iter()
     }
 }
 
-impl FromIterator<Fragment> for Inbox {
-    fn from_iter<I: IntoIterator<Item = Fragment>>(iter: I) -> Self {
+impl FromIterator<InboxItem> for Inbox {
+    fn from_iter<Items: IntoIterator<Item = InboxItem>>(items: Items) -> Self {
         Self {
-            fragments: VecDeque::from_iter(iter),
+            items: VecDeque::from_iter(items),
         }
     }
 }
