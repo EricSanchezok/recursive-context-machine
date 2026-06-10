@@ -1,0 +1,6 @@
+[project]
+name = "RCM Autoresearch Pipeline"
+description = "The seven-stage autoresearch lifecycle (explore, ground, design, realize, experiment, compose, review) as composable RCM stage graphs — each stage a separate .rcm, independently runnable, with typed hard gates."
+
+[env]
+DEEPSEEK_API_KEY = "REDACTED"
