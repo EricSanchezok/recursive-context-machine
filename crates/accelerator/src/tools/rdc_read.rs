@@ -199,6 +199,11 @@ pub(crate) fn pluralize(entity_type: &str) -> &str {
         "claims" | "claim" => "claims",
         "experiments" | "experiment" => "experiments",
         "lit_papers" | "lit_search" => "literature",
+        "paper_spines" | "paper_spine" => "paper-spines",
+        "tech_reports" | "tech_report" => "tech-reports",
+        "story_spines" | "story_spine" => "story-spines",
+        "positionings" | "positioning" => "positionings",
+        "gate_records" | "gate_record" => "gates",
         _ => entity_type,
     }
 }
@@ -334,31 +339,27 @@ mod tests {
 
     #[test]
     fn pluralize_unknown_entity_is_identity() {
-        assert_eq!(pluralize("paper_spines"), "paper_spines");
-        assert_eq!(pluralize("positionings"), "positionings");
-        assert_eq!(pluralize("unknown_entity"), "unknown_entity");
+        assert_eq!(pluralize("unknown"), "unknown");
     }
 
-    // ── url_encode ──
-
     #[test]
-    fn url_encode_preserves_unreserved_chars() {
-        let input = "hello_world-123.~";
-        assert_eq!(url_encode(input), "hello_world-123.~");
+    fn url_encode_alphanumeric_only() {
+        assert_eq!(url_encode("hello123"), "hello123");
     }
 
     #[test]
     fn url_encode_encodes_space() {
-        assert_eq!(url_encode("hello world"), "hello%20world");
+        assert_eq!(url_encode("attention mechanism"), "attention%20mechanism");
     }
 
     #[test]
     fn url_encode_encodes_special_chars() {
-        let input = "test?q=a&b=c";
-        let encoded = url_encode(input);
-        assert!(encoded.contains("%3F")); // ?
-        assert!(encoded.contains("%26")); // &
-        assert!(encoded.contains("%3D")); // =
+        assert_eq!(url_encode("a&b=c"), "a%26b%3Dc");
+    }
+
+    #[test]
+    fn url_encode_preserves_unreserved_chars() {
+        assert_eq!(url_encode("test-_.~name"), "test-_.~name");
     }
 
     #[test]
@@ -367,7 +368,27 @@ mod tests {
     }
 
     #[test]
-    fn url_encode_alphanumeric_only() {
-        assert_eq!(url_encode("ABCDEF123"), "ABCDEF123");
+    fn pluralize_paper_spine_kebab() {
+        assert_eq!(pluralize("paper_spine"), "paper-spines");
+    }
+
+    #[test]
+    fn pluralize_tech_report_kebab() {
+        assert_eq!(pluralize("tech_report"), "tech-reports");
+    }
+
+    #[test]
+    fn pluralize_story_spine_to_kebab() {
+        assert_eq!(pluralize("story_spine"), "story-spines");
+    }
+
+    #[test]
+    fn pluralize_positioning_singular() {
+        assert_eq!(pluralize("positioning"), "positionings");
+    }
+
+    #[test]
+    fn pluralize_gate_record_to_gates() {
+        assert_eq!(pluralize("gate_record"), "gates");
     }
 }
