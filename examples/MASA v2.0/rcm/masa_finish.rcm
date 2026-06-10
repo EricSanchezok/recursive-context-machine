@@ -1,0 +1,14 @@
+name = "MASA Finish - Polishing + Reference Compilation"
+
+use "./finish/polisher.rcm" as Polisher
+use "./finish/reference_compiler.rcm" as RefCompiler
+
+graph {
+    accelerator polisher = Polisher
+    accelerator ref_compiler = RefCompiler
+
+    polisher.context -> ref_compiler.context
+    polisher.done -> ref_compiler.trigger
+    ref_compiler.context -> output.context
+    ref_compiler.done -> output.done
+}

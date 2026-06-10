@@ -76,6 +76,19 @@ impl Tool for ShellTool {
                 .unwrap_or(DEFAULT_TIMEOUT_SECS)
                 .min(MAX_TIMEOUT_SECS);
 
+            #[cfg(windows)]
+            let mut child = Command::new("cmd")
+                .arg("/c")
+                .arg(&command)
+                .current_dir(&env.cwd)
+                .env_clear()
+                .envs(&env.vars)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("failed to spawn: {e}"))?;
+
+            #[cfg(not(windows))]
             let mut child = Command::new("sh")
                 .arg("-c")
                 .arg(&command)

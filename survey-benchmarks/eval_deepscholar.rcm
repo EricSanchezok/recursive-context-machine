@@ -1,0 +1,16 @@
+name = "deepscholar-evaluation"
+
+model gpt55 {
+    protocol = "openai"
+    endpoint = "https://gmncode.com"
+    credentials = { env = "CROSS_JUDGE_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+}
+
+accelerator {
+    purpose = "DeepScholar-Bench evaluation"
+    models = ["gpt55"]
+    policy = "captain"
+    prompts = { captain = file "./deepscholar-bench/prompt.txt" }
+    tools = ["fs"]
+}
