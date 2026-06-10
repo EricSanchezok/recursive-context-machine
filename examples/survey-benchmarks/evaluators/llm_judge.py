@@ -8,7 +8,8 @@ import requests
 import time
 import re
 
-API_KEY = os.environ.get("CROSS_JUDGE_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
+API_KEY = (os.environ.get("EVA_API_KEY") or os.environ.get("OPENAI_API_KEY")
+           or os.environ.get("CROSS_JUDGE_API_KEY") or os.environ.get("DEEPSEEK_API_KEY"))
 API_ENDPOINT = os.environ.get("LLM_API_ENDPOINT", "https://api.gmncode.com/v1/chat/completions")
 API_MODEL = os.environ.get("LLM_MODEL", "gpt-5.5")
 
@@ -95,7 +96,7 @@ Please provide your complete evaluation following the criteria above. Use the ex
     
     if response is None:
         print(f"  ERROR: No API key available")
-        return {"status": "error", "message": "No API key. Set CROSS_JUDGE_API_KEY or DEEPSEEK_API_KEY."}
+        return {"status": "error", "message": "No API key. Set EVA_API_KEY, OPENAI_API_KEY, CROSS_JUDGE_API_KEY, or DEEPSEEK_API_KEY."}
     
     # Save raw response
     with open(output_path, "w", encoding="utf-8") as f:
