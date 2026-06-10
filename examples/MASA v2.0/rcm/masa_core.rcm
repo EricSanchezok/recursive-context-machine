@@ -1,0 +1,83 @@
+name = "MASA Core - Full Iterative Loop with Judge Panel"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+use "./core/researcher.rcm" as Researcher
+use "./core/generator.rcm" as Generator
+use "./core/supervisor.rcm" as Supervisor
+use "./core/judge_content.rcm" as JudgeContent
+use "./core/judge_accuracy.rcm" as JudgeAccuracy
+use "./core/judge_depth.rcm" as JudgeDepth
+use "./core/judge_insightfulness.rcm" as JudgeInsightfulness
+use "./core/judge_synthesizer.rcm" as JudgeSynthesizer
+
+graph {
+    accelerator researcher = Researcher
+    accelerator generator = Generator
+    accelerator supervisor = Supervisor
+    accelerator judge_content = JudgeContent
+    accelerator judge_accuracy = JudgeAccuracy
+    accelerator judge_depth = JudgeDepth
+    accelerator judge_insightfulness = JudgeInsightfulness
+    accelerator judge_synthesizer = JudgeSynthesizer
+
+    flux researcher_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux generator_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux supervisor_handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    flux judge_merge {
+        channel = context
+        mode = append
+        arity = 4
+    }
+
+    researcher.context -> researcher_handoff.slot(0)
+    researcher_handoff.out -> generator.context
+    researcher.done -> generator.trigger
+
+    generator.context -> generator_handoff.slot(0)
+    generator_handoff.out -> supervisor.context
+    generator.done -> supervisor.trigger
+
+    supervisor.context -> supervisor_handoff.slot(0)
+
+    supervisor_handoff.out -> judge_content.context
+    supervisor_handoff.out -> judge_accuracy.context
+    supervisor_handoff.out -> judge_depth.context
+    supervisor_handoff.out -> judge_insightfulness.context
+
+    supervisor.done -> judge_content.trigger
+    supervisor.done -> judge_accuracy.trigger
+    supervisor.done -> judge_depth.trigger
+    supervisor.done -> judge_insightfulness.trigger
+
+    judge_content.context -> judge_merge.slot(0)
+    judge_accuracy.context -> judge_merge.slot(1)
+    judge_depth.context -> judge_merge.slot(2)
+    judge_insightfulness.context -> judge_merge.slot(3)
+
+    judge_merge.out -> judge_synthesizer.context
+
+    judge_synthesizer.context -> output.context
+    judge_synthesizer.done -> output.done
+}
