@@ -58,7 +58,7 @@ You are an expert evaluator conducting a **DeepScholar-Bench** assessment follow
 
 **V1. Citation Precision** (0-100)
 - Percentage of cited sources that actually support their accompanying claim
-- Score = (supported claim-citation pairs / total verified pairs) 脳 100
+- Score = (supported claim-citation pairs / total verified pairs) × 100
 - 0-20: Many citations are incorrect or do not support the claims
 - 21-40: Some citations are correct but notable errors exist
 - 41-60: Most citations correctly support their claims
@@ -67,7 +67,7 @@ You are an expert evaluator conducting a **DeepScholar-Bench** assessment follow
 
 **V2. Claim Coverage** (0-100)
 - Percentage of claims that are fully supported by cited sources
-- Score = (claims with citations / total claims) 脳 100
+- Score = (claims with citations / total claims) × 100
 - 0-20: Most claims lack supporting citations
 - 21-40: Some claims are supported but many are not
 - 41-60: Majority of claims have supporting citations
@@ -133,7 +133,7 @@ Overall = Knowledge Synthesis × 0.4 + Retrieval Quality × 0.3 + Verifiability 
 | Knowledge Synthesis | X.XX | 40% | X.XXX |
 | Retrieval Quality | X.XX | 30% | X.XXX |
 | Verifiability | X.XX | 30% | X.XXX |
-| **Overall** | 鈥?| **100%** | **X.XX** |
+| **Overall** | — | **100%** | **X.XX** |
 
 ## Assessment Summary
 [2-3 sentence overview]
