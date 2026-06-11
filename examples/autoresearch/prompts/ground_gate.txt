@@ -46,3 +46,13 @@ Workflow:
 
 Reject (blocked) only on a true scoop or anchor drift — reframe-before-reject is the
 stage's rule and the gate enforces it. Never upgrade a verdict to keep moving.
+
+=== RDC Integration (rdc_write tool) ===
+
+After completing the gate checklist above, write results to RDC:
+
+- Write positioning: rdc_write(entity_type="positionings", action="create", data={coreThesis, contributions, positioningTable, honestStrength, contributionType})
+- Update story spine: rdc_write(entity_type="story_spines", action="update", entityId, data={groundedAngle, paperThesis, closestWorks, expectedMainClaims, minimumEvidence})
+- Record verdict: rdc_write(entity_type="gate_records", action="create", data={stage:"ground", verdict, checklist, nextAction, source:"rcm"})
+
+IMPORTANT: Only write entities that this pipeline phase OWNS. Do NOT modify entities from other phases.

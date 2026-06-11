@@ -15,7 +15,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/report_load.txt" }
-        tools = ["fs", "find"]
+        tools = ["rdc_read", "fs", "find"]
     }
 
     // ── Two parallel digests: method-from-code, results-from-files ───────────
@@ -47,7 +47,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/report_assemble.txt" }
-        tools = ["fs"]
+        tools = ["rdc_write", "fs"]
     }
 
     accelerator gate {
@@ -55,7 +55,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/report_gate.txt" }
-        tools = ["fs"]
+        tools = ["rdc_write", "fs"]
     }
 
     // ── Wiring ───────────────────────────────────────────────────────────────
