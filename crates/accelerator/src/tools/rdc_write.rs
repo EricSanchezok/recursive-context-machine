@@ -75,11 +75,7 @@ fn rdc_config(env: &Environment) -> (String, String) {
         .get("RDC_URL")
         .cloned()
         .unwrap_or_else(|| DEFAULT_RDC_URL.to_string());
-    let research_id = env
-        .vars
-        .get("RDC_RESEARCH_ID")
-        .cloned()
-        .unwrap_or_default();
+    let research_id = env.vars.get("RDC_RESEARCH_ID").cloned().unwrap_or_default();
     (url, research_id)
 }
 
@@ -111,27 +107,21 @@ pub(crate) fn build_endpoint(
         ("update", Some(eid)) => Ok((format!("{base}/{eid}"), "PATCH")),
 
         // Update without entity_id
-        ("update", None) => {
-            Err("rdc_write 'update' action requires 'entity_id'".to_string())
-        }
+        ("update", None) => Err("rdc_write 'update' action requires 'entity_id'".to_string()),
 
         // Select/finalize without entity_id
-        ("select", None) => {
-            Err("rdc_write 'select' action requires 'entity_id'".to_string())
-        }
-        ("finalize", None) => {
-            Err("rdc_write 'finalize' action requires 'entity_id'".to_string())
-        }
+        ("select", None) => Err("rdc_write 'select' action requires 'entity_id'".to_string()),
+        ("finalize", None) => Err("rdc_write 'finalize' action requires 'entity_id'".to_string()),
 
         // Select on non-idea entities
-        ("select", _) => Err(
-            "rdc_write 'select' is only valid for entity_type='ideas'".to_string(),
-        ),
+        ("select", _) => {
+            Err("rdc_write 'select' is only valid for entity_type='ideas'".to_string())
+        }
 
         // Finalize on non-claim entities
-        ("finalize", _) => Err(
-            "rdc_write 'finalize' is only valid for entity_type='claims'".to_string(),
-        ),
+        ("finalize", _) => {
+            Err("rdc_write 'finalize' is only valid for entity_type='claims'".to_string())
+        }
 
         _ => Err(format!(
             "rdc_write: unknown action '{action}' for entity_type '{entity_type}'"
@@ -229,9 +219,7 @@ async fn execute_write(args: Value, env: &Environment) -> Result<ToolResult, Str
 
     let created_id = result_data["id"].as_str().map(|s| s.to_string());
     let success_msg = match (action, &created_id) {
-        ("create", Some(id)) => format!(
-            "Successfully created {entity_type} #{id}",
-        ),
+        ("create", Some(id)) => format!("Successfully created {entity_type} #{id}",),
         ("create", None) => format!("Successfully created {entity_type}"),
         ("update", Some(id)) => format!("Successfully updated {entity_type} #{id}"),
         ("update", None) => format!("Successfully updated {entity_type}"),
@@ -339,7 +327,11 @@ mod tests {
     fn update_without_entity_id_is_error() {
         let result = build_endpoint("ideas", "update", None, "res_1");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("'update' action requires 'entity_id'"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("'update' action requires 'entity_id'")
+        );
     }
 
     // ── build_endpoint: select ──
@@ -356,14 +348,22 @@ mod tests {
     fn select_without_entity_id_is_error() {
         let result = build_endpoint("ideas", "select", None, "res_1");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("'select' action requires 'entity_id'"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("'select' action requires 'entity_id'")
+        );
     }
 
     #[test]
     fn select_on_non_idea_is_error() {
         let result = build_endpoint("claims", "select", Some("c1"), "res_1");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("only valid for entity_type='ideas'"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("only valid for entity_type='ideas'")
+        );
     }
 
     // ── build_endpoint: finalize ──
@@ -380,14 +380,22 @@ mod tests {
     fn finalize_without_entity_id_is_error() {
         let result = build_endpoint("claims", "finalize", None, "res_1");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("'finalize' action requires 'entity_id'"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("'finalize' action requires 'entity_id'")
+        );
     }
 
     #[test]
     fn finalize_on_non_claim_is_error() {
         let result = build_endpoint("ideas", "finalize", Some("i1"), "res_1");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("only valid for entity_type='claims'"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("only valid for entity_type='claims'")
+        );
     }
 
     // ── build_endpoint: unknown action ──
