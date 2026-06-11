@@ -1,0 +1,17 @@
+name = "MASA Researcher"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+accelerator {
+    purpose = "masa researcher"
+    models = ["deepseek-v4-flash"]
+    policy = "captain"
+    prompts = { captain = file "../../prompts/core/researcher.txt" }
+    tools = ["arxiv_download", "arxiv_search", "fs", "shell"]
+}

@@ -1,0 +1,26 @@
+name = "MASA Revision - Generator applies judge and supervisor feedback"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+use "./core/generator.rcm" as Generator
+
+graph {
+    accelerator generator = Generator
+
+    flux handoff {
+        channel = context
+        mode = last
+        arity = 1
+    }
+
+    input.context -> handoff.slot(0)
+    handoff.out -> generator.context
+    generator.context -> output.context
+    generator.done -> output.done
+}
