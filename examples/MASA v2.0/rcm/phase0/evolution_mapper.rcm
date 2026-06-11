@@ -1,0 +1,17 @@
+name = "MASA Evolution Mapper"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+accelerator {
+    purpose = "masa evolution mapper"
+    models = ["deepseek-v4-flash"]
+    policy = "captain"
+    prompts = { captain = file "../../prompts/phase0/evolution_mapper.txt" }
+    tools = ["fs"]
+}
