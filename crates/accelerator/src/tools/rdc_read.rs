@@ -81,11 +81,7 @@ fn rdc_config(env: &Environment) -> (String, String) {
         .get("RDC_URL")
         .cloned()
         .unwrap_or_else(|| DEFAULT_RDC_URL.to_string());
-    let research_id = env
-        .vars
-        .get("RDC_RESEARCH_ID")
-        .cloned()
-        .unwrap_or_default();
+    let research_id = env.vars.get("RDC_RESEARCH_ID").cloned().unwrap_or_default();
     (url, research_id)
 }
 
@@ -108,30 +104,46 @@ async fn execute_read(args: Value, env: &Environment) -> Result<ToolResult, Stri
     let filter_limit = args["filter_limit"].as_u64().unwrap_or(20);
     let search_query = args["search_query"].as_str();
 
-    // Build the URL with query parameters.
-    let endpoint = if entity_type == "lit_search" {
-        format!("/api/v1/research/{research_id}/literature/search")
+    // Build the endpoint URL.
+    // Special cases: research uses the base path; lit_search uses /literature/search.
+    let (endpoint, skip_query) = if entity_type == "lit_search" {
+        (
+            format!("/api/v1/research/{research_id}/literature/search"),
+            false,
+        )
+    } else if entity_type == "research" {
+        // Research is the base endpoint itself — no query params needed
+        (format!("/api/v1/research/{research_id}"), true)
     } else if let Some(eid) = entity_id {
         let entity_plural = pluralize(entity_type);
-        format!("/api/v1/research/{research_id}/{entity_plural}/{eid}")
+        (
+            format!("/api/v1/research/{research_id}/{entity_plural}/{eid}"),
+            false,
+        )
     } else {
         let entity_plural = pluralize(entity_type);
-        format!("/api/v1/research/{research_id}/{entity_plural}")
+        (
+            format!("/api/v1/research/{research_id}/{entity_plural}"),
+            false,
+        )
     };
 
-    let mut query_parts: Vec<String> = Vec::new();
-    if let Some(status) = filter_status {
-        query_parts.push(format!("status={}", url_encode(status)));
-    }
-    query_parts.push(format!("limit={filter_limit}"));
-    if let Some(query) = search_query {
-        query_parts.push(format!("q={}", url_encode(query)));
-    }
-
-    let request_url = if query_parts.is_empty() {
+    let request_url = if skip_query {
         format!("{url}{endpoint}")
     } else {
-        format!("{url}{endpoint}?{}", query_parts.join("&"))
+        let mut query_parts: Vec<String> = Vec::new();
+        if let Some(status) = filter_status {
+            query_parts.push(format!("status={}", url_encode(status)));
+        }
+        query_parts.push(format!("limit={filter_limit}"));
+        if let Some(query) = search_query {
+            query_parts.push(format!("q={}", url_encode(query)));
+        }
+        if query_parts.is_empty() {
+            format!("{url}{endpoint}")
+        } else {
+            format!("{url}{endpoint}?{}", query_parts.join("&"))
+        }
     };
 
     info!(target: "rdc_read", url = %request_url, entity_type, "reading from RDC");
@@ -212,16 +224,26 @@ pub(crate) fn pluralize(entity_type: &str) -> &str {
 fn format_response(entity_type: &str, data: &Value) -> String {
     match entity_type {
         "research" => {
+            let project = data
+                .get("project")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(unknown)");
             let anchor = data
                 .get("anchor")
                 .and_then(|v| v.as_str())
                 .unwrap_or("(not set)");
-            let status = data
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
+            let counters = data
+                .get("counters")
+                .and_then(|v| v.as_object())
+                .map(|o| {
+                    o.iter()
+                        .map(|(k, v)| format!("  {k}: {v}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_else(|| "  (none)".to_string());
             format!(
-                "Research State:\n  Status: {status}\n  Anchor: {anchor}"
+                "Research State:\n  Project: {project}\n  Anchor: {anchor}\n\nCounters:\n{counters}"
             )
         }
         "ideas" | "idea" | "claims" | "claim" | "experiments" | "experiment" => {
@@ -232,9 +254,9 @@ fn format_response(entity_type: &str, data: &Value) -> String {
                     let mut lines = vec![format!("{} results:\n", items.len())];
                     for item in items {
                         let id = item["id"].as_str().unwrap_or("?");
-                        let title = item["title"].as_str().unwrap_or(
-                            item["statement"].as_str().unwrap_or("(untitled)"),
-                        );
+                        let title = item["title"]
+                            .as_str()
+                            .unwrap_or(item["statement"].as_str().unwrap_or("(untitled)"));
                         let status = item["status"].as_str().unwrap_or("-");
                         lines.push(format!("  [{status}] {id}: {title}"));
                     }
@@ -253,7 +275,7 @@ fn format_response(entity_type: &str, data: &Value) -> String {
                 Some(items) if !items.is_empty() => {
                     let mut lines = vec![format!("{} papers:\n", items.len())];
                     for item in items {
-                        let id = item["id"].as_str().unwrap_or("?");
+                        let slug = item["slug"].as_str().or(item["id"].as_str()).unwrap_or("?");
                         let title = item["title"].as_str().unwrap_or("(untitled)");
                         let authors = item["authors"]
                             .as_str()
@@ -271,7 +293,7 @@ fn format_response(entity_type: &str, data: &Value) -> String {
                             .as_u64()
                             .map(|y| y.to_string())
                             .unwrap_or_default();
-                        lines.push(format!("  {id}: {title} ({authors}, {year})"));
+                        lines.push(format!("  {slug}: {title} ({authors}, {year})"));
                     }
                     lines.join("\n")
                 }
@@ -280,8 +302,7 @@ fn format_response(entity_type: &str, data: &Value) -> String {
         }
         _ => {
             // Fallback: pretty-print the JSON.
-            serde_json::to_string_pretty(data)
-                .unwrap_or_else(|_| "Invalid response".to_string())
+            serde_json::to_string_pretty(data).unwrap_or_else(|_| "Invalid response".to_string())
         }
     }
 }
