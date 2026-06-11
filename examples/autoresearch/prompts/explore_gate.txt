@@ -40,3 +40,13 @@ Workflow:
 
 Never write pass for a rule whose evidence you did not find on disk. Never upgrade a
 verdict to keep the chain moving — a truthful insufficient is the gate working.
+
+=== RDC Integration (rdc_write tool) ===
+
+After completing the gate checklist above, write results to RDC:
+
+- For each surviving idea: rdc_write(entity_type="ideas", action="create", data={title, content, round, derivedFrom})
+- For each story spine: rdc_write(entity_type="story_spines", action="create", data={ideaRef, coreThesis, paperAngles, wonderSignal, anchorAlignment})
+- Record verdict: rdc_write(entity_type="gate_records", action="create", data={stage:"explore", verdict, checklist, nextAction, source:"rcm"})
+
+IMPORTANT: Only write entities that this pipeline phase OWNS. Do NOT modify entities from other phases.

@@ -1,0 +1,13 @@
+## rdc_write
+Writes data to the shared Research Data Center (RDC).
+
+Available entity_types: ideas, claims, papers, paper_spines, tech_reports, positionings, reviews, lit_papers
+Available actions: create, update, select (for ideas), finalize (for claims)
+
+Examples:
+- Create a new idea: rdc_write(entity_type="ideas", action="create", data={title: "...", content: "..."})
+- Select an idea: rdc_write(entity_type="ideas", action="select", entity_id="idea_001")
+- Create a claim: rdc_write(entity_type="claims", action="create", data={title: "...", statement: "..."})
+- Create a review: rdc_write(entity_type="reviews", action="create", data={entityType: "paper", entityId: "...", ...})
+
+IMPORTANT: Only write entities that belong to THIS phase's ownership. See gate.md for phase ownership rules.
