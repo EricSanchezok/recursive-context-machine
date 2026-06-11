@@ -1,0 +1,168 @@
+param(
+    [switch]$Help,
+    [switch]$Run,
+    [switch]$Evaluate,
+    [switch]$AllMetrics,
+    [ValidateSet("CodeBLEU_Score", "execution_ACC", "Recall", "ReasoningGraph_ACC")]
+    [string]$Metric,
+    [string]$Model = "gpt-4o-mini",
+    [string]$RootPath,
+    [int]$GpuId = 0,
+    [switch]$Reference,
+    [switch]$SkipSetupCheck
+)
+
+$ErrorActionPreference = "Continue"
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$benchDir = Split-Path -Parent $scriptDir
+
+function ShowHelp {
+    Write-Host @"
+SciReplicate-Bench — One-click evaluation runner
+=================================================
+
+Evaluates algorithmic reproduction accuracy using CodeBLEU,
+Execution ACC, Recall, and Reasoning Graph ACC.
+
+Usage:
+  .\run_scireplicate.ps1                                 Run SciReproducer + all metrics
+  .\run_scireplicate.ps1 -Run                            Only run SciReproducer
+  .\run_scireplicate.ps1 -AllMetrics                     Only evaluate all 4 metrics
+  .\run_scireplicate.ps1 -Metric CodeBLEU_Score          Single metric
+  .\run_scireplicate.ps1 -Model gpt-4o -GpuId 0          Custom model and GPU
+
+Parameters:
+  -Help           Show this help message
+  -Run            Run SciReproducer on all papers
+  -Evaluate       Run evaluation on generated results (requires -Metric)
+  -AllMetrics     Run all 4 evaluation metrics
+  -Metric         Specific metric: CodeBLEU_Score, execution_ACC, Recall, ReasoningGraph_ACC
+  -Model          Model name (default: gpt-4o-mini)
+  -RootPath       Root path to SciReplicate-Bench directory
+  -GpuId          GPU ID (default: 0)
+  -Reference      Run reference mode (execution_ACC only)
+  -SkipSetupCheck Skip the setup existence check
+
+NOTE: Full execution requires Ubuntu + CUDA 12.2 + A100 GPU.
+      See official docs for details.
+"@
+    exit 0
+}
+
+if ($Help) { ShowHelp }
+
+# ── Default mode: run + all metrics ──
+if (-not $Run -and -not $Evaluate -and -not $AllMetrics -and -not $Metric) {
+    $Run = $true
+    $AllMetrics = $true
+}
+
+# ── Step 1: Check setup ──
+Write-Host "================================================" -ForegroundColor Cyan
+Write-Host "  SCIREPLICATE-BENCH" -ForegroundColor Cyan
+Write-Host "================================================" -ForegroundColor Cyan
+Write-Host ""
+
+$repoDir = Join-Path $scriptDir "SciReplicate-Bench"
+if (-not $SkipSetupCheck -and -not (Test-Path (Join-Path $repoDir "README.md"))) {
+    Write-Host "[!] SciReplicate-Bench repo not set up." -ForegroundColor Yellow
+    Write-Host "    Running setup.ps1 (clone only)..." -ForegroundColor Yellow
+    & (Join-Path $scriptDir "setup.ps1") -SkipClone:$false
+    Write-Host ""
+    if (-not (Test-Path (Join-Path $repoDir "README.md"))) {
+        Write-Host "[X] Setup failed. Please run setup.ps1 manually." -ForegroundColor Red
+        exit 1
+    }
+}
+
+# ── Step 2: Environment check ──
+Write-Host "[1/3] Checking environment..." -ForegroundColor Yellow
+python "$benchDir\run_evaluation.py" --check
+Write-Host ""
+
+# ── Step 3: Run ──
+Write-Host "[2/3] Running..." -ForegroundColor Yellow
+
+$rootArg = @()
+if ($RootPath) { $rootArg = @("--root-path", $RootPath) }
+
+$allOk = $true
+
+if ($Run) {
+    Write-Host "  >> SciReproducer (model: $Model)..." -ForegroundColor Gray
+    $cmd = @("python", "$scriptDir\run_evaluation.py", "--run", "--model", $Model) + $rootArg
+    & $cmd[0] $cmd[1..$($cmd.Length-1)]
+    if ($LASTEXITCODE -ne 0) { $allOk = $false }
+    Write-Host ""
+}
+
+if ($AllMetrics) {
+    Write-Host "  >> All 4 metrics (model: $Model)..." -ForegroundColor Gray
+    Write-Host "  NOTE: Execution ACC requires Ubuntu + CUDA 12.2" -ForegroundColor Yellow
+    $cmd = @("python", "$scriptDir\run_evaluation.py", "--all-metrics", "--model", $Model) + $rootArg
+    & $cmd[0] $cmd[1..$($cmd.Length-1)]
+    if ($LASTEXITCODE -ne 0) { $allOk = $false }
+    Write-Host ""
+}
+
+if ($Evaluate -and $Metric) {
+    $cmd = @(
+        "python", "$scriptDir\run_evaluation.py",
+        "--evaluate", "--metric", $Metric,
+        "--model", $Model, "--gpu-id", $GpuId.ToString()
+    ) + $rootArg
+    if ($Reference) { $cmd += "--reference" }
+    Write-Host "  >> $($cmd -join ' ')" -ForegroundColor Gray
+    & $cmd[0] $cmd[1..$($cmd.Length-1)]
+    if ($LASTEXITCODE -ne 0) { $allOk = $false }
+    Write-Host ""
+}
+
+Write-Host ""
+if ($allOk) {
+    Write-Host "  Evaluation done" -ForegroundColor Green
+} else {
+    Write-Host "  Evaluation had errors" -ForegroundColor Red
+}
+
+# ── Step 4: Generate summary ──
+Write-Host "[3/3] Generating summary report..." -ForegroundColor Yellow
+$now = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$reportDir = Join-Path $scriptDir "reports"
+New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
+
+$allOkEmoji = if ($allOk) { "✅" } else { "❌" }
+$summaryContent = @"
+# SciReplicate-Bench — Evaluation Summary
+
+**Date**: $now
+**Model**: $Model
+**GPU**: $GpuId
+
+---
+
+## Result
+
+| Item | Status |
+|------|:------:|
+| Evaluation | $allOkEmoji |
+
+---
+
+*Generated by run_scireplicate.ps1*
+"@
+
+$summaryContent | Out-File -FilePath (Join-Path $reportDir "scireplicate_summary.md") -Encoding utf8
+
+# ── Done ──
+Write-Host "Done" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "Report: $reportDir\scireplicate_summary.md" -ForegroundColor Green
+Write-Host ""
+Write-Host "Quick links:" -ForegroundColor Yellow
+Write-Host "  .\run_scireplicate.ps1                                   # Default: run + all metrics"
+Write-Host "  .\run_scireplicate.ps1 -Metric CodeBLEU_Score            # Single metric"
+Write-Host "  .\run_scireplicate.ps1 -Metric execution_ACC -Reference  # Reference mode"
+Write-Host "  .\run_scireplicate.ps1 -Model gpt-4o -GpuId 1           # Custom GPU"
+
+exit $(if ($allOk) { 0 } else { 1 })

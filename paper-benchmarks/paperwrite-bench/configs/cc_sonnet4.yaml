@@ -1,0 +1,5 @@
+# Official PaperRecon config: Claude Code + Sonnet 4
+# Source: https://github.com/Agent4Science-UTokyo/PaperRecon
+agent: claude_code
+writing_model: claude-sonnet-4-20250514
+evaluation_model: gpt-5.4
