@@ -8,9 +8,9 @@ pub fn run(args: InventoryArgs) -> anyhow::Result<()> {
     let catalog = Catalog::new();
     let project = args.project;
 
-    let policies: Vec<_> = catalog.policies.keys().collect();
-    let builtin_tools: Vec<_> = catalog.tools.keys().collect();
-    let builtin_prompts: Vec<_> = catalog.prompts.keys().collect();
+    let policies = catalog.policy_names();
+    let builtin_tools = catalog.tool_names();
+    let builtin_prompts = catalog.prompt_names();
 
     let mcp_servers = discover_mcp_servers(&project);
     let external_models = discover_models(&project);

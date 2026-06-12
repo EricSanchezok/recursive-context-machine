@@ -1,16 +1,11 @@
-use machine::{Context, Environment, Inbox, Machine, Resources};
+use machine::{Machine, MachineState, ToolRuntime};
 use std::collections::HashMap;
 use utils::MachineId;
 
 pub struct Run {
-    pub purpose: String,
     pub machine: Machine,
-    pub ctx: Context,
-    pub env: Environment,
-    pub resources: Resources,
-    pub inbox: Inbox,
-    pub step: u64,
-    pub done: bool,
+    pub state: MachineState,
+    pub tool_runtime: ToolRuntime,
 }
 
 pub struct MachineManager {

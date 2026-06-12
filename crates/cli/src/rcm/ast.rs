@@ -36,6 +36,10 @@ pub struct PrimitiveDef {
     pub tools: Option<Vec<String>>,
     pub mcps: Option<Vec<String>>,
     pub policy: Option<String>,
+    pub environment: Option<String>,
+    /// Aliases of `use`-imported accelerators to expose as `spawn_<alias>` tools.
+    /// The planner LLM calls these tools to dispatch parallel workers.
+    pub spawns: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -75,6 +79,8 @@ pub struct ModelDef {
     pub modalities_output: Vec<String>,
     pub headers: HashMap<String, String>,
     pub thinking: bool,
+    /// Per-request timeout in seconds. `None` uses the engine default.
+    pub timeout: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -83,6 +89,8 @@ pub struct FluxDef {
     pub name: Option<String>,
     pub channel: String,
     pub mode: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
     pub arity: usize,
 }
 

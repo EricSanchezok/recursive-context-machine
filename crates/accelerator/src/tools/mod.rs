@@ -4,8 +4,12 @@ mod arxiv;
 mod find;
 mod fs;
 mod git;
+mod image_gen;
 mod lsp;
+mod rdc_read;
+mod rdc_write;
 pub mod shell;
+mod spawn;
 mod wait;
 mod webfetch;
 
@@ -13,8 +17,12 @@ pub use arxiv::{ArxivDownloadTool, ArxivSearchTool};
 pub use find::FindTool;
 pub use fs::FsTool;
 pub use git::{GitTool, check_safety as check_git_safety, tokenize as tokenize_git};
+pub use image_gen::ImageGenTool;
 pub use lsp::LspTool;
+pub use rdc_read::RdcReadTool;
+pub use rdc_write::RdcWriteTool;
 pub use shell::{OUTPUT_CAP_BYTES, ShellTool, build_result, collect_output};
+pub use spawn::SpawnTool;
 pub use wait::WaitTool;
 pub use webfetch::WebFetchTool;
 
@@ -22,11 +30,11 @@ use std::path::{Path, PathBuf};
 
 use crate::catalog::Catalog;
 
-/// Register all built-in tools in the catalog.
 pub fn register(catalog: &mut Catalog) {
     for tool in builtin_tools() {
-        let name = tool.name().to_string();
-        catalog.tools.insert(name, tool);
+        catalog
+            .register_tool(tool)
+            .expect("built-in tool names must be unique");
     }
 }
 
@@ -38,7 +46,10 @@ pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
         std::sync::Arc::new(FindTool),
         std::sync::Arc::new(FsTool),
         std::sync::Arc::new(GitTool),
+        std::sync::Arc::new(ImageGenTool),
         std::sync::Arc::new(LspTool),
+        std::sync::Arc::new(RdcReadTool),
+        std::sync::Arc::new(RdcWriteTool),
         std::sync::Arc::new(ShellTool),
         std::sync::Arc::new(WaitTool),
         std::sync::Arc::new(WebFetchTool),

@@ -7,9 +7,9 @@ fn fifo_order() {
     inbox.push(Fragment::user("second"));
     inbox.push(Fragment::assistant("third"));
 
-    assert_eq!(inbox.pop().unwrap().as_text(), Some("first"));
-    assert_eq!(inbox.pop().unwrap().as_text(), Some("second"));
-    assert_eq!(inbox.pop().unwrap().as_text(), Some("third"));
+    assert_eq!(inbox.pop().unwrap().fragment.as_text(), Some("first"));
+    assert_eq!(inbox.pop().unwrap().fragment.as_text(), Some("second"));
+    assert_eq!(inbox.pop().unwrap().fragment.as_text(), Some("third"));
     assert!(inbox.is_empty());
 }
 
@@ -23,7 +23,7 @@ fn pop_empty_is_none() {
 fn peek_preserves_length() {
     let mut inbox = Inbox::new();
     inbox.push(Fragment::user("q"));
-    assert_eq!(inbox.peek().unwrap().as_text(), Some("q"));
+    assert_eq!(inbox.peek().unwrap().fragment.as_text(), Some("q"));
     assert_eq!(inbox.len(), 1);
 }
 

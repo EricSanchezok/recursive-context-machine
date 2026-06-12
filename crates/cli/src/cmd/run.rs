@@ -31,12 +31,12 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
             .build()
             .expect("tokio runtime");
         runtime.block_on(async {
-            let state = accelerator::State {
-                purpose,
-                ..accelerator::State::default()
+            let state = machine::RunState {
+                purpose: machine::Purpose::new(purpose),
+                ..machine::RunState::default()
             };
             let output = accelerator.run_with(state).await;
-            let _ = ctx_tx.send(output.ctx);
+            let _ = ctx_tx.send(output.context);
         });
     });
 
@@ -64,12 +64,12 @@ async fn stream_run(
             .build()
             .expect("tokio runtime");
         runtime.block_on(async {
-            let state = accelerator::State {
-                purpose,
-                ..accelerator::State::default()
+            let state = machine::RunState {
+                purpose: machine::Purpose::new(purpose),
+                ..machine::RunState::default()
             };
             let output = accelerator.run_with(state).await;
-            let _ = ctx_tx.send(output.ctx);
+            let _ = ctx_tx.send(output.context);
         });
     });
 
@@ -172,8 +172,10 @@ async fn stream_run(
             HookKind::Fragment(hook::FragmentEvent::Taken(meta)) => {
                 json_line("taken", fragment_json(meta))
             }
-            HookKind::Fragment(hook::FragmentEvent::Inserted(meta)) => {
-                json_line("inserted", fragment_json(meta))
+            HookKind::Fragment(hook::FragmentEvent::Inserted { meta, after }) => {
+                let mut payload = fragment_json(meta);
+                payload["after"] = serde_json::json!(after);
+                json_line("inserted", payload)
             }
             HookKind::Fragment(hook::FragmentEvent::Replaced(meta)) => {
                 json_line("replaced", fragment_json(meta))
@@ -237,6 +239,7 @@ fn fragment_json(meta: &hook::FragmentMeta) -> serde_json::Value {
         "id": meta.id,
         "role": meta.role,
         "kind": meta.kind,
+        "tag": meta.tag,
         "preview": meta.preview,
     })
 }
