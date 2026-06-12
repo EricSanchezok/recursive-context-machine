@@ -120,9 +120,11 @@ impl Parser {
                 "purpose" => def.purpose = Some(self.expect_string()?),
                 "models" => def.models = self.expect_string_array()?,
                 "policy" => def.policy = Some(self.expect_string()?),
+                "environment" => def.environment = Some(self.expect_string()?),
                 "prompts" => def.prompts = Some(self.prompt_sources()?),
                 "tools" => def.tools = Some(self.expect_string_array()?),
                 "mcps" => def.mcps = Some(self.expect_string_array()?),
+                "spawns" => def.spawns = self.expect_string_array()?,
                 _ => return Err(format!("unknown accelerator field: {}", key)),
             }
         }
@@ -157,6 +159,8 @@ impl Parser {
         let mut name = None;
         let mut channel = None;
         let mut mode = None;
+        let mut from = None;
+        let mut to = None;
         let mut arity = None;
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
@@ -165,6 +169,8 @@ impl Parser {
                 "name" => name = Some(self.expect_string()?),
                 "channel" => channel = Some(self.expect_ident_any()?),
                 "mode" => mode = Some(self.expect_ident_any()?),
+                "from" => from = Some(self.expect_ident_any()?),
+                "to" => to = Some(self.expect_ident_any()?),
                 "arity" => arity = Some(self.expect_usize()?),
                 _ => return Err(format!("unknown flux field: {}", key)),
             }
@@ -174,6 +180,8 @@ impl Parser {
             name,
             channel: channel.ok_or_else(|| "flux requires channel".to_string())?,
             mode: mode.ok_or_else(|| "flux requires mode".to_string())?,
+            from,
+            to,
             arity: arity.ok_or_else(|| "flux requires arity".to_string())?,
         })
     }
@@ -284,6 +292,7 @@ impl Parser {
         let mut modalities_output = Vec::new();
         let mut headers = std::collections::HashMap::new();
         let mut thinking = false;
+        let mut timeout = None;
 
         while !self.eat(Token::RBrace) {
             let key = self.expect_ident_any()?;
@@ -312,6 +321,12 @@ impl Parser {
                             format!("thinking must be \"true\" or \"false\", got: {}", value)
                         })?;
                     }
+                    "timeout" => {
+                        let value = self.expect_string()?;
+                        timeout = Some(value.parse().map_err(|_| {
+                            format!("timeout must be a number of seconds, got: {}", value)
+                        })?);
+                    }
                     other => return Err(format!("unknown model field: {}", other)),
                 }
             }
@@ -334,6 +349,7 @@ impl Parser {
             modalities_output,
             headers,
             thinking,
+            timeout,
         })
     }
 

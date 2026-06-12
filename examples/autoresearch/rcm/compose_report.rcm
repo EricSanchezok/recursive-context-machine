@@ -1,0 +1,79 @@
+name = "Autoresearch Compose — Technical Report (Phase 1)"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+graph {
+    // ── Load the external hand-in (code/, results/, grounded story, notes) ───
+    accelerator load {
+        purpose = "compose the technical report from the external inputs"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/report_load.txt" }
+        tools = ["rdc_read", "fs", "find"]
+    }
+
+    // ── Two parallel digests: method-from-code, results-from-files ───────────
+    accelerator method {
+        purpose = "autoresearch report method digest"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/report_method.txt" }
+        tools = ["fs", "find"]
+    }
+
+    accelerator results {
+        purpose = "autoresearch report results digest"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/report_results.txt" }
+        tools = ["fs", "find"]
+    }
+
+    flux report_merge {
+        channel = context
+        mode = last
+        arity = 2
+    }
+
+    // ── Assemble the rigorous, code-aligned technical report ─────────────────
+    accelerator report {
+        purpose = "autoresearch technical report"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/report_assemble.txt" }
+        tools = ["rdc_write", "fs"]
+    }
+
+    accelerator gate {
+        purpose = "autoresearch report gate"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/report_gate.txt" }
+        tools = ["rdc_write", "fs"]
+    }
+
+    // ── Wiring ───────────────────────────────────────────────────────────────
+    input.purpose -> load.purpose
+
+    load.context -> method.context
+    load.context -> results.context
+    load.done -> method.trigger
+    load.done -> results.trigger
+
+    method.context -> report_merge.slot(0)
+    results.context -> report_merge.slot(1)
+    report_merge.out -> report.context
+
+    report.context -> gate.context
+    report.done -> gate.trigger
+
+    gate.done -> output.done
+    gate.context -> output.context
+    gate.purpose -> output.purpose
+}

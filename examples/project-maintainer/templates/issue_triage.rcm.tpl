@@ -33,7 +33,7 @@ graph {
     }
 
     accelerator respond {
-        purpose = "读 analyze 输出的 JSON。1) 对 suggested_labels 中的每个标签,执行 `gh issue edit {{ISSUE_NUMBER}} --repo {{REPO}} --add-label \"<label>\"`(失败说明标签不存在,忽略继续);2) 用 `gh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} -b \"<评论>\"` 发分析评论。评论中文撰写,包含:分类与优先级判断、是否疑似重复(如有 duplicates 列出 #编号 引用)、一句话总结。只用 shell+gh,不要 fs/git。"
+        purpose = "读 analyze 输出的 JSON。\n1) 对 suggested_labels 中每个标签执行 `gh issue edit {{ISSUE_NUMBER}} --repo {{REPO}} --add-label \"<label>\"`(失败多半是标签不存在,忽略继续)。\n2) 发分析评论,只能用带引号 heredoc 经 --body-file 传入,严禁内联 -b——正文里的反引号、$、引号会被 shell 解释甚至注入:\ngh issue comment {{ISSUE_NUMBER}} --repo {{REPO}} --body-file - <<'RCM_BODY'\n<在此写完整评论正文>\nRCM_BODY\n闭合标记 RCM_BODY 必须独占一行、行首顶格,且正文里不得出现这一行。评论中文撰写,含:分类与优先级判断、是否疑似重复(如有 duplicates 列出 #编号 引用)、一句话总结。\n发完必须自检确实发出去了:comment 命令要 exit 0 并打印评论 URL,再跑 `gh issue view {{ISSUE_NUMBER}} --repo {{REPO}} --json comments -q '.comments[-1].url'` 确认最新评论就是本次所发。若失败原样重试一次;仍失败不要谎报成功。只用 shell+gh,不要 fs/git。\nhandoff 末尾:成功则写 status: ok 与 comment_url: <URL>;最终没发出去则写 status: blocked 与一行原因。"
         models = ["kimi-k2-6"]
         policy = "captain"
         tools = ["shell"]

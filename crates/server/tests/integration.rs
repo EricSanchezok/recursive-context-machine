@@ -193,7 +193,10 @@ async fn take_in_consumption_mode() {
         let run = mgr
             .get_mut(&utils::MachineId::from_raw(mid.clone()).unwrap())
             .unwrap();
-        run.inbox.push(machine::Fragment::system("LLM response"));
+        run.state
+            .frame
+            .inbox
+            .push(machine::Fragment::system("LLM response"));
     }
     let step = runtime
         .step(Request::new(server::rcm::StepRequest {

@@ -1,0 +1,146 @@
+name = "Autoresearch Ground Stage"
+
+use "./shared/paper_card.rcm" as PaperCard
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+graph {
+    // ── Load: recover project, pick the idea to ground ───────────────────────
+    accelerator load {
+        purpose = "ground the selected idea from state.md"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/ground_load.txt" }
+        tools = ["rdc_read", "fs"]
+    }
+
+    // ── Closest-work search: two parallel lenses ─────────────────────────────
+    accelerator same_problem_scout {
+        purpose = "autoresearch ground same-problem scout"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/ground_same_problem.txt" }
+        tools = ["arxiv_search", "fs"]
+    }
+
+    accelerator same_mechanism_scout {
+        purpose = "autoresearch ground same-mechanism scout"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/ground_same_mechanism.txt" }
+        tools = ["arxiv_search", "fs"]
+    }
+
+    flux closest_merge {
+        channel = context
+        mode = last
+        arity = 2
+    }
+
+    // ── Closest: read the 2–3 closest works in full (extends the KB) ──────────
+    accelerator closest {
+        purpose = "autoresearch ground closest work"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/ground_closest.txt" }
+        tools = ["arxiv_download", "arxiv_search", "fs"]
+        spawns = ["PaperCard"]
+    }
+
+    // ── Position: contribution statement + reframe-before-reject ─────────────
+    accelerator position {
+        purpose = "autoresearch ground positioning"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/ground_position.txt" }
+        tools = ["rdc_write", "fs"]
+    }
+
+    // ── Review: critic (overclaim) + scholar (novelty) in parallel ───────────
+    accelerator critic {
+        purpose = "autoresearch ground critic"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/ground_critic.txt" }
+        tools = ["fs"]
+    }
+
+    accelerator scholar {
+        purpose = "autoresearch ground scholar"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/ground_scholar.txt" }
+        tools = ["arxiv_search", "fs"]
+    }
+
+    flux review_merge {
+        channel = context
+        mode = last
+        arity = 2
+    }
+
+    // ── Revise once, build the grounded StorySpine, gate ─────────────────────
+    accelerator revise {
+        purpose = "autoresearch ground revise"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/ground_revise.txt" }
+        tools = ["fs"]
+    }
+
+    accelerator grounded {
+        purpose = "autoresearch ground grounded story"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/ground_grounded.txt" }
+        tools = ["rdc_write", "fs"]
+    }
+
+    accelerator gate {
+        purpose = "autoresearch ground gate"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        prompts = { captain = file "../prompts/ground_gate.txt" }
+        tools = ["rdc_write", "fs"]
+    }
+
+    // ── Wiring ───────────────────────────────────────────────────────────────
+    input.purpose -> load.purpose
+
+    load.context -> same_problem_scout.context
+    load.context -> same_mechanism_scout.context
+    load.done -> same_problem_scout.trigger
+    load.done -> same_mechanism_scout.trigger
+
+    same_problem_scout.context -> closest_merge.slot(0)
+    same_mechanism_scout.context -> closest_merge.slot(1)
+    closest_merge.out -> closest.context
+
+    closest.context -> position.context
+    closest.done -> position.trigger
+
+    position.context -> critic.context
+    position.context -> scholar.context
+    position.done -> critic.trigger
+    position.done -> scholar.trigger
+
+    critic.context -> review_merge.slot(0)
+    scholar.context -> review_merge.slot(1)
+    review_merge.out -> revise.context
+
+    revise.context -> grounded.context
+    revise.done -> grounded.trigger
+
+    grounded.context -> gate.context
+    grounded.done -> gate.trigger
+
+    gate.done -> output.done
+    gate.context -> output.context
+    gate.purpose -> output.purpose
+}

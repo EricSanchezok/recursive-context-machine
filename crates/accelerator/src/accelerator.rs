@@ -1,21 +1,24 @@
+use std::sync::Arc;
+
 use machine::hook;
-use machine::{Action, Fragment, Inbox, Machine, Purpose, Role};
-use std::future::Future;
-use std::pin::Pin;
+use machine::{
+    Action, ExecutionMode, Fragment, Machine, MachineFrame, MachineState, PolicyView, Role,
+    RunState, Tool, ToolRuntime,
+};
 use utils::{AcceleratorId, Name};
 
 use crate::graph::Graph;
-use crate::state::State;
 
-/// Scaffolding tags that Captain injects/replaces during setup.
-fn is_scaffolding(f: &Fragment) -> bool {
-    f.role == Role::System && (f.tag == "agent" || f.tag == "instruction" || f.tag == "env")
+fn is_scaffolding(fragment: &Fragment) -> bool {
+    fragment.role == Role::System
+        && (fragment.tag == "agent" || fragment.tag == "instruction" || fragment.tag == "env")
 }
 
-/// Purpose tags injected by Captain or `fire()`.
-fn is_purpose_tag(f: &Fragment) -> bool {
-    f.role == Role::User
-        && (f.tag == "purpose" || f.tag == "purpose_initial" || f.tag == "purpose_b")
+fn is_purpose_tag(fragment: &Fragment) -> bool {
+    fragment.role == Role::User
+        && (fragment.tag == "purpose"
+            || fragment.tag == "purpose_initial"
+            || fragment.tag == "purpose_b")
 }
 
 #[derive(Clone)]
@@ -27,14 +30,19 @@ pub struct Accelerator {
 
 impl Accelerator {
     pub fn primitive(
-        state: State,
+        state: RunState,
         policy: Box<dyn machine::Policy>,
+        tool_runtime: ToolRuntime,
         name: impl Into<String>,
     ) -> Self {
         Self {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
-            body: AcceleratorBody::Primitive(PrimitiveAccelerator { state, policy }),
+            body: AcceleratorBody::Primitive(Box::new(PrimitiveAccelerator {
+                state,
+                policy,
+                tool_runtime,
+            })),
         }
     }
 
@@ -51,11 +59,29 @@ impl Accelerator {
         }
     }
 
+    /// Inject a tool into this accelerator's tool runtime and tool definitions.
+    /// Used by the DSL compiler to wire spawn tools into a planner.
+    pub fn inject_tool(&mut self, tool: Arc<dyn Tool>) {
+        if let AcceleratorBody::Primitive(ref mut primitive) = self.body {
+            let name = tool.name().to_string();
+            primitive
+                .state
+                .resources
+                .tool_definitions
+                .entry(name.clone())
+                .or_insert_with(|| machine::ToolDefinition::from_tool(tool.as_ref()));
+            primitive.tool_runtime.insert(tool);
+        }
+    }
+
     pub fn id(&self) -> &AcceleratorId {
         &self.id
     }
 
-    pub fn run_with(self, input: State) -> Pin<Box<dyn Future<Output = State> + Send>> {
+    pub fn run_with(
+        self,
+        input: RunState,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = RunState> + Send>> {
         Box::pin(async move {
             let input = self.merge_input(input);
             match self.body {
@@ -65,157 +91,177 @@ impl Accelerator {
         })
     }
 
-    pub fn internal_state(&self) -> Option<&State> {
+    pub fn internal_state(&self) -> Option<&RunState> {
         match &self.body {
             AcceleratorBody::Primitive(primitive) => Some(&primitive.state),
             AcceleratorBody::Composite(_) => None,
         }
     }
 
-    fn merge_input(&self, input: State) -> State {
+    fn merge_input(&self, input: RunState) -> RunState {
         let mut state = input;
         if let AcceleratorBody::Primitive(primitive) = &self.body {
             let base = &primitive.state;
-            if state.purpose.is_empty() {
-                state.purpose.clone_from(&base.purpose);
+            let base_purpose = base.purpose.text.clone();
+            if !state.purpose.is_empty()
+                && !base_purpose.is_empty()
+                && state.purpose.text != base_purpose
+            {
+                state.purpose.text = format!("{}\n\n{}", state.purpose.text, base_purpose);
+            } else if state.purpose.is_empty() {
+                state.purpose.text.clone_from(&base_purpose);
             }
-            if state.ctx.is_empty() {
-                // Only fill fold_payload from base when the input didn't
-                // provide one (e.g. Fold mode provides fold_payload via
-                // the Context channel even though ctx is empty).
-                if state.fold_payload.is_empty() {
-                    state.fold_payload.clone_from(&base.fold_payload);
-                }
-                state.ctx = base.ctx.clone();
+            if state.context.is_empty() {
+                state.context = base.context.clone();
             }
-            if state.env.cwd.as_os_str().is_empty() {
-                state.env = base.env.clone();
+            if state.environment.cwd.as_os_str().is_empty() {
+                state.environment = base.environment.clone();
             }
-            state.res.models.clone_from(&base.res.models);
-            state.res.model_order.clone_from(&base.res.model_order);
-            state.res.tools.clone_from(&base.res.tools);
-            state.res.prompts.clone_from(&base.res.prompts);
-            state.res.active_model.clone_from(&base.res.active_model);
-            state.res.active_tools.clone_from(&base.res.active_tools);
+            state.resources.models.clone_from(&base.resources.models);
+            state
+                .resources
+                .model_order
+                .clone_from(&base.resources.model_order);
+            state
+                .resources
+                .tool_definitions
+                .clone_from(&base.resources.tool_definitions);
+            state.resources.prompts.clone_from(&base.resources.prompts);
+            state
+                .resources
+                .active_model
+                .clone_from(&base.resources.active_model);
+            state
+                .resources
+                .active_tools
+                .clone_from(&base.resources.active_tools);
         }
         state
     }
 }
 
 #[derive(Clone)]
-// Graph is inherently larger than PrimitiveAccelerator; boxing the
-// Composite variant would add a pointer traversal at every match site
-// with no measurable performance benefit for this enum.
 #[allow(clippy::large_enum_variant)]
 enum AcceleratorBody {
-    Primitive(PrimitiveAccelerator),
+    Primitive(Box<PrimitiveAccelerator>),
     Composite(Graph),
 }
 
 #[derive(Clone)]
 struct PrimitiveAccelerator {
-    state: State,
+    state: RunState,
     policy: Box<dyn machine::Policy>,
+    tool_runtime: ToolRuntime,
 }
 
 impl PrimitiveAccelerator {
-    async fn fire(self, mut state: State) -> State {
-        let base_purpose = state.purpose.clone();
-        let fold_payload = state.fold_payload.clone();
-
-        // Fold mode: merge fold_payload into purpose so that Captain's
-        // setup_step injects a purpose that already contains upstream info.
-        let combined_purpose = if !fold_payload.is_empty() {
-            format!("{}\n\n{}", fold_payload, base_purpose)
-        } else {
-            base_purpose.clone()
+    async fn fire(self, state: RunState) -> RunState {
+        let mut machine_state = MachineState {
+            run: state,
+            frame: MachineFrame::default(),
         };
-        let purpose = Purpose::new(&combined_purpose);
+        let base_purpose = machine_state.run.purpose.text.clone();
+        let needs_reorder = machine_state
+            .run
+            .context
+            .fragments()
+            .iter()
+            .any(|fragment| !is_scaffolding(fragment) && !is_purpose_tag(fragment));
 
-        // Determine whether we need to reorder on first Halt.
-        // For non-fold modes with upstream content: scaffolding comes from
-        // Captain setup, but non-scaffolding fragments from flux may sit
-        // before or among the scaffolding. On first Halt we move them after
-        // the env fragment and inject purpose_b.
-        let has_content_to_move = !fold_payload.is_empty() // fold: info is in purpose, no ctx content
-            || state.ctx.fragments().iter().any(|f| {
-                !is_scaffolding(f) && !is_purpose_tag(f)
-            });
-        let needs_reorder = has_content_to_move && fold_payload.is_empty();
-
-        let mut inbox = Inbox::new();
-        let mut step = 0u64;
         let mut machine = Machine::new("ephemeral", "ephemeral");
         let policy = self.policy;
+        let tool_runtime = self.tool_runtime;
         let mut reorder_pending = needs_reorder;
 
-        hook!(event = "machine_start", purpose = %purpose.text);
+        hook!(event = "machine_start", purpose = %machine_state.run.purpose.text);
 
         loop {
-            step += 1;
             let action = policy
-                .decide(&purpose, &state.ctx, &state.env, &state.res, &inbox)
+                .decide(PolicyView {
+                    run: &machine_state.run,
+                    inbox: &machine_state.frame.inbox,
+                    step: machine_state.frame.step,
+                    status: machine_state.frame.status,
+                })
                 .await;
 
-            // Intercept the first Halt (after Captain setup completes) to
-            // reorder context: move upstream non-scaffolding content to
-            // after the env fragment, then insert purpose_b.
             if matches!(&action, Action::Halt) && reorder_pending {
                 reorder_pending = false;
-                let env_pos = state
-                    .ctx
-                    .fragments()
-                    .iter()
-                    .position(|f| is_scaffolding(f) && f.tag == "env");
-                if let Some(env_pos) = env_pos {
-                    let env_id = state.ctx.fragments()[env_pos].id();
-
-                    // Collect non-scaffolding, non-purpose fragments before env.
-                    let before_env: Vec<(u64, Fragment)> = state.ctx.fragments()[..env_pos]
-                        .iter()
-                        .filter(|f| !is_scaffolding(f) && !is_purpose_tag(f))
-                        .map(|f| (f.id(), f.clone()))
-                        .collect();
-
-                    if !before_env.is_empty() {
-                        // Remove them.
-                        for (id, _) in &before_env {
-                            let _ = state.ctx.remove(*id);
-                        }
-                        // Re-insert after env.
-                        let mut cursor = env_id;
-                        for (_, frag) in &before_env {
-                            if let Ok(nid) = state.ctx.insert(cursor, frag.clone()) {
-                                cursor = nid;
-                            }
-                        }
-
-                        // Insert purpose_b after the last re-inserted fragment.
-                        if !base_purpose.is_empty() {
-                            let _ = state.ctx.insert(
-                                cursor,
-                                Fragment::user(&base_purpose).with_tag("purpose_b"),
-                            );
-                        }
-                    }
-                }
+                reorder_context_before_first_halt(&mut machine_state.run, &base_purpose);
             }
 
-            if machine
+            let result = machine
                 .apply(
                     action,
-                    step,
-                    &mut state.ctx,
-                    &mut state.env,
-                    &mut state.res,
-                    &mut inbox,
+                    &mut machine_state,
+                    ExecutionMode::Live {
+                        tool_runtime: &tool_runtime,
+                    },
                 )
-                .await
-            {
+                .await;
+            if result.done {
                 break;
             }
         }
 
+        machine_state.run
+    }
+}
+
+fn reorder_context_before_first_halt(state: &mut RunState, base_purpose: &str) {
+    let env_position = state
+        .context
+        .fragments()
+        .iter()
+        .position(|fragment| is_scaffolding(fragment) && fragment.tag == "env");
+    let Some(env_position) = env_position else {
+        return;
+    };
+    let env_id = state.context.fragments()[env_position].id();
+    let before_env = state.context.fragments()[..env_position]
+        .iter()
+        .filter(|fragment| !is_scaffolding(fragment) && !is_purpose_tag(fragment))
+        .map(|fragment| (fragment.id(), fragment.clone()))
+        .collect::<Vec<_>>();
+    if before_env.is_empty() {
+        return;
+    }
+    for (id, _) in &before_env {
+        let _ = state.context.remove(*id);
+    }
+    let mut cursor = env_id;
+    for (_, fragment) in &before_env {
+        if let Ok(new_id) = state.context.insert(cursor, fragment.clone()) {
+            cursor = new_id;
+        }
+    }
+    if !base_purpose.is_empty() {
+        let _ = state
+            .context
+            .insert(cursor, Fragment::user(base_purpose).with_tag("purpose_b"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use machine::Fragment;
+
+    fn state_with_assistant(text: &str) -> RunState {
+        let mut state = RunState::default();
+        state.context.append(Fragment::assistant(text));
         state
+    }
+
+    #[test]
+    fn run_dir_recovered_from_handoff() {
+        let input = state_with_assistant(
+            "run_dir: runs/20260604T110702Z\nartifact: runs/20260604T110702Z/00_card_plan.json\nstatus: ok",
+        );
+        assert!(input.context.fragments().iter().any(|f| {
+            f.as_text()
+                .unwrap_or("")
+                .contains("run_dir: runs/20260604T110702Z")
+        }));
     }
 }

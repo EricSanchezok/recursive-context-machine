@@ -7,6 +7,7 @@
 mod edit;
 mod guard;
 mod list;
+mod pdf;
 mod read;
 mod write;
 

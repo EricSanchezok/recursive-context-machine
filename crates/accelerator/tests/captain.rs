@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use accelerator::Captain;
 use machine::{
-    Action, Context, Environment, Fragment, Inbox, Machine, Model, Policy, Purpose, Resources,
-    Role, Tool, ToolResult,
+    Action, Context, Environment, ExecutionMode, Fragment, Machine, MachineState, Model, Policy,
+    PolicyView, Purpose, Resources, Role, RunState, Tool, ToolDefinition, ToolResult, ToolRuntime,
 };
 use serde_json::json;
 
@@ -54,8 +54,8 @@ fn resources() -> Resources {
             name: "careful".into(),
             ..Default::default()
         })
-        .with_tool(named_tool("read"))
-        .with_tool(named_tool("search"));
+        .with_tool_definition(ToolDefinition::from_tool(named_tool("read").as_ref()))
+        .with_tool_definition(ToolDefinition::from_tool(named_tool("search").as_ref()));
     resources
         .prompts
         .insert("captain".into(), "Captain prompt".into());
@@ -68,19 +68,44 @@ async fn drive_until_halt(
     resources: &mut Resources,
     purpose: &str,
 ) {
-    let mut env = Environment::new(".");
-    let mut inbox = Inbox::new();
+    let mut state = MachineState {
+        run: RunState {
+            purpose: Purpose::new(purpose),
+            context: ctx.clone(),
+            environment: Environment::new("."),
+            resources: resources.clone(),
+            telemetry: machine::Telemetry::default(),
+        },
+        frame: machine::MachineFrame::default(),
+    };
     let mut machine = Machine::new("test", "test");
-    let purpose = Purpose::new(purpose);
+    let tool_runtime = ToolRuntime::new();
 
-    for step in 1..100 {
-        let action = captain.decide(&purpose, ctx, &env, resources, &inbox).await;
+    for _ in 0..100 {
+        let action = captain
+            .decide(PolicyView {
+                run: &state.run,
+                inbox: &state.frame.inbox,
+                step: state.frame.step,
+                status: state.frame.status,
+            })
+            .await;
         match action {
-            Action::Halt => return,
+            Action::Halt => {
+                *ctx = state.run.context;
+                *resources = state.run.resources;
+                return;
+            }
             Action::Done => panic!("captain ended before first halt"),
             action => {
                 machine
-                    .apply(action, step, ctx, &mut env, resources, &mut inbox)
+                    .apply(
+                        action,
+                        &mut state,
+                        ExecutionMode::Live {
+                            tool_runtime: &tool_runtime,
+                        },
+                    )
                     .await;
             }
         }

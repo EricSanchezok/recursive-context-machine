@@ -112,7 +112,7 @@ async fn state_includes_tool_and_model_info() {
 
     let req = OpenRequest {
         purpose: "info-test".into(),
-        models: vec![ModelSpec {
+        model_definitions: vec![ModelSpec {
             name: "test-model".into(),
             protocol: "openai".into(),
             limit: Some(LimitSpec {
@@ -122,6 +122,7 @@ async fn state_includes_tool_and_model_info() {
             }),
             ..Default::default()
         }],
+        models: vec!["test-model".into()],
         ..Default::default()
     };
     let resp = runtime.open(Request::new(req)).await.unwrap().into_inner();
