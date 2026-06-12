@@ -39,7 +39,7 @@ def run_official_script(script_name: str, cwd: str, **kwargs) -> bool:
 
     cmd = [sys.executable, str(script_path)]
     for key, value in kwargs.items():
-        key_arg = "--" + key.replace("_", "-")
+        key_arg = "--" + key
         cmd.extend([key_arg, str(value)])
 
     print(f"Running: {' '.join(cmd)}")

@@ -79,23 +79,28 @@ def resolve_config(
     return str(tmp_path)
 
 
-def run_launch_writing(
+def run_evaluation_batch(
     config_path: str,
     paper_names: list[str] | None = None,
     all_papers: bool = False,
-    skip_evaluation: bool = False,
     eval_mode: str | None = None,
+    force: bool = False,
 ) -> bool:
-    """Run the official PaperRecon launch_writing.py script."""
+    """Run the official PaperRecon run_evaluation.py script (not launch_writing.py).
+
+    launch_writing.py handles writing AND evaluation together, but does NOT
+    accept --eval-mode or --force flags. The correct evaluation-only entry
+    point is run_evaluation.py.
+    """
     if not check_prerequisites():
         return False
 
-    launch_script = Path(REPO_DIR) / "launch_writing.py"
-    if not launch_script.exists():
-        print(f"ERROR: launch_writing.py not found in {REPO_DIR}")
+    eval_script = Path(REPO_DIR) / "run_evaluation.py"
+    if not eval_script.exists():
+        print(f"ERROR: run_evaluation.py not found in {REPO_DIR}")
         return False
 
-    cmd = [sys.executable, str(launch_script), "--config-path", config_path]
+    cmd = [sys.executable, str(eval_script), "--config-path", config_path]
 
     if all_papers:
         cmd.append("--all")
@@ -103,11 +108,11 @@ def run_launch_writing(
         for name in paper_names:
             cmd.extend(["--paper", name])
 
-    if skip_evaluation:
-        cmd.append("--skip-evaluation")
-
     if eval_mode:
         cmd.extend(["--eval-mode", eval_mode])
+
+    if force:
+        cmd.append("--force")
 
     print(f"  {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=REPO_DIR)
@@ -120,13 +125,13 @@ def run_evaluation(
     eval_mode: str = "all",
     force: bool = False,
 ) -> bool:
-    """Run evaluation for a specific paper."""
+    """Run evaluation for a specific paper via the official run_evaluation.py."""
     if not check_prerequisites():
         return False
 
-    eval_script = Path(REPO_DIR) / "launch_writing.py"
+    eval_script = Path(REPO_DIR) / "run_evaluation.py"
     if not eval_script.exists():
-        print(f"ERROR: launch_writing.py not found in {REPO_DIR}")
+        print(f"ERROR: run_evaluation.py not found in {REPO_DIR}")
         return False
 
     cmd = [
@@ -202,7 +207,7 @@ def main():
     config_path = resolve_config(args.config, args.model)
 
     if args.all:
-        success = run_launch_writing(
+        success = run_evaluation_batch(
             config_path=config_path, all_papers=True,
             eval_mode=args.eval_mode,
         )
@@ -210,9 +215,8 @@ def main():
 
     if args.paper:
         if args.skip_evaluation:
-            success = run_launch_writing(
+            success = run_evaluation_batch(
                 config_path=config_path, paper_names=[args.paper],
-                skip_evaluation=True,
             )
         else:
             success = run_evaluation(
