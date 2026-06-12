@@ -2,16 +2,18 @@
 Paper Benchmarks — Unified Evaluation CLI
 ==========================================
 
-Orchestrates evaluation across three paper generation benchmarks:
+Orchestrates evaluation across four paper generation benchmarks:
 
-  1. PaperWrite-Bench  —  Paper writing quality
-  2. MLR-Bench         —  Machine learning research quality
-  3. SciReplicate-Bench —  Algorithmic reproduction accuracy
+  1. PaperWrite-Bench      —  Paper writing quality
+  2. MLR-Bench             —  Machine learning research quality
+  3. SciReplicate-Bench    —  Algorithmic reproduction accuracy
+  4. DeepResearch-Bench    —  PhD-level deep research report quality (RACE + FACT)
 
 Usage:
   python run_evaluation.py --benchmark paperwrite --paper paper_1 --eval-mode all
   python run_evaluation.py --benchmark mlr --stepwise --model-name gpt-4o
   python run_evaluation.py --benchmark scireplicate --all-metrics
+  python run_evaluation.py --benchmark deepresearch --mode simple --pdf report.pdf
   python run_evaluation.py --all
   python run_evaluation.py --check
   python run_evaluation.py --list
@@ -36,6 +38,10 @@ BENCHMARKS = {
     "scireplicate": {
         "dir": "scireplicate-bench",
         "desc": "SciReplicate-Bench: Algorithmic reproduction (CodeBLEU + Exec ACC + Recall + Graph ACC)",
+    },
+    "deepresearch": {
+        "dir": "deepresearch-bench",
+        "desc": "DeepResearch-Bench: PhD-level deep research reports (RACE + FACT)",
     },
 }
 
@@ -68,7 +74,7 @@ def run_benchmark(benchmark: str, args_list: list[str]) -> bool:
 
 
 def run_all_benchmarks(args_list: list[str]):
-    """Run all three benchmarks in sequence."""
+    """Run all four benchmarks in sequence."""
     all_ok = True
     for name in BENCHMARKS:
         ok = run_benchmark(name, args_list)

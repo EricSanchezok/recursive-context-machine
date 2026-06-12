@@ -22,6 +22,10 @@ REPO_DIRS = {
         "SCIREPLICATE_REPO_DIR",
         str(BENCHMARKS_DIR / "scireplicate-bench" / "SciReplicate-Bench"),
     ),
+    "deepresearch": os.environ.get(
+        "DEEPRESEARCH_REPO_DIR",
+        str(BENCHMARKS_DIR / "deepresearch-bench" / "data"),
+    ),
 }
 
 # ── API keys (priority: env var > .env file) ──
