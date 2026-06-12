@@ -43,6 +43,8 @@ def run_full_mode(args_list: list[str]) -> bool:
     sub_parser.add_argument("--force", action="store_true")
     sub_parser.add_argument("--max_workers", type=int, default=5)
     sub_parser.add_argument("--output_dir", type=str, default="results")
+    sub_parser.add_argument("--reference", type=str, default=None,
+                            help="Path to reference data file")
 
     try:
         args = sub_parser.parse_args(args_list)
@@ -74,7 +76,7 @@ def run_full_mode(args_list: list[str]) -> bool:
     if args.reference:
         race_cmd += ["--reference", str(cleaned_data_dir / "reference.jsonl")]
 
-    result = subprocess.run(cmd)
+    result = subprocess.run(race_cmd)
     return result.returncode == 0
 
 
