@@ -7,12 +7,15 @@ const ENV_TAG: &str = "env";
 
 pub(crate) fn refresh(ctx: &Context, env: &Environment) -> Step {
     let now = Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
-    let text = format!(
+    let mut text = format!(
         "cwd: {}\nplatform: {}\ntime: {}",
         env.cwd.display(),
         env.platform,
         now,
     );
+    if let Some(ref run_dir) = env.run_dir {
+        text.push_str(&format!("\nrun_dir: {}", run_dir.display()));
+    }
     let fragment = Fragment::system(text.clone()).with_tag(ENV_TAG);
 
     if let Some(existing) = ctx

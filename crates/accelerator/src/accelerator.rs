@@ -111,11 +111,19 @@ impl Accelerator {
             } else if state.purpose.is_empty() {
                 state.purpose.text.clone_from(&base_purpose);
             }
+            if state.run_dir.is_none() {
+                state.run_dir.clone_from(&base.run_dir);
+            }
             if state.context.is_empty() {
                 state.context = base.context.clone();
             }
             if state.environment.cwd.as_os_str().is_empty() {
                 state.environment = base.environment.clone();
+            } else if state.environment.run_dir.is_none() {
+                state
+                    .environment
+                    .run_dir
+                    .clone_from(&base.environment.run_dir);
             }
             state.resources.models.clone_from(&base.resources.models);
             state

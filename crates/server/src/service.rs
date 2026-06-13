@@ -70,6 +70,7 @@ impl Rcm for RcmService {
             state: MachineState {
                 run: RunState {
                     purpose: Purpose::new(request.purpose),
+                    run_dir: None,
                     context: machine::Context::new(),
                     environment,
                     resources: runtime_resources.resources,
