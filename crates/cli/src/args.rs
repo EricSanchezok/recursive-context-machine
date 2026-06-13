@@ -47,6 +47,11 @@ pub struct RunArgs {
     /// Override the purpose declared in the .rcm file.
     #[arg(long)]
     pub purpose: Option<String>,
+
+    /// Use a specific run directory instead of auto-generating a timestamped one.
+    /// Exported as RCM_RUN_DIR for subprocess/shell tools.
+    #[arg(long)]
+    pub run_dir: Option<PathBuf>,
 }
 
 /// --- Parse ---------------------------------------------------------------

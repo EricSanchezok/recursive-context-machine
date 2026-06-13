@@ -22,6 +22,10 @@ pub struct Environment {
     pub vars: HashMap<String, String>,
     pub root: Option<PathBuf>,
     pub platform: String,
+    /// Override for the run directory. When set, injected into the env context
+    /// fragment and exported as `RCM_RUN_DIR` for subprocess/shell tools.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub run_dir: Option<PathBuf>,
 }
 
 impl Environment {
@@ -47,6 +51,7 @@ impl Environment {
             vars: std::env::vars().collect(),
             root: None,
             platform: std::env::consts::OS.to_string(),
+            run_dir: None,
         }
     }
 
@@ -69,6 +74,7 @@ impl Environment {
             vars: HashMap::new(),
             root: None,
             platform: std::env::consts::OS.to_string(),
+            run_dir: None,
         }
     }
 }
