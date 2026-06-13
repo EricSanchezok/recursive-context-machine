@@ -17,9 +17,10 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
         .map_err(anyhow::Error::msg)?;
 
     let purpose = args.purpose.unwrap_or_default();
+    let run_dir = args.run_dir;
 
     if args.stream {
-        return stream_run(accelerator, hook_rx, purpose).await;
+        return stream_run(accelerator, hook_rx, purpose, run_dir).await;
     }
 
     let start = Instant::now();
@@ -31,10 +32,18 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
             .build()
             .expect("tokio runtime");
         runtime.block_on(async {
-            let state = machine::RunState {
+            let mut state = machine::RunState {
                 purpose: machine::Purpose::new(purpose),
+                run_dir: run_dir.clone(),
                 ..machine::RunState::default()
             };
+            if let Some(ref dir) = run_dir {
+                state.environment.run_dir = Some(dir.clone());
+                state
+                    .environment
+                    .vars
+                    .insert("RCM_RUN_DIR".to_string(), dir.display().to_string());
+            }
             let output = accelerator.run_with(state).await;
             let _ = ctx_tx.send(output.context);
         });
@@ -55,6 +64,7 @@ async fn stream_run(
     accelerator: accelerator::Accelerator,
     hook_rx: mpsc::Receiver<hook::HookEvent>,
     purpose: String,
+    run_dir: Option<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
     let (ctx_tx, ctx_rx) = mpsc::channel();
 
@@ -64,10 +74,18 @@ async fn stream_run(
             .build()
             .expect("tokio runtime");
         runtime.block_on(async {
-            let state = machine::RunState {
+            let mut state = machine::RunState {
                 purpose: machine::Purpose::new(purpose),
+                run_dir: run_dir.clone(),
                 ..machine::RunState::default()
             };
+            if let Some(ref dir) = run_dir {
+                state.environment.run_dir = Some(dir.clone());
+                state
+                    .environment
+                    .vars
+                    .insert("RCM_RUN_DIR".to_string(), dir.display().to_string());
+            }
             let output = accelerator.run_with(state).await;
             let _ = ctx_tx.send(output.context);
         });
