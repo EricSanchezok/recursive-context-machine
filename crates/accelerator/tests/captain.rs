@@ -71,6 +71,7 @@ async fn drive_until_halt(
     let mut state = MachineState {
         run: RunState {
             purpose: Purpose::new(purpose),
+            run_dir: None,
             context: ctx.clone(),
             environment: Environment::new("."),
             resources: resources.clone(),

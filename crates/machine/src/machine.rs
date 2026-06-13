@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 use crate::context::Context;
@@ -23,6 +25,7 @@ pub struct Machine {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunState {
     pub purpose: Purpose,
+    pub run_dir: Option<PathBuf>,
     pub context: Context,
     pub environment: Environment,
     pub resources: Resources,
@@ -33,6 +36,7 @@ impl Default for RunState {
     fn default() -> Self {
         Self {
             purpose: Purpose::default(),
+            run_dir: None,
             context: Context::new(),
             environment: Environment::new("."),
             resources: Resources::new(),
