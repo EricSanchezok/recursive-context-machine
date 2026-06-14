@@ -55,6 +55,12 @@ CLI `--purpose` flag on the explore stage. Run from this example's directory so
 that `schema/`, `prompts/`, and this `AGENTS.md` resolve correctly and `runs/`
 lands here.
 
+When this pipeline is launched from Research Portal through holos-research, the
+runner must pass `RDC_URL` and `RDC_RESEARCH_ID` in the process environment and
+run with `--stream` so portal-gateway can mirror RCM node events through the
+AgentBay MCP bridge. Use `--run-dir <path>` for queued or concurrent runs so two
+projects never recover the same newest `runs/*` directory.
+
 ```sh
 cd examples/autoresearch
 export DEEPSEEK_API_KEY=sk-...
