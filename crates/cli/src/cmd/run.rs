@@ -60,6 +60,25 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+// ===========================================================================
+// Stream JSON Line Format — EXTERNAL FROZEN CONTRACT
+//
+// This JSON output format is consumed by portal-gateway's parse-rcm.ts and
+// must NOT be changed without synchronizing with the gateway codebase.
+//
+// Format: {"type":"<event_type>","field1":"value1",...}
+//
+// Event types:
+//   graph_start, graph_done, frontier_start, frontier_done
+//   component_start, component_done, component_skipped
+//   machine_start, machine_done, halt, completion_start, completion_end
+//   tool_call, tool_result, tool_error
+//   appended, taken, inserted, replaced, removed
+//   model, activate, deactivate, resource
+//
+// All field names use snake_case.
+// Consumer: portal-gateway/src/hub/parse-rcm.ts
+// ===========================================================================
 async fn stream_run(
     accelerator: accelerator::Accelerator,
     hook_rx: mpsc::Receiver<hook::HookEvent>,
