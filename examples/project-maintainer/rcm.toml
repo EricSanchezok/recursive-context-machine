@@ -1,0 +1,6 @@
+[project]
+name = "RCM Project Maintainer"
+description = "AI-native maintainer workflow: analyze GitHub issues and PRs for project health"
+
+[env]
+GITHUB_TOKEN = "keep-in-shell-env"

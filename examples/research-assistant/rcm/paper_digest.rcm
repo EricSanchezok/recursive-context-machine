@@ -1,0 +1,35 @@
+name = "Paper Digest"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+use "./paper_search.rcm" as PaperSearcher
+
+graph {
+    accelerator search = PaperSearcher
+    accelerator analyst {
+        purpose = "从上面的搜索结果中选出最相关的 1 篇论文，记下它的 arXiv ID。用 arxiv_download 工具下载 PDF（参数 arxivId 和 outputPath）。然后写 200 字中文分析：方法亮点、局限性和改进方向。必须调用 arxiv_download。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = ["arxiv_download", "shell"]
+    }
+
+    flux search_digest {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    search.context -> search_digest.slot(0)
+    search_digest.out -> analyst.context
+    search.done -> analyst.trigger
+
+    analyst.done -> output.done
+    analyst.context -> output.context
+    analyst.purpose -> output.purpose
+}

@@ -1,0 +1,188 @@
+name = "Research Survey Pipeline"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+graph {
+    // ── Layer 1: Parallel Search ────────────────────────────────────────────
+
+    accelerator topic_searcher {
+        purpose = "使用 arxiv_search 工具搜索 LLM agent memory 相关论文。用 3 组不同的简短英文关键词各搜 5 篇，覆盖：1) core methods 2) applications 3) benchmarks。合并去重，输出论文列表（标题 + arXiv ID + 一句话摘要）。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = ["arxiv_search"]
+    }
+
+    accelerator survey_searcher {
+        purpose = "使用 arxiv_search 工具搜索 LLM agent memory 领域的综述论文（survey / review）。用 titleKeywords 参数限定标题包含 survey 或 review，搜 5 篇。输出论文列表（标题 + arXiv ID）。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = ["arxiv_search"]
+    }
+
+    // ── Layer 2: Download surveys & extract references ──────────────────────
+
+    accelerator survey_downloader {
+        purpose = "阅读上面的搜索结果，找到所有综述论文的 arXiv ID。用 arxiv_download 工具逐篇下载 PDF（参数 arxivId 和 outputPath）。列出每篇的本地文件路径和 arXiv ID。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = ["arxiv_download"]
+    }
+
+    accelerator reference_extractor {
+        purpose = "阅读上面的下载结果。对每篇综述，用 shell 工具查看 PDF 的 References 部分（用 pdftotext 或 strings）。提取与 LLM agent memory 相关的论文标题、作者、年份。优先被多篇综述共同引用的论文。输出论文列表。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = ["shell"]
+    }
+
+    // ── Layer 3: Merge & Deduplicate ────────────────────────────────────────
+
+    accelerator deduplicator {
+        purpose = "阅读上面的所有论文列表（直接搜索 + 综述引用提取）。执行：1) 按标题相似度去重；2) 标注来源（直接搜索 / 综述引用 / 两者都有）；3) 两者都有的排前面。输出排序后的完整列表。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = []
+    }
+
+    // ── Layer 4: Coverage Check ─────────────────────────────────────────────
+
+    accelerator coverage_checker {
+        purpose = "阅读上面的去重论文列表。分析：1) 覆盖的主要子主题；2) 每个子主题论文数；3) 哪些子主题覆盖不足（<2 篇）；4) 是否有重要遗漏。输出覆盖报告。发现不足时末尾必须写出 覆盖不足 三个字。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = []
+    }
+
+    accelerator gap_expander {
+        purpose = "阅读上面的覆盖报告，找到覆盖不足的子主题。用 arxiv_search 工具搜索补充论文，每个不足子主题至少 3 篇。输出补充论文列表。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = ["arxiv_search"]
+    }
+
+    // ── Layer 5: Credibility & Synthesis ────────────────────────────────────
+
+    accelerator credibility_gate {
+        purpose = "阅读上面的所有论文信息。检查：1) 是否有论文在相同 benchmark 上声称 SOTA 但结果矛盾；2) 标记只有 abstract 无全文的论文。输出可信度预警报告。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = []
+    }
+
+    accelerator synthesizer {
+        purpose = "阅读上面的论文集合、覆盖报告和可信度报告。撰写结构化研究综述：1) 按子方向组织；2) 每个方向概述方法、结果和技术路线差异；3) 标注可信度预警的论文；4) 指出研究空白和未来方向。中文撰写，术语英文。不要修改任何文件。"
+        models = ["deepseek-v4-flash"]
+        policy = "captain"
+        tools = []
+    }
+
+    // ── Fluxes ──────────────────────────────────────────────────────────────
+
+    // Digest topic search → survey pipeline (clean data, drop reasoning)
+    flux topic_digest {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    // Thread: merge topic search + survey search results as Q&A pairs
+    flux search_thread {
+        channel = context
+        mode = thread
+        arity = 2
+    }
+
+    // Digest reference extraction output
+    flux ref_digest {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    // Thread: merge all paper streams for dedup
+    flux all_papers_thread {
+        channel = context
+        mode = thread
+        arity = 2
+    }
+
+    // Digest survey search → downloader
+    flux survey_digest {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    // Digest download → reference extractor
+    flux download_digest {
+        channel = context
+        mode = digest
+        arity = 1
+    }
+
+    // ── Conditions ──────────────────────────────────────────────────────────
+
+    condition needs_expand {
+        context contains "覆盖不足"
+    }
+
+    // ── Wires: Layer 1 (parallel) ───────────────────────────────────────────
+
+    // topic_searcher feeds into survey pipeline via digest (clean data)
+    topic_searcher.context -> topic_digest.slot(0)
+    topic_digest.out -> survey_searcher.context
+    topic_searcher.done -> survey_searcher.trigger
+
+    // ── Wires: Layer 1 → Layer 2 (survey pipeline) ──────────────────────────
+
+    survey_searcher.context -> survey_digest.slot(0)
+    survey_digest.out -> survey_downloader.context
+    survey_searcher.done -> survey_downloader.trigger
+
+    survey_downloader.context -> download_digest.slot(0)
+    download_digest.out -> reference_extractor.context
+    survey_downloader.done -> reference_extractor.trigger
+
+    // ── Wires: Layer 2 → merge → Layer 3 ───────────────────────────────────
+
+    topic_searcher.context -> search_thread.slot(0)
+    survey_searcher.context -> search_thread.slot(1)
+
+    search_thread.out -> all_papers_thread.slot(0)
+    reference_extractor.context -> ref_digest.slot(0)
+    ref_digest.out -> all_papers_thread.slot(1)
+
+    all_papers_thread.out -> deduplicator.context
+    reference_extractor.done -> deduplicator.trigger
+
+    // ── Wires: Layer 3 → Layer 4 ────────────────────────────────────────────
+
+    deduplicator.done -> coverage_checker.trigger
+    deduplicator.context -> coverage_checker.context
+
+    coverage_checker.done -> needs_expand.trigger
+
+    needs_expand.true -> gap_expander.trigger
+    coverage_checker.context -> gap_expander.context
+
+    needs_expand.false -> credibility_gate.trigger
+    coverage_checker.context -> credibility_gate.context
+
+    gap_expander.done -> credibility_gate.trigger
+    gap_expander.context -> credibility_gate.context
+
+    // ── Wires: Layer 5 → output ─────────────────────────────────────────────
+
+    credibility_gate.done -> synthesizer.trigger
+    credibility_gate.context -> synthesizer.context
+
+    synthesizer.done -> output.done
+    synthesizer.context -> output.context
+    synthesizer.purpose -> output.purpose
+}
