@@ -50,6 +50,17 @@ data/
 
 # Maintainer dispatcher cache — rendered .rcm files are runtime artifacts
 .rcm-cache/
+**/.rcm-cache/
+
+# Local runs, logs, and generated outputs
+runs/
+outputs/
+logs_*/
+examples/**/runs/
+
+# Downloaded papers and scratch files
+docs/papers/
+dev/
 
 # Distribution — rcm-dist is a separate public repo cloned alongside
 rcm-dist/

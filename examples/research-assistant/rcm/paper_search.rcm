@@ -1,0 +1,16 @@
+name = "Paper Search"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+accelerator {
+    purpose = "使用 arxiv_search 工具从以下 3 个角度各搜 3 篇关于 LLM agent memory 的最新论文：1) core methods 2) applications 3) benchmarks。每次搜索用简短英文关键词查询，共 3 次调用。最后合并去重，输出论文列表（标题 + arXiv ID + 一句话摘要）。不要修改任何文件。"
+    models = ["deepseek-v4-flash"]
+    policy = "captain"
+    tools = ["arxiv_search"]
+}
