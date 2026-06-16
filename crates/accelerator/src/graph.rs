@@ -342,6 +342,25 @@ impl GraphRun {
 
         run.count_dependencies();
         run.apply_boundary_input(&input);
+
+        // Propagate run_dir + cwd from the graph's input to every sub-component
+        // so fs tools inside children still write to the user-specified --run-dir.
+        if let Some(ref dir) = input.run_dir {
+            for (_, inp) in run.inputs.iter_mut().enumerate() {
+                inp.run_dir = Some(dir.clone());
+                inp.environment.cwd = dir.clone();
+                if inp.environment.run_dir.is_none() {
+                    inp.environment.run_dir = Some(dir.clone());
+                }
+                inp
+                    .environment
+                    .vars
+                    .entry("RCM_RUN_DIR".to_string())
+                    .or_insert_with(|| dir.display().to_string());
+            }
+            run.result.run_dir = Some(dir.clone());
+            run.result.environment.cwd = dir.clone();
+        }
         run
     }
 
