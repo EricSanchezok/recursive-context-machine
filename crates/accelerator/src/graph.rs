@@ -345,17 +345,29 @@ impl GraphRun {
 
         // Propagate cwd from the graph's input to every sub-component so
         // fs tools inside children write to the user-specified --run-dir.
-        if let Some(ref dir) = input.run_dir {
+        //
+        // CLI callers set both RunState.run_dir and environment.run_dir, but
+        // graph channel wiring may carry only environment metadata into a
+        // nested composite. Treat environment.run_dir as an equivalent source
+        // of truth and write the resolved value back onto each child input.
+        let input_run_dir = input
+            .run_dir
+            .as_ref()
+            .or(input.environment.run_dir.as_ref())
+            .cloned();
+        if let Some(ref dir) = input_run_dir {
             for inp in run.inputs.iter_mut() {
+                inp.run_dir = Some(dir.clone());
                 inp.environment.cwd = dir.clone();
                 inp.environment.run_dir = Some(dir.clone());
-                inp
-                    .environment
+                inp.environment
                     .vars
                     .entry("RCM_RUN_DIR".to_string())
                     .or_insert_with(|| dir.display().to_string());
             }
+            run.result.run_dir = Some(dir.clone());
             run.result.environment.cwd = dir.clone();
+            run.result.environment.run_dir = Some(dir.clone());
         }
         run
     }

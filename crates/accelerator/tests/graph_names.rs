@@ -1,5 +1,6 @@
 mod common;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -53,6 +54,14 @@ fn run(accelerator: Accelerator) -> RunState {
         .build()
         .unwrap();
     runtime.block_on(async { accelerator.run_with(RunState::default()).await })
+}
+
+fn run_with(accelerator: Accelerator, input: RunState) -> RunState {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async { accelerator.run_with(input).await })
 }
 
 #[test]
@@ -120,6 +129,28 @@ fn composite_accelerator_routes_context_to_output() {
     let output = run(Accelerator::composite_named("pipeline", graph));
 
     assert_eq!(output.context.fragments().len(), 1);
+}
+
+#[test]
+fn composite_accelerator_propagates_environment_run_dir_to_children() {
+    let run_dir = PathBuf::from("/tmp/rcm-graph-run-dir-test");
+    let mut input = RunState::default();
+    input.environment.cwd = PathBuf::from("/tmp/rcm-source");
+    input.environment.run_dir = Some(run_dir.clone());
+
+    let mut graph = Graph::new();
+    let child = graph.add_accelerator("child", common::primitive("child"));
+    graph.wire(
+        child.environment(),
+        Graph::output(Endpoint::State(Channel::Environment)),
+    );
+    graph.wire(child.done(), Graph::output(Endpoint::Done));
+
+    let output = run_with(Accelerator::composite_named("pipeline", graph), input);
+
+    assert_eq!(output.run_dir, Some(run_dir.clone()));
+    assert_eq!(output.environment.cwd, run_dir);
+    assert_eq!(output.environment.run_dir, output.run_dir);
 }
 
 #[test]
