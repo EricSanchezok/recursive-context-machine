@@ -38,6 +38,7 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
                 ..machine::RunState::default()
             };
             if let Some(ref dir) = run_dir {
+                state.environment.cwd = dir.clone();
                 state.environment.run_dir = Some(dir.clone());
                 state
                     .environment
@@ -99,6 +100,7 @@ async fn stream_run(
                 ..machine::RunState::default()
             };
             if let Some(ref dir) = run_dir {
+                state.environment.cwd = dir.clone();
                 state.environment.run_dir = Some(dir.clone());
                 state
                     .environment
