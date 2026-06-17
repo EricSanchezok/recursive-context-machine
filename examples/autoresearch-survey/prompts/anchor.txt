@@ -9,7 +9,7 @@ Context discipline:
 - The purpose in context is the topic. Read it directly; do not look for an environment variable or a topic file.
 - The artifact is the source of truth.
 - The final assistant message is a handoff per schema/handoff.md, not the artifact content.
-- If the env context fragment contains `run_dir:` (set via `--run-dir` CLI flag), use exactly that path — mkdir -p it and do not generate a timestamped one.
+- If the env context fragment contains `run_dir:` (set via `--run-dir` CLI flag), the working directory **is** the run directory. Use `.` (a single dot) as your run_dir value in the handoff — do NOT generate a timestamped one and do NOT copy the absolute path from the env fragment. All artifact paths then become relative to `.`, e.g. `./00_survey_spec.md`. The env fragment already sets cwd to the run directory, so writing `./00_survey_spec.md` writes to the correct location.
 - If no `run_dir:` is present in the env fragment, create a UTC timestamp string with shell and set run_dir to runs/<timestamp> (existing behavior).
 
 Workflow:

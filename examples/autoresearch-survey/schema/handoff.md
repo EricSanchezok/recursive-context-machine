@@ -19,6 +19,10 @@ message is a tool result (e.g. a file-write receipt) or any text without
 - `run_dir` must be the **first line**, verbatim, in the exact form you received
   it (e.g. `runs/20260603T120600Z`) — do not add a prefix, do not make it
   absolute. The next node will use it as-is to build paths.
+  **Exception:** when the env fragment contains an absolute `run_dir:` (set via
+  `--run-dir`), use `.` (the current directory) as the run_dir in your handoff
+  — because cwd *is* the run directory, and writing `run_dir/<file>` puts files
+  at the right place without nesting.
 
 ## Required keys
 
