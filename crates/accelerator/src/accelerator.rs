@@ -113,6 +113,11 @@ impl Accelerator {
             }
             if state.run_dir.is_none() {
                 state.run_dir.clone_from(&base.run_dir);
+                // When a child inherits run_dir, also use the parent's cwd
+                // so fs tools resolve paths inside the run directory.
+                if let Some(ref dir) = state.run_dir {
+                    state.environment.cwd = dir.clone();
+                }
             }
             if state.context.is_empty() {
                 state.context = base.context.clone();
