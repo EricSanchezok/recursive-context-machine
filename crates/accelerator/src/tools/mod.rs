@@ -126,6 +126,35 @@ pub(crate) fn validate_path_id(id: &str) -> Result<(), String> {
     }
     Ok(())
 }
+/// Map an entity_type (singular or plural) to its REST plural path segment.
+///
+/// Shared by `rdc_read` and `rdc_write` so the two tools always agree on URL
+/// construction. Previously each tool had its own copy, and they had drifted:
+/// `rdc_write` knew about `papers`/`reviews` but not `story_spines`/
+/// `gate_records`; `rdc_read` had the opposite gap. A missing mapping makes
+/// the tool fall through to the catch-all arm (`_ => entity_type`), which
+/// produces a wrong URL and a silent 404.
+pub(crate) fn pluralize(entity_type: &str) -> &str {
+    match entity_type {
+        "research" => "research",
+        "ideas" | "idea" => "ideas",
+        "claims" | "claim" => "claims",
+        "experiments" | "experiment" => "experiments",
+        "papers" | "paper" => "papers",
+        "paper_spines" | "paper_spine" => "paper-spines",
+        "tech_reports" | "tech_report" => "tech-reports",
+        "story_spines" | "story_spine" => "story-spines",
+        "positionings" | "positioning" => "positionings",
+        "reviews" | "review" => "reviews",
+        // RDC exposes gate records at /gates (not /gate_records). Both the
+        // canonical /gates route and the /gate_records alias (rdc commit
+        // feb7f31) accept these writes; keeping the mapping here means RCM
+        // is correct even without the alias.
+        "gate_records" | "gate_record" => "gates",
+        "lit_papers" | "lit_search" => "literature",
+        _ => entity_type,
+    }
+}
 
 #[cfg(test)]
 mod url_tests {
@@ -210,7 +239,10 @@ mod url_tests {
         // first offending byte is '/', reported via Debug formatting as `'/'`.
         let err = validate_path_id("a/b").unwrap_err();
         assert!(err.contains("illegal character"), "got: {err}");
-        assert!(err.contains("'/'"), "expected the slash to be quoted in: {err}");
+        assert!(
+            err.contains("'/'"),
+            "expected the slash to be quoted in: {err}"
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@ use machine::{Environment, Tool, ToolResult};
 use serde_json::Value;
 use tracing::{info, warn};
 
-use super::{url_encode, validate_path_id};
+use super::{pluralize, url_encode, validate_path_id};
 
 const TIMEOUT_SECS: u64 = 30;
 const DEFAULT_RDC_URL: &str = "http://localhost:3000";
@@ -222,23 +222,6 @@ async fn execute_read(args: Value, env: &Environment) -> Result<ToolResult, Stri
             entity_id.map_or(String::new(), |eid| format!("({eid})"))
         )),
     })
-}
-
-/// Map entity_type singular to its REST plural form.
-pub(crate) fn pluralize(entity_type: &str) -> &str {
-    match entity_type {
-        "research" => "research",
-        "ideas" | "idea" => "ideas",
-        "claims" | "claim" => "claims",
-        "experiments" | "experiment" => "experiments",
-        "lit_papers" | "lit_search" => "literature",
-        "paper_spines" | "paper_spine" => "paper-spines",
-        "tech_reports" | "tech_report" => "tech-reports",
-        "story_spines" | "story_spine" => "story-spines",
-        "positionings" | "positioning" => "positionings",
-        "gate_records" | "gate_record" => "gates",
-        _ => entity_type,
-    }
 }
 
 /// Format the JSON response into readable text for the LLM.

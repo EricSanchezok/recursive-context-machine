@@ -6,7 +6,7 @@ use machine::{Environment, Tool, ToolResult};
 use serde_json::Value;
 use tracing::{info, warn};
 
-use super::{url_encode, validate_path_id};
+use super::{pluralize, url_encode, validate_path_id};
 
 const TIMEOUT_SECS: u64 = 30;
 const DEFAULT_RDC_URL: &str = "http://localhost:3000";
@@ -95,6 +95,18 @@ fn rdc_config(env: &Environment) -> (String, String, Option<String>) {
 /// percent-encoded as defense-in-depth. This prevents path traversal
 /// (`../`), query-string injection (`?`/`&`), and fragment injection (`#`)
 /// from reaching the RDC server. See [`super::validate_path_id`].
+///
+/// # Concurrency caveat for the `update` action
+///
+/// When a `spawn`/map planner fans out workers that share one `Environment`
+/// (and thus one `RDC_RESEARCH_ID`), concurrent `rdc_write` calls with
+/// `action="update"` against the **same `entity_id`** race in the RDC: the
+/// last PATCH wins and earlier writes are silently lost. This tool performs
+/// no client-side locking. Workers emitted by a `map`/`spawn` fan-out should
+/// therefore only `create` their own entities or `update` distinct entity IDs;
+/// never have two workers `update` the same RDC entity in the same wave.
+/// Coalescing writes to a shared entity must happen in a single serial
+/// component downstream of the fan-out.
 pub(crate) fn build_endpoint(
     entity_type: &str,
     action: &str,
@@ -151,24 +163,6 @@ pub(crate) fn build_endpoint(
         _ => Err(format!(
             "rdc_write: unknown action '{action}' for entity_type '{entity_type}'"
         )),
-    }
-}
-
-/// Map entity_type singular to its REST plural form.
-pub(crate) fn pluralize(entity_type: &str) -> &str {
-    match entity_type {
-        "research" => "research",
-        "ideas" | "idea" => "ideas",
-        "claims" | "claim" => "claims",
-        "experiments" | "experiment" => "experiments",
-        "papers" | "paper" => "papers",
-        "paper_spines" | "paper_spine" => "paper-spines",
-        "tech_reports" | "tech_report" => "tech-reports",
-        "positionings" | "positioning" => "positionings",
-        "reviews" | "review" => "reviews",
-        "lit_papers" => "literature",
-        "lit_search" => "literature",
-        _ => entity_type,
     }
 }
 
@@ -508,8 +502,7 @@ mod tests {
         // suite already used, so existing happy-path expectations still hold.
         let (ep_create, _) = build_endpoint("ideas", "create", None, "res_1").unwrap();
         assert_eq!(ep_create, "/api/v1/research/res_1/ideas");
-        let (ep_update, _) =
-            build_endpoint("ideas", "update", Some("idea_001"), "res_1").unwrap();
+        let (ep_update, _) = build_endpoint("ideas", "update", Some("idea_001"), "res_1").unwrap();
         assert_eq!(ep_update, "/api/v1/research/res_1/ideas/idea_001");
     }
 }
