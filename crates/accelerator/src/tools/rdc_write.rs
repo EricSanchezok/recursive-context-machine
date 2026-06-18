@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use machine::{Environment, Tool, ToolResult};
 use serde_json::Value;
-use tracing::info;
+use tracing::{info, warn};
+
+use super::{url_encode, validate_path_id};
 
 const TIMEOUT_SECS: u64 = 30;
 const DEFAULT_RDC_URL: &str = "http://localhost:3000";
@@ -69,25 +71,40 @@ impl Tool for RdcWriteTool {
     }
 }
 
-fn rdc_config(env: &Environment) -> (String, String) {
+/// Resolve RDC connection settings from the environment.
+///
+/// Returns `(url, research_id, token)` where `token` is `Some` only when
+/// `RDC_TOKEN` is set. The token is forwarded to the RDC REST API as a
+/// `Bearer` Authorization header; without it the API rejects every call
+/// with HTTP 401.
+fn rdc_config(env: &Environment) -> (String, String, Option<String>) {
     let url = env
         .vars
         .get("RDC_URL")
         .cloned()
         .unwrap_or_else(|| DEFAULT_RDC_URL.to_string());
     let research_id = env.vars.get("RDC_RESEARCH_ID").cloned().unwrap_or_default();
-    (url, research_id)
+    let token = env.vars.get("RDC_TOKEN").cloned().filter(|t| !t.is_empty());
+    (url, research_id, token)
 }
 
 /// Build the REST endpoint for a given entity_type, action, and optional entity_id.
+///
+/// `research_id` and `entity_id` are interpolated directly into the URL path,
+/// so both are validated against a tight `[A-Za-z0-9_-]` whitelist and
+/// percent-encoded as defense-in-depth. This prevents path traversal
+/// (`../`), query-string injection (`?`/`&`), and fragment injection (`#`)
+/// from reaching the RDC server. See [`super::validate_path_id`].
 pub(crate) fn build_endpoint(
     entity_type: &str,
     action: &str,
     entity_id: Option<&str>,
     research_id: &str,
 ) -> Result<(String, &'static str), String> {
+    validate_path_id(research_id)?;
+    let research_id_enc = url_encode(research_id);
     let entity_plural = pluralize(entity_type);
-    let base = format!("/api/v1/research/{research_id}/{entity_plural}");
+    let base = format!("/api/v1/research/{research_id_enc}/{entity_plural}");
 
     match (action, entity_id) {
         // Create: POST /research/{id}/{entity_plural}
@@ -95,16 +112,24 @@ pub(crate) fn build_endpoint(
 
         // Select (ideas): POST /research/{id}/ideas/{eid}/select
         ("select", Some(eid)) if entity_type == "ideas" || entity_type == "idea" => {
-            Ok((format!("{base}/{eid}/select"), "POST"))
+            validate_path_id(eid)?;
+            let eid_enc = url_encode(eid);
+            Ok((format!("{base}/{eid_enc}/select"), "POST"))
         }
 
         // Finalize (claims): POST /research/{id}/claims/{eid}/finalize
         ("finalize", Some(eid)) if entity_type == "claims" || entity_type == "claim" => {
-            Ok((format!("{base}/{eid}/finalize"), "POST"))
+            validate_path_id(eid)?;
+            let eid_enc = url_encode(eid);
+            Ok((format!("{base}/{eid_enc}/finalize"), "POST"))
         }
 
         // Update: PATCH /research/{id}/{entity_plural}/{eid}
-        ("update", Some(eid)) => Ok((format!("{base}/{eid}"), "PATCH")),
+        ("update", Some(eid)) => {
+            validate_path_id(eid)?;
+            let eid_enc = url_encode(eid);
+            Ok((format!("{base}/{eid_enc}"), "PATCH"))
+        }
 
         // Update without entity_id
         ("update", None) => Err("rdc_write 'update' action requires 'entity_id'".to_string()),
@@ -162,12 +187,18 @@ async fn execute_write(args: Value, env: &Environment) -> Result<ToolResult, Str
 
     let entity_id = args["entity_id"].as_str();
 
-    let (url, research_id) = rdc_config(env);
+    let (url, research_id, token) = rdc_config(env);
 
     if research_id.is_empty() {
         return Err(
             "RDC_RESEARCH_ID is not set. Set it via env or in the pipeline environment."
                 .to_string(),
+        );
+    }
+    if token.is_none() {
+        warn!(
+            target: "rdc_write",
+            "RDC_TOKEN is not set; RDC will reject this request with HTTP 401"
         );
     }
 
@@ -181,6 +212,7 @@ async fn execute_write(args: Value, env: &Environment) -> Result<ToolResult, Str
         method,
         entity_type,
         action,
+        auth = if token.is_some() { "bearer" } else { "none" },
         "writing to RDC"
     );
 
@@ -197,6 +229,15 @@ async fn execute_write(args: Value, env: &Environment) -> Result<ToolResult, Str
                 "rdc_write: internal error — unsupported HTTP method '{method}'"
             ));
         }
+    };
+
+    // P0-12: forward RDC_TOKEN as a Bearer Authorization header. The RDC
+    // REST API rejects every request without it (HTTP 401). When the token is
+    // absent we still send the request so the caller sees the 401 and knows
+    // to set RDC_TOKEN, but we warn above to make the root cause obvious.
+    let request = match token.as_ref() {
+        Some(t) => request.bearer_auth(t),
+        None => request,
     };
 
     let response = request
@@ -421,5 +462,54 @@ mod tests {
         let result = build_endpoint("tech_reports", "create", None, "res_1");
         let (endpoint, _) = result.unwrap();
         assert_eq!(endpoint, "/api/v1/research/res_1/tech-reports");
+    }
+
+    // ── build_endpoint: path-segment validation (P0-13) ──
+
+    #[test]
+    fn rejects_research_id_with_slash() {
+        // A research_id containing '/' must not reach the URL builder.
+        let result = build_endpoint("ideas", "create", None, "../evil");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("illegal character"));
+    }
+
+    #[test]
+    fn rejects_entity_id_with_path_traversal() {
+        let result = build_endpoint("ideas", "update", Some("../etc/passwd"), "res_1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("illegal character"));
+    }
+
+    #[test]
+    fn rejects_entity_id_with_encoded_slash() {
+        // %2F must be rejected character-by-character (the % is illegal).
+        let result = build_endpoint("ideas", "update", Some("a%2Fb"), "res_1");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_select_entity_id_with_query_injection() {
+        let result = build_endpoint("ideas", "select", Some("evil?admin=1"), "res_1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("illegal character"));
+    }
+
+    #[test]
+    fn rejects_finalize_entity_id_with_fragment() {
+        let result = build_endpoint("claims", "finalize", Some("c#frag"), "res_1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("illegal character"));
+    }
+
+    #[test]
+    fn build_endpoint_safe_ids_still_match_pre_fix_urls() {
+        // Regression: the encoding must be a no-op for the IDs the test
+        // suite already used, so existing happy-path expectations still hold.
+        let (ep_create, _) = build_endpoint("ideas", "create", None, "res_1").unwrap();
+        assert_eq!(ep_create, "/api/v1/research/res_1/ideas");
+        let (ep_update, _) =
+            build_endpoint("ideas", "update", Some("idea_001"), "res_1").unwrap();
+        assert_eq!(ep_update, "/api/v1/research/res_1/ideas/idea_001");
     }
 }

@@ -78,3 +78,160 @@ pub(crate) fn relative_path(path: &Path, cwd: &Path) -> String {
         })
         .unwrap_or_else(|_| path.display().to_string())
 }
+
+// ── URL helpers (shared by rdc_read / rdc_write) ─────────────────────────────
+
+/// Percent-encode a string for use as a query parameter value or URL path
+/// segment. Encodes everything outside RFC 3986's unreserved set
+/// `[A-Za-z0-9-._~]`.
+///
+/// For URL path segments that carry user-controlled IDs (entity_id,
+/// research_id), prefer [`validate_path_id`] first — it enforces a tighter
+/// `[A-Za-z0-9_-]` whitelist that rejects path-traversal payloads like `../`
+/// or encoded slashes outright.
+pub(crate) fn url_encode(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                result.push(byte as char);
+            }
+            _ => {
+                result.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    result
+}
+
+/// Validate that an entity/research ID is safe to interpolate into a URL path
+/// segment. Allows only `[A-Za-z0-9_-]` (non-empty) to prevent path traversal
+/// (`../`), query-string injection (`?`, `&`), fragment injection (`#`), and
+/// encoded-slash bypasses (`%2F`) from reaching the RDC REST API.
+///
+/// Returns `Ok(())` when the ID is safe, or an `Err` with a descriptive
+/// message suitable for surfacing to the caller.
+pub(crate) fn validate_path_id(id: &str) -> Result<(), String> {
+    if id.is_empty() {
+        return Err("entity_id must not be empty".to_string());
+    }
+    if let Some(bad) = id
+        .bytes()
+        .find(|&b| !b.is_ascii_alphanumeric() && b != b'-' && b != b'_')
+    {
+        return Err(format!(
+            "entity_id contains illegal character {:?}; allowed: [A-Za-z0-9_-]",
+            bad as char
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::*;
+
+    #[test]
+    fn url_encode_alphanumeric_only() {
+        assert_eq!(url_encode("hello123"), "hello123");
+    }
+
+    #[test]
+    fn url_encode_encodes_space() {
+        assert_eq!(url_encode("attention mechanism"), "attention%20mechanism");
+    }
+
+    #[test]
+    fn url_encode_encodes_special_chars() {
+        assert_eq!(url_encode("a&b=c"), "a%26b%3Dc");
+    }
+
+    #[test]
+    fn url_encode_preserves_unreserved_chars() {
+        assert_eq!(url_encode("test-_.~name"), "test-_.~name");
+    }
+
+    #[test]
+    fn url_encode_empty_string() {
+        assert_eq!(url_encode(""), "");
+    }
+
+    // ── path-segment encoding (P0-13 regression coverage) ──
+
+    #[test]
+    fn url_encode_path_segment_encodes_slash() {
+        // A bare slash in an entity_id would escape the path segment; encoding
+        // it to %2F is the defense-in-depth layer behind validate_path_id.
+        assert_eq!(url_encode("../secret"), "..%2Fsecret");
+        assert_eq!(url_encode("a/b"), "a%2Fb");
+    }
+
+    #[test]
+    fn url_encode_path_segment_encodes_dotdot_only_format() {
+        // ".." itself is unreserved-compatible (dots are unreserved), so
+        // url_encode leaves it intact. The path-traversal guard is
+        // validate_path_id, which rejects the slash that would make ".."
+        // dangerous. This test documents that split.
+        assert_eq!(url_encode(".."), "..");
+    }
+
+    #[test]
+    fn url_encode_path_segment_encodes_question_and_hash() {
+        assert_eq!(url_encode("a?b=c"), "a%3Fb%3Dc");
+        assert_eq!(url_encode("a#b"), "a%23b");
+    }
+
+    #[test]
+    fn validate_path_id_accepts_safe_ids() {
+        // Whitelist is [A-Za-z0-9_-]. Note: '.' is intentionally NOT allowed
+        // for path segments (tighter than unreserved) so IDs like 'a.b' are
+        // rejected.
+        assert!(validate_path_id("idea_001").is_ok());
+        assert!(validate_path_id("CL-2024-001").is_ok());
+        assert!(validate_path_id("abcDEF012_--").is_ok());
+        assert!(validate_path_id("a").is_ok());
+    }
+
+    #[test]
+    fn validate_path_id_rejects_dot() {
+        // '.' is outside the [A-Za-z0-9_-] whitelist for path segments.
+        assert!(validate_path_id("a.b").is_err());
+    }
+
+    #[test]
+    fn validate_path_id_rejects_empty() {
+        let err = validate_path_id("").unwrap_err();
+        assert!(err.contains("must not be empty"));
+    }
+
+    #[test]
+    fn validate_path_id_rejects_slash() {
+        // 'a/b' contains a slash that would escape the path segment. The
+        // first offending byte is '/', reported via Debug formatting as `'/'`.
+        let err = validate_path_id("a/b").unwrap_err();
+        assert!(err.contains("illegal character"), "got: {err}");
+        assert!(err.contains("'/'"), "expected the slash to be quoted in: {err}");
+    }
+
+    #[test]
+    fn validate_path_id_rejects_encoded_slash() {
+        // %2F must be rejected character-by-character (% is not allowed).
+        let err = validate_path_id("a%2Fb").unwrap_err();
+        assert!(err.contains("illegal character"));
+    }
+
+    #[test]
+    fn validate_path_id_rejects_space_and_query_chars() {
+        assert!(validate_path_id("a b").is_err());
+        assert!(validate_path_id("a?b").is_err());
+        assert!(validate_path_id("a&b").is_err());
+        assert!(validate_path_id("a#b").is_err());
+    }
+
+    #[test]
+    fn validate_path_id_rejects_unicode() {
+        // Non-ASCII must be rejected; the RDC ID space is ASCII-only.
+        assert!(validate_path_id("café").is_err());
+        assert!(validate_path_id("id-é").is_err());
+    }
+}
