@@ -143,6 +143,9 @@ pub(crate) fn pluralize(entity_type: &str) -> &str {
         "reviews" | "review" => "reviews",
         "lit_papers" => "literature",
         "lit_search" => "literature",
+        // RDC exposes gate records at /gates (not /gate_records). rdc_read::pluralize
+        // already maps this; rdc_write must too, or gate writes 404.
+        "gate_records" | "gate_record" => "gates",
         _ => entity_type,
     }
 }
@@ -163,6 +166,9 @@ async fn execute_write(args: Value, env: &Environment) -> Result<ToolResult, Str
     let entity_id = args["entity_id"].as_str();
 
     let (url, research_id) = rdc_config(env);
+    // Bearer token for RDC instances that enforce auth (RDC_AUTH_ENFORCE=true).
+    // Optional: when unset (trusted/local RDC) requests go out unauthenticated.
+    let token = env.vars.get("RDC_TOKEN").cloned();
 
     if research_id.is_empty() {
         return Err(
@@ -189,7 +195,7 @@ async fn execute_write(args: Value, env: &Environment) -> Result<ToolResult, Str
         .build()
         .map_err(|e| format!("failed to create HTTP client: {e}"))?;
 
-    let request = match method {
+    let mut request = match method {
         "POST" => client.post(&request_url),
         "PATCH" => client.patch(&request_url),
         _ => {
@@ -198,6 +204,9 @@ async fn execute_write(args: Value, env: &Environment) -> Result<ToolResult, Str
             ));
         }
     };
+    if let Some(t) = &token {
+        request = request.bearer_auth(t);
+    }
 
     let response = request
         .header("Content-Type", "application/json")
