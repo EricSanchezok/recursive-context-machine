@@ -91,6 +91,8 @@ async fn execute_read(args: Value, env: &Environment) -> Result<ToolResult, Stri
         .ok_or("rdc_read requires 'entity_type' parameter")?;
 
     let (url, research_id) = rdc_config(env);
+    // Bearer token for RDC instances that enforce auth (RDC_AUTH_ENFORCE=true).
+    let token = env.vars.get("RDC_TOKEN").cloned();
 
     if research_id.is_empty() {
         return Err(
@@ -153,9 +155,13 @@ async fn execute_read(args: Value, env: &Environment) -> Result<ToolResult, Stri
         .build()
         .map_err(|e| format!("failed to create HTTP client: {e}"))?;
 
-    let response = client
+    let mut req = client
         .get(&request_url)
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json");
+    if let Some(t) = &token {
+        req = req.bearer_auth(t);
+    }
+    let response = req
         .send()
         .await
         .map_err(|e| format!("rdc_read request failed: {e}"))?;
