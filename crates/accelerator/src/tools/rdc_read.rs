@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use machine::{Environment, Tool, ToolResult};
 use serde_json::Value;
-use tracing::info;
+use tracing::{info, warn};
+
+use super::{pluralize, url_encode, validate_path_id};
 
 const TIMEOUT_SECS: u64 = 30;
 const DEFAULT_RDC_URL: &str = "http://localhost:3000";
@@ -75,14 +77,21 @@ impl Tool for RdcReadTool {
     }
 }
 
-fn rdc_config(env: &Environment) -> (String, String) {
+/// Resolve RDC connection settings from the environment.
+///
+/// Returns `(url, research_id, token)` where `token` is `Some` only when
+/// `RDC_TOKEN` is set. The token is forwarded to the RDC REST API as a
+/// `Bearer` Authorization header; without it the API rejects every call
+/// with HTTP 401.
+fn rdc_config(env: &Environment) -> (String, String, Option<String>) {
     let url = env
         .vars
         .get("RDC_URL")
         .cloned()
         .unwrap_or_else(|| DEFAULT_RDC_URL.to_string());
     let research_id = env.vars.get("RDC_RESEARCH_ID").cloned().unwrap_or_default();
-    (url, research_id)
+    let token = env.vars.get("RDC_TOKEN").cloned().filter(|t| !t.is_empty());
+    (url, research_id, token)
 }
 
 async fn execute_read(args: Value, env: &Environment) -> Result<ToolResult, String> {
@@ -90,14 +99,23 @@ async fn execute_read(args: Value, env: &Environment) -> Result<ToolResult, Stri
         .as_str()
         .ok_or("rdc_read requires 'entity_type' parameter")?;
 
-    let (url, research_id) = rdc_config(env);
-    // Bearer token for RDC instances that enforce auth (RDC_AUTH_ENFORCE=true).
-    let token = env.vars.get("RDC_TOKEN").cloned();
+    let (url, research_id, token) = rdc_config(env);
 
     if research_id.is_empty() {
         return Err(
             "RDC_RESEARCH_ID is not set. Set it via env or in the pipeline environment."
                 .to_string(),
+        );
+    }
+    // P0-13: research_id is interpolated into the URL path; validate it
+    // against a tight whitelist before encoding so traversal payloads never
+    // reach the RDC server.
+    validate_path_id(&research_id)?;
+    let research_id_enc = url_encode(&research_id);
+    if token.is_none() {
+        warn!(
+            target: "rdc_read",
+            "RDC_TOKEN is not set; RDC will reject this request with HTTP 401"
         );
     }
 
@@ -106,26 +124,29 @@ async fn execute_read(args: Value, env: &Environment) -> Result<ToolResult, Stri
     let filter_limit = args["filter_limit"].as_u64().unwrap_or(20);
     let search_query = args["search_query"].as_str();
 
-    // Build the endpoint URL.
-    // Special cases: research uses the base path; lit_search uses /literature/search.
+    // Build the endpoint URL. entity_id is also validated + percent-encoded
+    // when present (P0-13). Special cases: research uses the base path;
+    // lit_search uses /literature/search.
     let (endpoint, skip_query) = if entity_type == "lit_search" {
         (
-            format!("/api/v1/research/{research_id}/literature/search"),
+            format!("/api/v1/research/{research_id_enc}/literature/search"),
             false,
         )
     } else if entity_type == "research" {
         // Research is the base endpoint itself — no query params needed
-        (format!("/api/v1/research/{research_id}"), true)
+        (format!("/api/v1/research/{research_id_enc}"), true)
     } else if let Some(eid) = entity_id {
+        validate_path_id(eid)?;
+        let eid_enc = url_encode(eid);
         let entity_plural = pluralize(entity_type);
         (
-            format!("/api/v1/research/{research_id}/{entity_plural}/{eid}"),
+            format!("/api/v1/research/{research_id_enc}/{entity_plural}/{eid_enc}"),
             false,
         )
     } else {
         let entity_plural = pluralize(entity_type);
         (
-            format!("/api/v1/research/{research_id}/{entity_plural}"),
+            format!("/api/v1/research/{research_id_enc}/{entity_plural}"),
             false,
         )
     };
@@ -148,20 +169,30 @@ async fn execute_read(args: Value, env: &Environment) -> Result<ToolResult, Stri
         }
     };
 
-    info!(target: "rdc_read", url = %request_url, entity_type, "reading from RDC");
+    info!(
+        target: "rdc_read",
+        url = %request_url,
+        entity_type,
+        auth = if token.is_some() { "bearer" } else { "none" },
+        "reading from RDC"
+    );
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("failed to create HTTP client: {e}"))?;
 
-    let mut req = client
-        .get(&request_url)
-        .header("Content-Type", "application/json");
-    if let Some(t) = &token {
-        req = req.bearer_auth(t);
-    }
-    let response = req
+    // P0-12: forward RDC_TOKEN as a Bearer Authorization header. The RDC
+    // REST API rejects every request without it (HTTP 401). When the token is
+    // absent we still send the request so the caller sees the 401 and knows
+    // to set RDC_TOKEN, but we warn above to make the root cause obvious.
+    let request = match token.as_ref() {
+        Some(t) => client.get(&request_url).bearer_auth(t),
+        None => client.get(&request_url),
+    };
+
+    let response = request
+        .header("Content-Type", "application/json")
         .send()
         .await
         .map_err(|e| format!("rdc_read request failed: {e}"))?;
@@ -191,39 +222,6 @@ async fn execute_read(args: Value, env: &Environment) -> Result<ToolResult, Stri
             entity_id.map_or(String::new(), |eid| format!("({eid})"))
         )),
     })
-}
-
-/// Simple percent-encode for query parameter values.
-pub(crate) fn url_encode(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    for byte in input.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                result.push(byte as char);
-            }
-            _ => {
-                result.push_str(&format!("%{:02X}", byte));
-            }
-        }
-    }
-    result
-}
-
-/// Map entity_type singular to its REST plural form.
-pub(crate) fn pluralize(entity_type: &str) -> &str {
-    match entity_type {
-        "research" => "research",
-        "ideas" | "idea" => "ideas",
-        "claims" | "claim" => "claims",
-        "experiments" | "experiment" => "experiments",
-        "lit_papers" | "lit_search" => "literature",
-        "paper_spines" | "paper_spine" => "paper-spines",
-        "tech_reports" | "tech_report" => "tech-reports",
-        "story_spines" | "story_spine" => "story-spines",
-        "positionings" | "positioning" => "positionings",
-        "gate_records" | "gate_record" => "gates",
-        _ => entity_type,
-    }
 }
 
 /// Format the JSON response into readable text for the LLM.

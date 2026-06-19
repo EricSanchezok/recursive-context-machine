@@ -590,9 +590,24 @@ impl GraphRun {
     fn source_state(&self, source: usize, endpoint: &Endpoint) -> RunState {
         match endpoint {
             Endpoint::ConditionOut(_) => self.outputs[source].clone().unwrap_or_default(),
-            _ => self.outputs[source]
-                .clone()
-                .expect("component output missing during propagation"),
+            _ => match self.outputs[source].clone() {
+                Some(state) => state,
+                None => {
+                    // The source component should have produced an output
+                    // before its wires propagate (see set at line 490). A
+                    // missing output here indicates a graph/topology bug;
+                    // rather than panicking the whole pipeline, fall back to
+                    // an empty state and warn so the operator can diagnose.
+                    let name = self.graph.components[source].name.as_str();
+                    warn!(
+                        component = name,
+                        component_index = source,
+                        "component output missing during propagation; \
+                         forwarding empty RunState downstream"
+                    );
+                    RunState::default()
+                }
+            },
         }
     }
 
