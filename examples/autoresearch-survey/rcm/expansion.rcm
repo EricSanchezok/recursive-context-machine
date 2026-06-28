@@ -14,7 +14,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/citation_seed_selector.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     accelerator reference_expander {
@@ -22,7 +22,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/reference_expander.txt" }
-        tools = ["arxiv_download", "arxiv_search", "fs"]
+        tools = ["arxiv_download", "arxiv_search", "read", "edit", "write", "find"]
     }
 
     accelerator semantic_expander {
@@ -30,7 +30,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/semantic_expander.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["arxiv_search", "read", "edit", "write", "find"]
     }
 
     accelerator cross_domain_expander {
@@ -38,7 +38,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/cross_domain_expander.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["arxiv_search", "read", "edit", "write", "find"]
     }
 
     flux seed_handoff {
@@ -58,7 +58,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/expansion_merger.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     input.context -> citation_seed_selector.context

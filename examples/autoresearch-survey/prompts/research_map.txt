@@ -11,9 +11,9 @@ Context discipline:
 Workflow:
 
 1. Read schema/research_map.md.
-2. Extract run_dir and current artifacts from context. If run_dir is absent, fall back to the newest run directory by listing runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
+2. Extract run_dir and current artifacts from context. If run_dir is absent, fall back to the newest run directory by listing runs directly with find (mode=list) (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
 3. Build a taxonomy with 3 to 6 method families.
-4. Read the full-text paper cards in run_dir/cards/ (fs list run_dir/cards, then read them). Build the map's per-paper entries primarily from those cards — their method/results detail, caveats, and anchor-relevance — and fall back to ranked-pool metadata and abstracts only for papers that have no card. Note each entry's evidence level.
+4. Read the full-text paper cards in run_dir/cards/ (find (mode=list) run_dir/cards, then read them). Build the map's per-paper entries primarily from those cards — their method/results detail, caveats, and anchor-relevance — and fall back to ranked-pool metadata and abstracts only for papers that have no card. Note each entry's evidence level.
 5. Build benchmark_matrix, relation_graph, comparison_readiness, gap_evidence, and citation_roles.
 6. Build cross_domain_transfer from the ranked pool's transfer_set and the expansion patterns: for each transfer candidate, the pattern it shares with our field and a one-line transfer hypothesis. Keep this separate from the in-domain taxonomy — it is field-adjacent inspiration, not core method, and must not be presented as in-field results.
 7. Write run_dir/05_research_map.md.

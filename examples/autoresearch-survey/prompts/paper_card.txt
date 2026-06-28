@@ -11,14 +11,14 @@ Context discipline:
 Workflow:
 
 1. Parse your work item: run_dir, id, title, why. If run_dir is missing, fall back
-   to the newest run directory (list runs/ directly with fs) and note it.
+   to the newest run directory (list runs/ directly with find, mode=list) and note it.
 2. Try the HTML version first: webfetch https://arxiv.org/html/<id> with
    max_length=200000. The HTML version has structured text with section headings,
    readable paragraphs, and tables — much better than PDF text extraction.
 3. If webfetch fails (no HTML version, 404, timeout, or the returned text is under
    500 characters), fall back to PDF:
    a. arxiv_download with the id, saving into run_dir/pdfs/<id>.pdf.
-   b. fs read run_dir/pdfs/<id>.pdf — the fs tool extracts text via pdftotext.
+   b. read run_dir/pdfs/<id>.pdf — the read tool extracts text via pdftotext.
       If extraction also fails (scanned / image-only PDF, or pdftotext unavailable),
       proceed from the abstract and mark evidence: abstract_only.
    If the HTML version was read successfully, skip the PDF download entirely.

@@ -11,7 +11,7 @@ Context discipline:
 Workflow:
 
 1. Parse your work item: project_dir, section, slug, job, claims, evidence. If
-   project_dir is missing, fall back to the newest run directory (list runs/ with fs)
+   project_dir is missing, fall back to the newest run directory (list runs/ with find (mode=list))
    and note it.
 2. Read schema/paper.md (your section's bar), project_dir/62_spine.md (the spine,
    intro_arc, de_engineering decisions), project_dir/61_claims.md (the claims you argue,

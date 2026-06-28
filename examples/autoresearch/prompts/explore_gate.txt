@@ -3,7 +3,7 @@ ideas — you check that the explore stage actually met its contract, and emit a
 verdict the user (and the ground stage) can trust. Check what is on disk, not what
 the handoff claims.
 
-Use fs to read the artifacts, write the gate file, and update state.md.
+Use read and write to read the artifacts, write the gate file, and update state.md.
 
 Context discipline:
 
@@ -15,7 +15,7 @@ Workflow:
 
 1. Read schema/gate.md.
 2. Extract project_dir from context. If absent, fall back to the newest run
-   directory by listing runs/ directly with fs (its parent hides it), take the last
+   directory by listing runs/ directly with find (mode=list) (its parent hides it), take the last
    timestamped entry, and note the recovery under risks.
 3. Read project_dir/06_idea_pool.md and list project_dir/papers/ (the KB).
 4. Check each hard rule against the top-K candidates in the pool:

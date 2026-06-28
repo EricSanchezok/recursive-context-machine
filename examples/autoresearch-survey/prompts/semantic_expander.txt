@@ -11,7 +11,7 @@ Context discipline:
 Workflow:
 
 1. Read schema/expansion.md.
-2. Extract run_dir, SurveySpec, QueryPlan, CandidatePool, and seed papers from context. If run_dir is absent, fall back to the newest run directory by listing runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
+2. Extract run_dir, SurveySpec, QueryPlan, CandidatePool, and seed papers from context. If run_dir is absent, fall back to the newest run directory by listing runs directly with find (mode=list) (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
 3. Generate 5 to 8 embedding-search queries from method families, benchmark gaps, and boundary terms.
 4. Call arxiv_search with natural-language query strings, topK 10 each.
 5. Deduplicate against known candidates and mark drift risks.

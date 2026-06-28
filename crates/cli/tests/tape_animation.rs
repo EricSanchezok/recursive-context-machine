@@ -238,10 +238,15 @@ fn resource_actions_surface_a_status_verb() {
                 source.clone(),
                 FragmentEvent::Appended(fragment(1, "user", "text", "user")),
             ),
-            resource_event(source, ResourceEvent::Activate { name: "fs".into() }),
+            resource_event(
+                source,
+                ResourceEvent::Activate {
+                    name: "read".into(),
+                },
+            ),
         ],
         9,
     );
 
-    assert_eq!(snapshot.tapes[0].last_action, "activate fs");
+    assert_eq!(snapshot.tapes[0].last_action, "activate read");
 }

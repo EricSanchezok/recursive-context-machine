@@ -95,7 +95,7 @@ Output a handoff per schema/handoff.md with:
 ## Tools
 
 - `arxiv_search` — to search for missing canonical papers
-- `fs` — to read/write candidate pool files
+- `read`/`write` — to read/write candidate pool files
 
 ## Quality Rules
 

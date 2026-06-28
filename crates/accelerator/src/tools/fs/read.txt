@@ -1,0 +1,11 @@
+Reads a file from the local filesystem. You can access any file directly by using this tool.
+
+Usage:
+- The filePath parameter should be absolute whenever possible; relative paths are resolved against the current working directory.
+- By default, reads up to {DEFAULT_READ_LIMIT} lines starting from the beginning. For large files, use `offset` and `limit` to read specific sections.
+- Lines longer than {MAX_LINE_LENGTH} characters are truncated with "...".
+- Results include file metadata (type, size, modification time) followed by line-numbered content in `00001| content` format.
+- Use `offset` (0-based) to skip lines, and `limit` to control how many lines are returned.
+- Output is capped at {OUTPUT_CAP_KB} KB; use offset+limit to narrow the range when reading very large files.
+- PDF files are supported: their text is extracted automatically. Other binary or office formats (zip, docx, xlsx, …) cannot be read.
+- To browse a directory instead of a single file, use the `find` tool with `mode: "list"`.

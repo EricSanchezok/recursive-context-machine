@@ -13,12 +13,12 @@ Context discipline:
 Workflow:
 
 1. Extract project_dir from context. If absent, fall back to the newest run
-   directory by listing runs/ directly with fs (its parent hides it), take the last
+   directory by listing runs/ directly with find (mode=list) (its parent hides it), take the last
    timestamped entry, and note the recovery under risks.
 2. Read project_dir/01_landscape.md and take its core_paper_worklist.
 3. ONE hop of citation-graph expansion (optional but preferred): for 1–2 of the most
    central worklist papers, arxiv_download the PDF into project_dir/pdfs/<id>.pdf,
-   fs read it, locate the References section, and pull a few arXiv ids / clear
+   read it, locate the References section, and pull a few arXiv ids / clear
    titles that recur and look central to the anchor. Resolve unclear titles with
    arxiv_search. Add the strongest resolved neighbours to the read set. Never invent
    a citation; if a reference cannot be resolved, drop it.

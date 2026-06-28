@@ -11,12 +11,12 @@ Workflow:
 
 1. Extract run_dir (fallback to the newest run directory; note the recovery).
 2. Read run_dir/00_outline.md (title, abstract, through-line) and every
-   run_dir/sections/*.md (fs list run_dir/sections; order by file name — they are
+   run_dir/sections/*.md (find (mode=list) run_dir/sections; order by file name — they are
    NN_slug.md, so lexical order is section order). Read each section file once.
-3. Assemble run_dir/08_survey.md (via fs action="write"):
+3. Assemble run_dir/08_survey.md (via write):
    - the title (from the outline) and the abstract;
-   - to check the figure, fs list run_dir and see whether 08_global_picture.png is
-     present (fs has no `stat` action; valid actions are read/write/edit/list). If
+   - to check the figure, find (mode=list) run_dir and see whether 08_global_picture.png is
+     present (there is no `stat` tool — use `read` to check a file, or `find` with mode=list for a directory). If
      present, embed it right after the abstract:
      `![Global picture of the field](08_global_picture.png)` plus one orienting
      sentence; if it is absent, omit it (never invent a figure or broken link);

@@ -14,7 +14,7 @@ Context discipline:
 Workflow:
 
 1. Extract run_dir from context. If run_dir is absent, fall back to the newest run
-   directory by listing the runs directory directly with fs (its parent hides it;
+   directory by listing the runs directory directly with find (mode=list) (its parent hides it;
    runs/ is gitignored), taking the last timestamped entry, and note the recovery.
 2. Read run_dir/04_ranked_pool.md.
 3. Select up to max_fulltext_papers papers (see schema/card_plan.md — currently 100)

@@ -15,7 +15,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/report_load.txt" }
-        tools = ["rdc_read", "fs", "find"]
+        tools = ["rdc_read", "read", "edit", "write", "find"]
     }
 
     // ── Two parallel digests: method-from-code, results-from-files ───────────
@@ -24,7 +24,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/report_method.txt" }
-        tools = ["fs", "find"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     accelerator results {
@@ -32,7 +32,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/report_results.txt" }
-        tools = ["fs", "find"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     flux report_merge {
@@ -47,7 +47,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/report_assemble.txt" }
-        tools = ["rdc_write", "fs"]
+        tools = ["rdc_write", "read", "edit", "write", "find"]
     }
 
     accelerator gate {
@@ -55,7 +55,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/report_gate.txt" }
-        tools = ["rdc_write", "fs"]
+        tools = ["rdc_write", "read", "edit", "write", "find"]
     }
 
     // ── Wiring ───────────────────────────────────────────────────────────────

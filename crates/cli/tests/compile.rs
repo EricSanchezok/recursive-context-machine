@@ -126,7 +126,7 @@ fn compile_selects_resource_pools_without_initial_activation() {
             purpose = "inspect"
             models = ["fast", "careful"]
             prompts = { captain = "Custom captain" }
-            tools = ["fs", "shell"]
+            tools = ["read", "shell"]
         }
     "#;
 
@@ -143,7 +143,7 @@ fn compile_selects_resource_pools_without_initial_activation() {
         Some("Custom captain")
     );
     assert_eq!(state.resources.tool_definitions.len(), 2);
-    assert!(state.resources.tool_definitions.contains_key("fs"));
+    assert!(state.resources.tool_definitions.contains_key("read"));
     assert!(state.resources.tool_definitions.contains_key("shell"));
     assert!(state.resources.active_tools.is_empty());
 }
@@ -302,13 +302,13 @@ fn compile_does_not_start_unselected_mcp_servers() {
         accelerator {
             purpose = "inspect"
             models = ["gpt"]
-            tools = ["fs"]
+            tools = ["read"]
         }
     "#;
 
     let accelerator = compile_result(source).unwrap();
     let state = primitive_state(&accelerator);
-    assert!(state.resources.tool_definitions.contains_key("fs"));
+    assert!(state.resources.tool_definitions.contains_key("read"));
     assert!(
         !state
             .resources

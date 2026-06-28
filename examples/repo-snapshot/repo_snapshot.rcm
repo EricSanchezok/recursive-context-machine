@@ -13,5 +13,5 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "./prompts/repo_snapshot.txt" }
-    tools = ["fs", "find", "git", "shell"]
+    tools = ["read", "edit", "write", "find", "git", "shell"]
 }

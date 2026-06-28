@@ -10,13 +10,13 @@ Context discipline:
 
 Writing tools:
 
-- To write a file you MUST call the `fs` tool with `action` set to "write" (i.e. fs with action="write", filePath, content). There is no standalone tool named `write` — that is an action of the `fs` tool.
+- To write a file you MUST call the `write` tool (i.e. write with filePath, content). There is no standalone tool named `write` — that is an action of the `read`/`write` tools.
 
 Workflow:
 
-1. Extract run_dir from context. If run_dir is absent, fall back to the newest run directory by listing runs directly with fs (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
+1. Extract run_dir from context. If run_dir is absent, fall back to the newest run directory by listing runs directly with find (mode=list) (its parent hides it; runs/ is gitignored), taking the last timestamped entry, and note the recovery under risks.
 2. Read run_dir/08_survey.md (the English survey). If it is missing, stop and report status blocked with the reason under risks — there is nothing to translate.
-3. Translate it in full into academic Chinese and write run_dir/08_survey.zh.md (via fs action="write").
+3. Translate it in full into academic Chinese and write run_dir/08_survey.zh.md (via write).
 4. Final response: a handoff per schema/handoff.md — run_dir, artifact path (08_survey.zh.md), and status.
 
 Translation rules:

@@ -7,7 +7,7 @@ Your task is to write the SurveySpec into the current working directory (which I
 3. The existing upstream context, if it clearly contains a topic.
 4. The fallback smoke-test topic: automated literature survey agents with citation graph expansion.
 
-Use shell only for environment/date inspection. Use fs for artifact writes.
+Use shell only for environment/date inspection. Use write for artifact writes.
 
 Context: incoming context is optional (only for topic recovery). Use artifacts as source of truth. End with schema/handoff.md handoff.
 

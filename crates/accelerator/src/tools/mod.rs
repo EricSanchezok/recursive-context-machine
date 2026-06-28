@@ -15,7 +15,7 @@ mod webfetch;
 
 pub use arxiv::{ArxivDownloadTool, ArxivSearchTool};
 pub use find::FindTool;
-pub use fs::FsTool;
+pub use fs::{EditTool, ReadTool, WriteTool};
 pub use git::{GitTool, check_safety as check_git_safety, tokenize as tokenize_git};
 pub use image_gen::ImageGenTool;
 pub use lsp::LspTool;
@@ -44,7 +44,9 @@ pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
         std::sync::Arc::new(ArxivSearchTool),
         std::sync::Arc::new(ArxivDownloadTool),
         std::sync::Arc::new(FindTool),
-        std::sync::Arc::new(FsTool),
+        std::sync::Arc::new(ReadTool),
+        std::sync::Arc::new(EditTool),
+        std::sync::Arc::new(WriteTool),
         std::sync::Arc::new(GitTool),
         std::sync::Arc::new(ImageGenTool),
         std::sync::Arc::new(LspTool),

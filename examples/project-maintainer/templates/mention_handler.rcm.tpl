@@ -36,7 +36,7 @@ graph {
         purpose = "基于 mention 内容里的代码线索(文件名、函数名、模块名、错误信息),用 find 定位相关源文件,用 fs 读取代码上下文。输出涉及到的关键文件路径 + 关键片段。若 mention 无明显代码指向,输出 \"no scan needed\"。不要修改文件。"
         models = ["kimi-k2-6"]
         policy = "captain"
-        tools = ["shell", "find", "fs"]
+        tools = ["shell", "find", "read", "edit", "write"]
     }
 
     accelerator classify_intent {
@@ -50,7 +50,7 @@ graph {
         purpose = "读 classify_intent 输出的 JSON。**严格按 plan.action_kind 执行,不得越权**。\n所有评论/正文一律用带引号 heredoc 经 --body-file 传入,严禁内联 -b / --body——正文里的反引号、$、引号会被 shell 解释甚至注入。范式(闭合标记 RCM_BODY 必须独占一行、行首顶格,正文里不得出现这一行):\ngh {{TRIGGER_KIND}} comment {{TRIGGER_NUMBER}} --repo {{REPO}} --body-file - <<'RCM_BODY'\n<在此写完整正文>\nRCM_BODY\n按 action_kind:\n- no_action:直接退出,什么都不做。\n- comment_only:按上面范式发一条评论;禁止 fs/git。\n- metadata_edit:用 `gh {{TRIGGER_KIND}} edit {{TRIGGER_NUMBER}} --repo {{REPO}} ...` 改 label/assignee 等;如需说明再按范式附一条评论。禁止 fs/git。\n- code_change:1) git 创建 feature 分支(如 `switch -c feature/issue-{{TRIGGER_NUMBER}}-fix`);2) fs 改代码;3) `git add` + `git commit -m \"<简短单行,纯文本,勿含反引号>\"`;4) `git push origin <feature-branch>`;5) 用 heredoc 建 PR:`gh pr create --repo {{REPO}} --base main --title \"<简短标题>\" --body-file - <<'RCM_BODY'` … `RCM_BODY`;6) 回到原 {{TRIGGER_KIND}} 按范式评论引用新 PR。**禁止 push 到 main**、**禁止 force push**、**禁止 reset --hard**——git 工具会拒绝这些命令。\n凡发了评论(comment_only / 以及其它分支里的评论),发完必须自检:命令要 exit 0 并打印 URL,再跑 `gh {{TRIGGER_KIND}} view {{TRIGGER_NUMBER}} --repo {{REPO}} --json comments -q '.comments[-1].url'` 确认最新评论即本次所发;失败原样重试一次,仍失败不要谎报成功。\n所有评论中文撰写,代码标识符保持英文。handoff 末尾:做了动作就写 status: ok 与对应 URL;该做却没做成写 status: blocked 与一行原因;no_action 写 status: ok 与 note: no_action。"
         models = ["kimi-k2-6"]
         policy = "captain"
-        tools = ["shell", "fs", "find", "git"]
+        tools = ["shell", "read", "edit", "write", "find", "git"]
     }
 
     flux fetch_to_scan_issues {

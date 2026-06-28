@@ -13,5 +13,5 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../../prompts/phase0/coverage_auditor.txt" }
-    tools = ["arxiv_search", "fs"]
+    tools = ["arxiv_search", "read", "edit", "write", "find"]
 }

@@ -11,11 +11,11 @@ Workflow:
 
 1. Extract run_dir (fallback to the newest run directory; note the recovery).
 2. Read run_dir/00_zh_frame.md (zh_title, zh_abstract) and every
-   run_dir/sections_zh/*.md (fs list run_dir/sections_zh; order by file name —
+   run_dir/sections_zh/*.md (find (mode=list) run_dir/sections_zh; order by file name —
    they are NN_slug.md, so lexical order is section order). Read each once.
-3. Assemble run_dir/08_survey.zh.md (via fs action="write"):
+3. Assemble run_dir/08_survey.zh.md (via write):
    - the zh_title and zh_abstract from the frame;
-   - to check the figure, fs list run_dir for 08_global_picture.png; if present,
+   - to check the figure, find (mode=list) run_dir for 08_global_picture.png; if present,
      embed it right after the abstract with a one-line Chinese caption; else omit.
    - the Chinese sections in order, copied verbatim from sections_zh/* (do NOT
      re-translate or rewrite — just place them in order, fixing only a duplicated

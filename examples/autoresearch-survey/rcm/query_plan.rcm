@@ -13,5 +13,5 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/query_plan.txt" }
-    tools = ["fs", "shell"]
+    tools = ["read", "edit", "write", "shell", "find"]
 }

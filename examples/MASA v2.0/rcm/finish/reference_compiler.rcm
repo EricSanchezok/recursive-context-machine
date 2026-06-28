@@ -13,5 +13,5 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../../prompts/finish/reference_compiler.txt" }
-    tools = ["arxiv_search", "webfetch", "fs"]
+    tools = ["arxiv_search", "webfetch", "read", "edit", "write", "find"]
 }

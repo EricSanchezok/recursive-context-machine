@@ -6,6 +6,7 @@
 
 mod ast;
 mod files;
+mod list;
 mod text;
 
 use std::pin::Pin;
@@ -26,6 +27,9 @@ pub(crate) const MAX_TEXT_RESULTS: usize = 200;
 
 /// Max ast mode results.
 pub(crate) const MAX_AST_RESULTS: usize = 500;
+
+/// Max entries rendered by list mode.
+pub(crate) const MAX_LIST_ENTRIES: usize = 200;
 
 /// Max line length in text mode output.
 pub(crate) const MAX_LINE_LENGTH: usize = 2000;
@@ -52,16 +56,16 @@ impl Tool for FindTool {
             "properties": {
                 "mode": {
                     "type": "string",
-                    "enum": ["files", "text", "ast"],
-                    "description": "What to find: files (by glob pattern on file names), text (by regex in file contents), ast (by AST pattern in code structure)."
+                    "enum": ["files", "text", "ast", "list"],
+                    "description": "What to find: files (by glob pattern on file names), text (by regex in file contents), ast (by AST pattern in code structure), list (browse a directory as a recursive tree)."
                 },
                 "pattern": {
                     "type": "string",
-                    "description": "The search pattern. For files: a glob like '**/*.rs'. For text: a regex like 'fn\\s+\\w+'. For ast: an AST pattern with meta-variables ($VAR for one node, $$$ for zero or more)."
+                    "description": "The search pattern. Required for files/text/ast; ignored for list. For files: a glob like '**/*.rs'. For text: a regex like 'fn\\s+\\w+'. For ast: an AST pattern with meta-variables ($VAR for one node, $$$ for zero or more)."
                 },
                 "path": {
                     "type": "string",
-                    "description": "Directory to search inside. Omit to search from the project root."
+                    "description": "Directory to search inside (files/text/ast) or to list (list). Omit to use the project root."
                 },
                 "include": {
                     "type": "string",
@@ -78,9 +82,21 @@ impl Tool for FindTool {
                 "context": {
                     "type": "integer",
                     "description": "(ast only) Number of extra lines to show around each match. Default: 0."
+                },
+                "maxDepth": {
+                    "type": "integer",
+                    "description": "(list only) Maximum directory depth to traverse. Default: 4. Use a smaller value for a quick overview."
+                },
+                "perDirectoryLimit": {
+                    "type": "integer",
+                    "description": "(list only) Maximum entries rendered from each directory before showing an omitted-count line. Default: 20."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "(list only) Maximum total entries rendered across the whole tree. Default: 200."
                 }
             },
-            "required": ["mode", "pattern"]
+            "required": ["mode"]
         })
     }
 
@@ -102,6 +118,7 @@ impl Tool for FindTool {
                 "files" => files::execute(&args, env).await,
                 "text" => text::execute(&args, env).await,
                 "ast" => ast::execute(&args, env).await,
+                "list" => list::execute(&args, env).await,
                 other => Err(format!("unknown mode '{other}'")),
             }
         })

@@ -29,11 +29,11 @@ pub(crate) fn execute<'a>(
     env: &'a Environment,
 ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>> {
     Box::pin(async move {
-        let file_path = args["filePath"]
-            .as_str()
-            .ok_or("missing required parameter 'filePath'")?;
-
-        let resolved = resolve_path(file_path, &env.cwd);
+        let resolved = if let Some(path) = args["path"].as_str() {
+            resolve_path(path, &env.cwd)
+        } else {
+            env.cwd.clone()
+        };
 
         let metadata = tokio::fs::metadata(&resolved)
             .await
@@ -82,7 +82,7 @@ pub(crate) fn execute<'a>(
 
         if rendered >= max_entries {
             output.push_str(&format!(
-                "\n(truncated at {max_entries} entries — narrow with 'filePath', 'maxDepth', or 'perDirectoryLimit')"
+                "\n(truncated at {max_entries} entries — narrow with 'path', 'maxDepth', or 'perDirectoryLimit')"
             ));
         }
 

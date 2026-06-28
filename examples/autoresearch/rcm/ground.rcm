@@ -17,7 +17,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_load.txt" }
-        tools = ["rdc_read", "fs"]
+        tools = ["rdc_read", "read", "edit", "write", "find"]
     }
 
     // ── Closest-work search: two parallel lenses ─────────────────────────────
@@ -26,7 +26,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_same_problem.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["arxiv_search", "read", "edit", "write", "find"]
     }
 
     accelerator same_mechanism_scout {
@@ -34,7 +34,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_same_mechanism.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["arxiv_search", "read", "edit", "write", "find"]
     }
 
     flux closest_merge {
@@ -49,7 +49,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_closest.txt" }
-        tools = ["arxiv_download", "arxiv_search", "fs"]
+        tools = ["arxiv_download", "arxiv_search", "read", "edit", "write", "find"]
         spawns = ["PaperCard"]
     }
 
@@ -59,7 +59,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_position.txt" }
-        tools = ["rdc_write", "fs"]
+        tools = ["rdc_write", "read", "edit", "write", "find"]
     }
 
     // ── Review: critic (overclaim) + scholar (novelty) in parallel ───────────
@@ -68,7 +68,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_critic.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     accelerator scholar {
@@ -76,7 +76,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_scholar.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["arxiv_search", "read", "edit", "write", "find"]
     }
 
     flux review_merge {
@@ -91,7 +91,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_revise.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     accelerator grounded {
@@ -99,7 +99,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_grounded.txt" }
-        tools = ["rdc_write", "fs"]
+        tools = ["rdc_write", "read", "edit", "write", "find"]
     }
 
     accelerator gate {
@@ -107,7 +107,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/ground_gate.txt" }
-        tools = ["rdc_write", "fs"]
+        tools = ["rdc_write", "read", "edit", "write", "find"]
     }
 
     // ── Wiring ───────────────────────────────────────────────────────────────

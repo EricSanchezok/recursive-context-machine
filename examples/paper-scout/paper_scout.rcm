@@ -18,6 +18,6 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "./prompts/paper_scout.txt" }
-    tools = ["arxiv_search", "arxiv_download", "fs", "find"]
+    tools = ["arxiv_search", "arxiv_download", "read", "edit", "write", "find"]
     mcps = ["anysearch"]
 }

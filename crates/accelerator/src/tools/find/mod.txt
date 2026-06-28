@@ -1,6 +1,17 @@
-Find code in your project — by file name pattern, by regex in file contents, or by AST structure. Use `mode` to pick the method.
+Find and browse code in your project — list a directory tree, find files by name pattern, find text by regex in file contents, or match by AST structure. Use `mode` to pick the method.
 
 All modes respect `.gitignore` rules in traversed directories. Hidden files and directories are skipped by default; set `showHidden: true` only when you explicitly need hidden project metadata.
+
+### list — Browse a directory as a recursive tree
+
+Lists a directory as a recursive tree. Use this for a quick structural overview of a project or subdirectory; use the other modes for targeted search and the `read` tool to open individual files.
+
+Usage:
+- `path` is the directory to list. Omit to list the project root.
+- `pattern` is not used in this mode.
+- `maxDepth` controls how deep to traverse (default 4). `perDirectoryLimit` caps entries shown per directory before an omitted-count line (default 20); `limit` caps total rendered entries across the tree (default 200).
+- Hidden files/directories are skipped by default. Use `showHidden: true` to include entries like `.github` or `.vscode`.
+- Output uses 📁 for directories and 📄 for files, indented by depth.
 
 ### files — Find files by glob pattern
 

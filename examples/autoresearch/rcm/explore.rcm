@@ -17,7 +17,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_anchor.txt" }
-        tools = ["rdc_read", "fs", "shell"]
+        tools = ["rdc_read", "read", "edit", "write", "shell", "find"]
     }
 
     // ── Landscape: four parallel scouts hunting friction ─────────────────────
@@ -26,7 +26,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_method_scout.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["arxiv_search", "read", "edit", "write", "find"]
     }
 
     accelerator survey_scout {
@@ -34,7 +34,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_survey_scout.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["arxiv_search", "read", "edit", "write", "find"]
     }
 
     accelerator venue_scout {
@@ -42,7 +42,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_venue_scout.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["arxiv_search", "read", "edit", "write", "find"]
     }
 
     accelerator industry_scout {
@@ -50,7 +50,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_industry_scout.txt" }
-        tools = ["arxiv_search", "webfetch", "fs"]
+        tools = ["arxiv_search", "webfetch", "read", "edit", "write", "find"]
     }
 
     flux landscape_merge {
@@ -64,7 +64,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_landscape.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     // ── Read core papers in full (citation-graph + paper-card fan-out) ────────
@@ -73,7 +73,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_read_core.txt" }
-        tools = ["arxiv_download", "arxiv_search", "fs"]
+        tools = ["arxiv_download", "arxiv_search", "read", "edit", "write", "find"]
         spawns = ["PaperCard"]
     }
 
@@ -83,7 +83,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_wonder.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     // ── Ideate: three parallel creative lenses ───────────────────────────────
@@ -92,7 +92,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_lens_mechanism.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     accelerator lens_transfer {
@@ -100,7 +100,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_lens_transfer.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     accelerator lens_contrarian {
@@ -108,7 +108,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_lens_contrarian.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     flux lens_merge {
@@ -122,7 +122,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_ideas.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     // ── Novelty, adversarial review, ranked pool, gate ───────────────────────
@@ -131,7 +131,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_novelty.txt" }
-        tools = ["arxiv_search", "fs"]
+        tools = ["arxiv_search", "read", "edit", "write", "find"]
     }
 
     accelerator critic {
@@ -139,7 +139,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_critic.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     accelerator pool {
@@ -147,7 +147,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_pool.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     accelerator gate {
@@ -155,7 +155,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/explore_gate.txt" }
-        tools = ["rdc_write", "fs"]
+        tools = ["rdc_write", "read", "edit", "write", "find"]
     }
 
     // ── Wiring ───────────────────────────────────────────────────────────────

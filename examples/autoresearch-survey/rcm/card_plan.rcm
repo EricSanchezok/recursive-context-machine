@@ -13,5 +13,5 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/card_plan.txt" }
-    tools = ["fs"]
+    tools = ["read", "edit", "write", "find"]
 }

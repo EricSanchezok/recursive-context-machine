@@ -1,0 +1,11 @@
+Performs exact string replacements in files.
+
+Usage:
+- Provide the exact text to find as `oldString` and its replacement as `newString`.
+- You must `read` a file before editing it. The edit will FAIL if the file was never read, or was modified on disk since it was last read — read it again first.
+- The edit will FAIL if `oldString` is not found in the file. The error will suggest the most similar lines.
+- The edit will FAIL if `oldString` appears multiple times. Either provide more surrounding context in `oldString` to make the match unique, or set `replaceAll: true` to change every occurrence.
+- Use `replaceAll` for batch renames (e.g., renaming a variable throughout a file).
+- When copying text from a `read` result, preserve the exact indentation as it appears after the line-number prefix. Never include the line-number prefix in `oldString` or `newString`.
+- `edit` only modifies existing files. To create a new file, use `write`.
+- Matching tolerates minor formatting differences (trailing whitespace, indentation shifts, escaped characters) through a cascade of fallback strategies, so a near-exact `oldString` usually still applies.

@@ -5,7 +5,7 @@ research direction is the purpose handed to this node — it appears in your con
 as a user message tagged "purpose" (set via the graph's purpose or the CLI
 --purpose flag). Use that purpose text as the research direction.
 
-Use shell only for the timestamp. Use fs for artifact writes.
+Use shell only for the timestamp. Use write for artifact writes.
 
 Context discipline:
 

@@ -18,6 +18,6 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "./prompts/city_halfday.txt" }
-    tools = ["fs", "find"]
+    tools = ["read", "edit", "write", "find"]
     mcps = ["anysearch"]
 }

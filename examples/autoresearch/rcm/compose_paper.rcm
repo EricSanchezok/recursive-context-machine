@@ -17,7 +17,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/paper_load.txt" }
-        tools = ["rdc_read", "fs"]
+        tools = ["rdc_read", "read", "edit", "write", "find"]
     }
 
     // ── Extract the few core claims (the load-bearing arguments) ─────────────
@@ -26,7 +26,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/paper_claims.txt" }
-        tools = ["rdc_write", "fs"]
+        tools = ["rdc_write", "read", "edit", "write", "find"]
     }
 
     // ── Build the claim-driven spine and fan out the section writers ─────────
@@ -35,7 +35,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/paper_spine.txt" }
-        tools = ["rdc_write", "fs"]
+        tools = ["rdc_write", "read", "edit", "write", "find"]
         spawns = ["SectionWriter"]
     }
 
@@ -45,7 +45,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/paper_assemble.txt" }
-        tools = ["rdc_write", "fs"]
+        tools = ["rdc_write", "read", "edit", "write", "find"]
     }
 
     accelerator polish {
@@ -53,7 +53,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/paper_polish.txt" }
-        tools = ["fs"]
+        tools = ["read", "edit", "write", "find"]
     }
 
     accelerator gate {
@@ -61,7 +61,7 @@ graph {
         models = ["deepseek-v4-flash"]
         policy = "captain"
         prompts = { captain = file "../prompts/paper_gate.txt" }
-        tools = ["rdc_write", "fs"]
+        tools = ["rdc_write", "read", "edit", "write", "find"]
     }
 
     // ── Wiring ───────────────────────────────────────────────────────────────

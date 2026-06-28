@@ -21,7 +21,7 @@ fn parse_primitive_accelerator_file() {
                 captain = file "./captain.txt"
                 review = "Review carefully"
             }
-            tools = ["fs", "shell"]
+            tools = ["read", "shell"]
             mcps = ["docs"]
         }
     "#;
@@ -34,7 +34,7 @@ fn parse_primitive_accelerator_file() {
         AcceleratorBodyDef::Primitive(primitive) => {
             assert_eq!(primitive.purpose.as_deref(), Some("review code"));
             assert_eq!(primitive.models, vec!["gpt"]);
-            assert_eq!(primitive.tools, Some(vec!["fs".into(), "shell".into()]));
+            assert_eq!(primitive.tools, Some(vec!["read".into(), "shell".into()]));
             assert_eq!(primitive.mcps, Some(vec!["docs".into()]));
             let prompts = primitive.prompts.as_ref().unwrap();
             assert_eq!(

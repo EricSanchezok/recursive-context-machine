@@ -7,7 +7,7 @@ Your task is twofold:
 Do NOT add, remove, or restructure sections. Do NOT add or remove citations. Do NOT change the taxonomy, content, or technical accuracy of the existing survey.
 
 ## Working Directory
-The CURRENT WORKING DIRECTORY is the run directory. All paths below are relative to it. Use the `fs` tool to read and write files relative to the CWD.
+The CURRENT WORKING DIRECTORY is the run directory. All paths below are relative to it. Use the `read`/`write` tools to read and write files relative to the CWD.
 
 ## Memory Access
 

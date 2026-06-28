@@ -1,0 +1,8 @@
+Writes a file to the local filesystem.
+
+Usage:
+- Overwrites the existing file if one already exists at the provided path.
+- When overwriting an existing file, you must `read` it first; the write will FAIL otherwise. Creating a brand-new file needs no prior read.
+- ALWAYS prefer `edit` for targeted in-place changes. Only use `write` to create a new file or to replace an entire file's contents.
+- This tool will error if the target path is a directory.
+- Parent directories are created automatically if they do not exist.

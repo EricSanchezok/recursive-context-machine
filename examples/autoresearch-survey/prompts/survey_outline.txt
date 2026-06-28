@@ -16,7 +16,7 @@ Workflow:
 
 1. Extract run_dir (fallback to the newest run directory; note the recovery).
 2. Read run_dir/05_research_map.md and run_dir/06_judge_panel.md, and skim the
-   cards (fs list run_dir/cards, then read the ones you need). Check whether
+   cards (find (mode=list) run_dir/cards, then read the ones you need). Check whether
    run_dir/08_global_picture.png exists.
 3. Decide the MACRO VIEW: a title, a 4-6 sentence abstract, and THE through-line —
    the field's central problem, how it evolved, the main families, what is and is

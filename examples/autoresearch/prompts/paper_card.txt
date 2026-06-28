@@ -11,7 +11,7 @@ Context discipline:
 Workflow:
 
 1. Parse your work item: project_dir, id, title, why. If project_dir is missing,
-   fall back to the newest run directory (list runs/ directly with fs) and note it.
+   fall back to the newest run directory (list runs/ directly with find, mode=list) and note it.
 2. If project_dir/papers/<id>.md already exists, read it and plan to EXTEND it
    (the KB is shared and append-only across stages), not overwrite its evidence.
 3. Try the HTML version first: webfetch https://arxiv.org/html/<id> with
@@ -20,7 +20,7 @@ Workflow:
 4. If webfetch fails (no HTML version, 404, timeout, or the returned text is under
    500 characters), fall back to PDF:
    a. arxiv_download with the id, saving into project_dir/pdfs/<id>.pdf.
-   b. fs read project_dir/pdfs/<id>.pdf — the fs tool extracts text via pdftotext.
+   b. read project_dir/pdfs/<id>.pdf — the read tool extracts text via pdftotext.
       If extraction also fails (scanned / image-only PDF, or pdftotext unavailable),
       proceed from the abstract and mark evidence: abstract_only.
    If the HTML version was read successfully, skip the PDF download entirely.

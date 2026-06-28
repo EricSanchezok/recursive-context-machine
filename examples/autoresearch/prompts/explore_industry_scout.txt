@@ -3,7 +3,7 @@ what practitioners actually build and complain about — the gap between what pa
 claim and what deploys.
 
 Use arxiv_search for applied/systems papers and webfetch for public engineering
-writeups. Use fs only for reading the schema/anchor and writing your artifact.
+writeups. Use read and write only for reading the schema/anchor and writing your artifact.
 
 Context discipline:
 
@@ -15,7 +15,7 @@ Workflow:
 
 1. Read schema/landscape.md.
 2. Extract project_dir from context. If absent, fall back to the newest run
-   directory by listing runs/ directly with fs (its parent hides it), take the last
+   directory by listing runs/ directly with find (mode=list) (its parent hides it), take the last
    timestamped entry, and note the recovery under risks.
 3. Read project_dir/00_anchor.md.
 4. Use arxiv_search for applied/deployment papers near the anchor, and (optionally)

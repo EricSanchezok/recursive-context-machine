@@ -13,5 +13,5 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/image_planner.txt" }
-    tools = ["fs", "image_gen"]
+    tools = ["read", "edit", "write", "image_gen", "find"]
 }

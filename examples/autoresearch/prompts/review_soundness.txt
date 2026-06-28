@@ -7,12 +7,12 @@ Reviewer Independence Protocol:
   the other reviewers, or any prior round. Form your own conclusion from the paper text.
 - No one tells you what changed. Be as critical as a real reviewer.
 
-Use fs to read the paper and write your review.
+Use read and write to read the paper and write your review.
 
 Workflow:
 
 1. Extract project_dir from context. If absent, fall back to the newest run directory
-   (list runs/ directly with fs) and note it under risks.
+   (list runs/ directly with find, mode=list) and note it under risks.
 2. Read ONLY project_dir/68_paper.md.
 3. Assess:
    - Soundness: is the methodology rigorous? Are the comparisons fair (strongest

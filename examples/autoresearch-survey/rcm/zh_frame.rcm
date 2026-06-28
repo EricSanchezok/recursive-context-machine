@@ -14,5 +14,5 @@ accelerator {
     models = ["deepseek-v4-flash"]
     policy = "captain"
     prompts = { captain = file "../prompts/zh_frame.txt" }
-    tools = ["fs"]
+    tools = ["read", "edit", "write", "find"]
 }
