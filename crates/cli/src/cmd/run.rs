@@ -88,6 +88,14 @@ async fn stream_run(
 ) -> anyhow::Result<()> {
     let (ctx_tx, ctx_rx) = mpsc::channel();
 
+    // Optional RDC reporter: mirrors survey pipeline events to the backend.
+    let (report_tx, report_rx) = mpsc::channel();
+    if let Some(reporter) = hook::rdc_reporter::RdcReporter::from_env(report_rx) {
+        tokio::spawn(async move {
+            reporter.run().await;
+        });
+    }
+
     thread::spawn(move || {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -114,6 +122,9 @@ async fn stream_run(
 
     let mut graph_seen = false;
     for event in hook_rx.iter() {
+        // Forward to the optional RDC reporter without blocking the stream.
+        let _ = report_tx.send(event.clone());
+
         if matches!(event.kind, HookKind::Graph(hook::GraphEvent::Start { .. })) {
             graph_seen = true;
         }

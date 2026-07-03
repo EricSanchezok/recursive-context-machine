@@ -10,6 +10,7 @@ mod rdc_read;
 mod rdc_write;
 pub mod shell;
 mod spawn;
+mod survey_update;
 mod wait;
 mod webfetch;
 
@@ -23,6 +24,7 @@ pub use rdc_read::RdcReadTool;
 pub use rdc_write::RdcWriteTool;
 pub use shell::{OUTPUT_CAP_BYTES, ShellTool, build_result, collect_output};
 pub use spawn::SpawnTool;
+pub use survey_update::SurveyUpdateTool;
 pub use wait::WaitTool;
 pub use webfetch::WebFetchTool;
 
@@ -51,6 +53,7 @@ pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
         std::sync::Arc::new(RdcReadTool),
         std::sync::Arc::new(RdcWriteTool),
         std::sync::Arc::new(ShellTool),
+        std::sync::Arc::new(SurveyUpdateTool),
         std::sync::Arc::new(WaitTool),
         std::sync::Arc::new(WebFetchTool),
     ]

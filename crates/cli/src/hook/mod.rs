@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::mpsc;
 
+pub mod rdc_reporter;
+
 use tracing::Subscriber;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::registry::LookupSpan;
