@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use reqwest::Client;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use super::{ComponentEvent, HookEvent, HookKind, MachineEvent};
 
@@ -77,7 +77,7 @@ impl RdcReporter {
 
     pub async fn run(mut self) {
         info!(target: "rdc_reporter", "started");
-        for event in self.rx.iter() {
+        while let Ok(event) = self.rx.recv() {
             if let Err(e) = self.handle_event(&event).await {
                 warn!(target: "rdc_reporter", error = %e, "event failed");
             }

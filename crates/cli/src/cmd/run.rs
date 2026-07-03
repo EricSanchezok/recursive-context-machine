@@ -91,8 +91,14 @@ async fn stream_run(
     // Optional RDC reporter: mirrors survey pipeline events to the backend.
     let (report_tx, report_rx) = mpsc::channel();
     if let Some(reporter) = hook::rdc_reporter::RdcReporter::from_env(report_rx) {
-        tokio::spawn(async move {
-            reporter.run().await;
+        thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("tokio runtime");
+            runtime.block_on(async move {
+                reporter.run().await;
+            });
         });
     }
 
