@@ -25,6 +25,8 @@ Thumbs.db
 
 # Rust
 target/
+.cargo/
+*.exe
 
 # Build
 dist/

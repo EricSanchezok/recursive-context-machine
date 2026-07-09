@@ -29,7 +29,13 @@ def load_surveybench_topics(benchmarks_dir: str) -> list[dict[str, Any]]:
     outlines_file = human_dir / "outlines.json"
     outlines: dict[str, str] = {}
     if outlines_file.is_file():
-        outlines = json.loads(outlines_file.read_text(encoding="utf-8"))
+        data = json.loads(outlines_file.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            outlines = data
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and "topic" in item:
+                    outlines[item["topic"]] = item.get("outline", "")
 
     topics: list[dict[str, Any]] = []
     for idx, md_path in enumerate(sorted(human_dir.glob("*.md"))):

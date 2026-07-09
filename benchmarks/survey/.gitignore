@@ -1,7 +1,14 @@
 # Benchmark data (large, fetched externally)
 benchmarks/
-!benchmarks/survey/
-!benchmarks/survey/**/
+!benchmarks/
+
+# Track the setup module code
+!benchmarks/setup.py
+!benchmarks/__init__.py
+
+# Re-ignore the downloaded data subdirectories
+benchmarks/surveybench/
+benchmarks/deepscholar/
 
 # Generated survey outputs
 benchmarks/survey/generated/**/*
