@@ -17,6 +17,8 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUST_BACKTRACE: 1
+  LINUX_BUILD_IMAGE: rust:bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa
+  LINUX_RUNTIME_IMAGE: debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
 jobs:
   fmt:
@@ -67,6 +69,31 @@ jobs:
         run: cargo nextest run --workspace --locked
       - name: cargo test --doc
         run: cargo test --workspace --doc --locked
+
+  linux-release-compatibility:
+    name: Linux release compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build in Debian Bookworm
+        run: |
+          docker run --rm \
+            --platform linux/amd64 \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            "$LINUX_BUILD_IMAGE" \
+            bash -euxo pipefail -c '
+              rustup target add x86_64-unknown-linux-gnu
+              cargo build --release --bin accelerate \
+                --target x86_64-unknown-linux-gnu --locked
+            '
+      - name: Execute in a clean Debian Bookworm runtime
+        run: |
+          docker run --rm \
+            --platform linux/amd64 \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            "$LINUX_RUNTIME_IMAGE" \
+            /workspace/target/x86_64-unknown-linux-gnu/release/accelerate --help
 
   hygiene:
     name: dependency hygiene
