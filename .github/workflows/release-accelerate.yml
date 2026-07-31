@@ -109,7 +109,7 @@ jobs:
       - name: Generate checksums
         working-directory: dist
         run: |
-          sha256sum * | tee checksums.txt
+          sha256sum -- * | tee checksums.txt
           cat checksums.txt
 
       - name: Publish GitHub Release
@@ -133,10 +133,12 @@ jobs:
         id: hashes
         working-directory: dist
         run: |
-          echo "x86_64_linux=$(sha256sum accelerate-x86_64-linux.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "aarch64_linux=$(sha256sum accelerate-aarch64-linux.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "aarch64_darwin=$(sha256sum accelerate-aarch64-darwin.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          echo "x86_64_darwin=$(sha256sum accelerate-x86_64-darwin.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          {
+            echo "x86_64_linux=$(sha256sum accelerate-x86_64-linux.tar.gz | awk '{print $1}')"
+            echo "aarch64_linux=$(sha256sum accelerate-aarch64-linux.tar.gz | awk '{print $1}')"
+            echo "aarch64_darwin=$(sha256sum accelerate-aarch64-darwin.tar.gz | awk '{print $1}')"
+            echo "x86_64_darwin=$(sha256sum accelerate-x86_64-darwin.tar.gz | awk '{print $1}')"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Update Homebrew formula
         working-directory: rcm-dist
@@ -150,10 +152,15 @@ jobs:
           HASH_X86_64_DARWIN="${{ steps.hashes.outputs.x86_64_darwin }}"
 
           sed -i "s/version \".*\"/version \"${TAG_CLEAN}\"/" Formula/rcm.rb
-          sed -i "s/REPLACE_WITH_SHA256_FOR_v.*_x86_64_linux/${HASH_X86_64_LINUX}/" Formula/rcm.rb
-          sed -i "s/REPLACE_WITH_SHA256_FOR_v.*_aarch64_linux/${HASH_AARCH64_LINUX}/" Formula/rcm.rb
-          sed -i "s/REPLACE_WITH_SHA256_FOR_v.*_aarch64_darwin/${HASH_AARCH64_DARWIN}/" Formula/rcm.rb
-          sed -i "s/REPLACE_WITH_SHA256_FOR_v.*_x86_64_darwin/${HASH_X86_64_DARWIN}/" Formula/rcm.rb
+          sed -i "/accelerate-x86_64-linux.tar.gz/{n;s/sha256 \".*\"/sha256 \"${HASH_X86_64_LINUX}\"/;}" Formula/rcm.rb
+          sed -i "/accelerate-aarch64-linux.tar.gz/{n;s/sha256 \".*\"/sha256 \"${HASH_AARCH64_LINUX}\"/;}" Formula/rcm.rb
+          sed -i "/accelerate-aarch64-darwin.tar.gz/{n;s/sha256 \".*\"/sha256 \"${HASH_AARCH64_DARWIN}\"/;}" Formula/rcm.rb
+          sed -i "/accelerate-x86_64-darwin.tar.gz/{n;s/sha256 \".*\"/sha256 \"${HASH_X86_64_DARWIN}\"/;}" Formula/rcm.rb
+
+          grep -Fq "sha256 \"${HASH_X86_64_LINUX}\"" Formula/rcm.rb
+          grep -Fq "sha256 \"${HASH_AARCH64_LINUX}\"" Formula/rcm.rb
+          grep -Fq "sha256 \"${HASH_AARCH64_DARWIN}\"" Formula/rcm.rb
+          grep -Fq "sha256 \"${HASH_X86_64_DARWIN}\"" Formula/rcm.rb
 
           cat Formula/rcm.rb
 
