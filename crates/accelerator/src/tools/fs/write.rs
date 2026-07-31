@@ -18,7 +18,7 @@ pub(crate) fn execute<'a>(
             .as_str()
             .ok_or("missing required parameter 'content'")?;
 
-        let path = resolve_path(file_path, &env.cwd);
+        let path = resolve_path(file_path, env)?;
         let relative = relative_path(&path, &env.cwd);
         let _lock = guard::acquire_write_lock(&path).await;
 

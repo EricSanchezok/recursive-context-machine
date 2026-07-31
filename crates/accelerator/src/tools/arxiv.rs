@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -297,7 +297,7 @@ async fn execute_download(args: Value, env: &Environment) -> Result<ToolResult, 
         return Err("Output path must end with .pdf".to_string());
     }
 
-    let output_path = resolve_path(output_path_raw, &env.cwd);
+    let output_path = super::resolve_path(output_path_raw, env)?;
 
     if output_path.exists() && !args["overwrite"].as_bool().unwrap_or(false) {
         return Ok(ToolResult {
@@ -368,15 +368,6 @@ async fn execute_download(args: Value, env: &Environment) -> Result<ToolResult, 
         content: format!("Successfully downloaded arXiv paper {id} to {relative} ({size_str})"),
         title: Some(format!("Downloaded {id}")),
     })
-}
-
-fn resolve_path(raw: &str, cwd: &Path) -> PathBuf {
-    let path = Path::new(raw);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        cwd.join(path)
-    }
 }
 
 fn relative_path(path: &Path, cwd: &Path) -> String {
