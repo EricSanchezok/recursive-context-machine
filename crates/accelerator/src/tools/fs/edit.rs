@@ -686,7 +686,7 @@ pub(crate) fn execute<'a>(
             return Err("oldString and newString must differ".to_string());
         }
 
-        let resolved = resolve_path(file_path_str, &env.cwd);
+        let resolved = resolve_path(file_path_str, env)?;
 
         // Guard: existing files must have been read first.
         // (old_string.is_empty() creates a new file, skip guard.)

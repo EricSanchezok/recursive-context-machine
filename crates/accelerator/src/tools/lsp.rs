@@ -75,7 +75,7 @@ impl Tool for LspTool {
             let file_path = args["filePath"]
                 .as_str()
                 .ok_or("missing required parameter 'filePath'")?;
-            let resolved = resolve_path(file_path, &env.cwd);
+            let resolved = resolve_path(file_path, env)?;
 
             match operation {
                 "diagnostics" => query_diagnostics(&resolved, env).await,

@@ -83,7 +83,7 @@ pub(crate) fn execute<'a>(
             .ok_or("missing required parameter 'lang' (ast mode requires a language)")?;
 
         let search_path = if let Some(path) = args["path"].as_str() {
-            resolve_path(path, &env.cwd)
+            resolve_path(path, env)?
         } else {
             env.cwd.clone()
         };

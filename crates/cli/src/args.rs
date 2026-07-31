@@ -48,6 +48,13 @@ pub struct RunArgs {
     #[arg(long)]
     pub purpose: Option<String>,
 
+    /// Read the purpose override from standard input.
+    ///
+    /// This keeps sensitive or large purpose text out of the process argument
+    /// list. It cannot be combined with `--purpose`.
+    #[arg(long, conflicts_with = "purpose")]
+    pub purpose_stdin: bool,
+
     /// Use a specific run directory instead of auto-generating a timestamped one.
     /// Exported as RCM_RUN_DIR for subprocess/shell tools.
     #[arg(long)]
@@ -103,4 +110,36 @@ pub struct DispatchArgs {
 pub enum Format {
     Text,
     Json,
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{Cli, Command};
+
+    #[test]
+    fn purpose_stdin_is_accepted_for_run() {
+        let cli = Cli::try_parse_from(["accelerate", "run", "workflow.rcm", "--purpose-stdin"])
+            .expect("purpose stdin should parse");
+
+        let Command::Run(args) = cli.command else {
+            panic!("expected run command");
+        };
+        assert!(args.purpose_stdin);
+    }
+
+    #[test]
+    fn purpose_stdin_conflicts_with_inline_purpose() {
+        let result = Cli::try_parse_from([
+            "accelerate",
+            "run",
+            "workflow.rcm",
+            "--purpose",
+            "secret",
+            "--purpose-stdin",
+        ]);
+
+        assert!(result.is_err());
+    }
 }
