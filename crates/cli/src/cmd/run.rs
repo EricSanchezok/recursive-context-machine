@@ -2,6 +2,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Instant;
 
+use tokio::io::AsyncReadExt;
 use tracing_subscriber::prelude::*;
 
 use crate::args::{Format, RunArgs};
@@ -16,8 +17,14 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
         .await
         .map_err(anyhow::Error::msg)?;
 
-    let purpose = args.purpose.unwrap_or_default();
-    let run_dir = args.run_dir;
+    let purpose = if args.purpose_stdin {
+        let mut purpose = String::new();
+        tokio::io::stdin().read_to_string(&mut purpose).await?;
+        purpose
+    } else {
+        args.purpose.unwrap_or_default()
+    };
+    let run_dir = prepare_run_dir(args.run_dir)?;
 
     if args.stream {
         return stream_run(accelerator, hook_rx, purpose, run_dir).await;
@@ -39,6 +46,7 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
             };
             if let Some(ref dir) = run_dir {
                 state.environment.cwd = dir.clone();
+                state.environment.root = Some(dir.clone());
                 state.environment.run_dir = Some(dir.clone());
                 state
                     .environment
@@ -101,6 +109,7 @@ async fn stream_run(
             };
             if let Some(ref dir) = run_dir {
                 state.environment.cwd = dir.clone();
+                state.environment.root = Some(dir.clone());
                 state.environment.run_dir = Some(dir.clone());
                 state
                     .environment
@@ -244,6 +253,16 @@ async fn stream_run(
 
     let _ = ctx_rx.recv();
     Ok(())
+}
+
+fn prepare_run_dir(
+    run_dir: Option<std::path::PathBuf>,
+) -> anyhow::Result<Option<std::path::PathBuf>> {
+    let Some(run_dir) = run_dir else {
+        return Ok(None);
+    };
+    std::fs::create_dir_all(&run_dir)?;
+    Ok(Some(run_dir.canonicalize()?))
 }
 
 pub fn is_terminal_event(event: &hook::HookEvent, graph_seen: bool) -> bool {

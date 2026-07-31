@@ -31,7 +31,7 @@ pub(crate) fn execute<'a>(
             .as_str()
             .ok_or("missing required parameter 'filePath'")?;
 
-        let resolved = resolve_path(raw_path, &env.cwd);
+        let resolved = resolve_path(raw_path, env)?;
 
         // Stat the file (handles not-found with suggestions).
         let metadata = match tokio::fs::metadata(&resolved).await {
