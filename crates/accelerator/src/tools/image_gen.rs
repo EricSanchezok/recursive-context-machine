@@ -17,7 +17,7 @@ use super::{relative_path, resolve_path};
 
 const API_URL: &str = "https://apicz.boyuerichdata.com/v1/images/generations";
 const DEFAULT_MODEL: &str = "gpt-image-2";
-const API_KEY_ENV: &str = "OPENAI_API_KEY";
+const API_KEY_ENV: &str = "IMAGE_GEN_API_KEY";
 const TIMEOUT_SECS: u64 = 180;
 
 pub struct ImageGenTool;
