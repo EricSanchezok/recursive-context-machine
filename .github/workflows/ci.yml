@@ -71,23 +71,38 @@ jobs:
         run: cargo test --workspace --doc --locked
 
   linux-release-compatibility:
-    name: Linux release compatibility
+    name: Linux release compatibility (${{ matrix.target }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
       - name: Build in Debian Bookworm
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           docker run --rm \
             --platform linux/amd64 \
+            --env TARGET \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace \
             "$LINUX_BUILD_IMAGE" \
             bash -euxo pipefail -c '
-              rustup target add x86_64-unknown-linux-gnu
-              cargo build --release --bin accelerate \
-                --target x86_64-unknown-linux-gnu --locked
+              if [ "$TARGET" = "aarch64-unknown-linux-gnu" ]; then
+                apt-get update
+                apt-get install -y --no-install-recommends \
+                  gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+              fi
+              rustup target add "$TARGET"
+              cargo build --release --bin accelerate --target "$TARGET" --locked
             '
       - name: Execute in a clean Debian Bookworm runtime
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: |
           docker run --rm \
             --platform linux/amd64 \
