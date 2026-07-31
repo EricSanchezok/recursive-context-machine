@@ -79,7 +79,7 @@ impl Tool for ImageGenTool {
                 .filter(|key| !key.is_empty())
                 .ok_or_else(|| format!("{API_KEY_ENV} is not set in the environment"))?;
 
-            let output_path = resolve_path(file_path, &env.cwd);
+            let output_path = resolve_path(file_path, env)?;
 
             info!(target: "image_gen", model = DEFAULT_MODEL, size, path = ?output_path, "generating image");
 
