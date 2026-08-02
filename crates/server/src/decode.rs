@@ -178,7 +178,7 @@ pub fn build_model(spec: &ModelSpec) -> Result<machine::Model, Status> {
         credentials,
         limit,
         modalities,
-        timeout: spec.timeout.unwrap_or(180),
+        timeout: spec.timeout.unwrap_or(machine::DEFAULT_MODEL_TIMEOUT_SECS),
         temperature: spec.temperature,
         thinking: spec.thinking,
         cost: spec.cost.as_ref().map(|c| machine::Cost {
@@ -207,5 +207,23 @@ fn parse_modality(value: &str) -> Result<machine::Modality, Status> {
             "unknown modality: {}",
             other
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_model;
+    use crate::rcm::ModelSpec;
+
+    #[test]
+    fn decoded_model_default_allows_thirty_minute_requests() {
+        let model = build_model(&ModelSpec {
+            name: "test".to_string(),
+            protocol: "openai".to_string(),
+            ..Default::default()
+        })
+        .expect("model should decode");
+
+        assert_eq!(model.timeout, 1_800);
     }
 }

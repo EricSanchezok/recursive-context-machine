@@ -35,10 +35,10 @@ pub use fragment::{
 };
 pub use inbox::{Inbox, InboxItem};
 pub use machine::{ExecutionMode, Machine, MachineFrame, MachineState, MachineStatus, RunState};
-pub use model::{Cost, Limit, Modalities, Modality, Model, Protocol};
+pub use model::{Cost, DEFAULT_MODEL_TIMEOUT_SECS, Limit, Modalities, Modality, Model, Protocol};
 pub use policy::{ACTION_VERBS, Action, Policy, PolicyView};
 pub use purpose::Purpose;
 pub use record::{Effect, StepResult, StoredEvent};
 pub use resources::{LookupResult, ModelNotRegistered, Resources, ToolNotRegistered};
-pub use tool::{Tool, ToolDefinition, ToolRuntime};
+pub use tool::{DEFAULT_TOOL_TIMEOUT_SECS, Tool, ToolDefinition, ToolRuntime};
 pub use usage::{CompletionId, CompletionRecord, Telemetry, TokenUsage};
