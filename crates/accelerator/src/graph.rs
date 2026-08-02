@@ -478,11 +478,16 @@ impl GraphRun {
             }
 
             while let Some(result) = tasks.join_next().await {
-                let Ok((index, state, branch)) = result else {
-                    if let Err(error) = result {
+                let (index, state, branch) = match result {
+                    Ok(output) => output,
+                    Err(error) if error.is_panic() => {
                         warn!(?error, "graph component task panicked");
+                        std::panic::resume_unwind(error.into_panic());
                     }
-                    continue;
+                    Err(error) => {
+                        warn!(?error, "graph component task was cancelled");
+                        panic!("graph component task was cancelled: {error}");
+                    }
                 };
                 if let Some(branch) = branch {
                     self.branches[index] = Some(branch);

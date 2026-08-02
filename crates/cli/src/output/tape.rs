@@ -524,9 +524,10 @@ pub(crate) fn run_animation(
     rx: mpsc::Receiver<HookEvent>,
     delay_ms: u64,
     start: std::time::Instant,
+    runtime_thread: &thread::JoinHandle<()>,
 ) -> Summary {
     if !std::io::stdout().is_terminal() {
-        return run_silent(rx, start);
+        return run_silent(rx, start, runtime_thread);
     }
 
     let step = Duration::from_millis(delay_ms);
@@ -568,6 +569,9 @@ pub(crate) fn run_animation(
                     return finish_animation(&mut view, step, start);
                 }
             }
+            Err(mpsc::RecvTimeoutError::Timeout) if runtime_thread.is_finished() => {
+                return finish_animation(&mut view, step, start);
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 return finish_animation(&mut view, step, start);
@@ -576,7 +580,11 @@ pub(crate) fn run_animation(
     }
 }
 
-fn run_silent(rx: mpsc::Receiver<HookEvent>, start: std::time::Instant) -> Summary {
+fn run_silent(
+    rx: mpsc::Receiver<HookEvent>,
+    start: std::time::Instant,
+    runtime_thread: &thread::JoinHandle<()>,
+) -> Summary {
     let mut graph_seen = false;
     let mut summary = Summary {
         fragments: 0,
@@ -584,11 +592,18 @@ fn run_silent(rx: mpsc::Receiver<HookEvent>, start: std::time::Instant) -> Summa
         duration_s: 0.0,
     };
 
-    for event in rx {
+    loop {
+        let event = match rx.recv_timeout(IDLE_TICK) {
+            Ok(event) => event,
+            Err(mpsc::RecvTimeoutError::Timeout) if runtime_thread.is_finished() => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        let root_event = event.source.is_none();
         match event.kind {
-            HookKind::Graph(GraphEvent::Start { .. }) => graph_seen = true,
-            HookKind::Graph(GraphEvent::Done { .. }) => break,
-            HookKind::Machine(MachineEvent::Done) if !graph_seen => break,
+            HookKind::Graph(GraphEvent::Start { .. }) if root_event => graph_seen = true,
+            HookKind::Graph(GraphEvent::Done { .. }) if root_event => break,
+            HookKind::Machine(MachineEvent::Done) if !graph_seen && root_event => break,
             HookKind::Fragment(FragmentEvent::Appended(_))
             | HookKind::Fragment(FragmentEvent::Taken(_))
             | HookKind::Fragment(FragmentEvent::Inserted { .. }) => summary.fragments += 1,
@@ -622,8 +637,8 @@ fn reserve_animation_rows(rows: u16) -> u16 {
 
 fn is_finish_event(view: &ViewState, event: &HookEvent) -> bool {
     match &event.kind {
-        HookKind::Graph(GraphEvent::Done { .. }) => true,
-        HookKind::Machine(MachineEvent::Done) => view.graph.is_none(),
+        HookKind::Graph(GraphEvent::Done { .. }) => event.source.is_none(),
+        HookKind::Machine(MachineEvent::Done) => event.source.is_none() && view.graph.is_none(),
         _ => false,
     }
 }
