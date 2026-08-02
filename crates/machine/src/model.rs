@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-const DEFAULT_TIMEOUT_SECS: u64 = 180;
+pub const DEFAULT_MODEL_TIMEOUT_SECS: u64 = 1_800;
 
 /// LLM configuration.
 ///
@@ -52,11 +52,21 @@ impl Default for Model {
             limit: None,
             cost: None,
             modalities: None,
-            timeout: DEFAULT_TIMEOUT_SECS,
+            timeout: DEFAULT_MODEL_TIMEOUT_SECS,
             headers: None,
             thinking: false,
             extra: HashMap::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Model;
+
+    #[test]
+    fn model_default_timeout_allows_thirty_minute_requests() {
+        assert_eq!(Model::default().timeout, 1_800);
     }
 }
 

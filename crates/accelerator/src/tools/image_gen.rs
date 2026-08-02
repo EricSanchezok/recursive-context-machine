@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use base64::Engine;
-use machine::{Environment, Tool, ToolResult};
+use machine::{DEFAULT_TOOL_TIMEOUT_SECS, Environment, Tool, ToolResult};
 use serde_json::Value;
 use tracing::info;
 
@@ -18,7 +18,6 @@ use super::{relative_path, resolve_path};
 const API_URL: &str = "https://apicz.boyuerichdata.com/v1/images/generations";
 const DEFAULT_MODEL: &str = "gpt-image-2";
 const API_KEY_ENV: &str = "IMAGE_GEN_API_KEY";
-const TIMEOUT_SECS: u64 = 180;
 
 pub struct ImageGenTool;
 
@@ -56,7 +55,7 @@ impl Tool for ImageGenTool {
     }
 
     fn timeout(&self) -> Duration {
-        Duration::from_secs(TIMEOUT_SECS)
+        Duration::from_secs(DEFAULT_TOOL_TIMEOUT_SECS)
     }
 
     fn execute<'a>(
@@ -84,7 +83,7 @@ impl Tool for ImageGenTool {
             info!(target: "image_gen", model = DEFAULT_MODEL, size, path = ?output_path, "generating image");
 
             let client = reqwest::Client::builder()
-                .timeout(Duration::from_secs(TIMEOUT_SECS))
+                .timeout(Duration::from_secs(DEFAULT_TOOL_TIMEOUT_SECS))
                 .build()
                 .map_err(|error| format!("failed to create HTTP client: {error}"))?;
 
