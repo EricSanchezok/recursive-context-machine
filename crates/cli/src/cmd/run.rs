@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tokio::io::AsyncReadExt;
 use tracing_subscriber::prelude::*;
@@ -8,6 +8,8 @@ use tracing_subscriber::prelude::*;
 use crate::args::{Format, RunArgs};
 use crate::hook::{self, HookKind};
 use crate::output;
+
+const RUNTIME_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     let (hook_tx, hook_rx) = mpsc::channel();
@@ -31,35 +33,10 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     }
 
     let start = Instant::now();
-    let (ctx_tx, ctx_rx) = mpsc::channel();
+    let (runtime_thread, ctx_rx) = spawn_runtime(accelerator, purpose, run_dir);
 
-    thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("tokio runtime");
-        runtime.block_on(async {
-            let mut state = machine::RunState {
-                purpose: machine::Purpose::new(purpose),
-                run_dir: run_dir.clone(),
-                ..machine::RunState::default()
-            };
-            if let Some(ref dir) = run_dir {
-                state.environment.cwd = dir.clone();
-                state.environment.root = Some(dir.clone());
-                state.environment.run_dir = Some(dir.clone());
-                state
-                    .environment
-                    .vars
-                    .insert("RCM_RUN_DIR".to_string(), dir.display().to_string());
-            }
-            let output = accelerator.run_with(state).await;
-            let _ = ctx_tx.send(output.context);
-        });
-    });
-
-    let summary = output::tape::run_animation(hook_rx, args.speed, start);
-    let ctx = ctx_rx.recv()?;
+    let summary = output::tape::run_animation(hook_rx, args.speed, start, &runtime_thread);
+    let ctx = finish_runtime(runtime_thread, ctx_rx)?;
 
     match args.format {
         Format::Text => output::text::print(&ctx, &summary, args.context),
@@ -94,35 +71,16 @@ async fn stream_run(
     purpose: String,
     run_dir: Option<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
-    let (ctx_tx, ctx_rx) = mpsc::channel();
-
-    thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("tokio runtime");
-        runtime.block_on(async {
-            let mut state = machine::RunState {
-                purpose: machine::Purpose::new(purpose),
-                run_dir: run_dir.clone(),
-                ..machine::RunState::default()
-            };
-            if let Some(ref dir) = run_dir {
-                state.environment.cwd = dir.clone();
-                state.environment.root = Some(dir.clone());
-                state.environment.run_dir = Some(dir.clone());
-                state
-                    .environment
-                    .vars
-                    .insert("RCM_RUN_DIR".to_string(), dir.display().to_string());
-            }
-            let output = accelerator.run_with(state).await;
-            let _ = ctx_tx.send(output.context);
-        });
-    });
+    let (runtime_thread, ctx_rx) = spawn_runtime(accelerator, purpose, run_dir);
 
     let mut graph_seen = false;
-    for event in hook_rx.iter() {
+    loop {
+        let event = match hook_rx.recv_timeout(RUNTIME_POLL_INTERVAL) {
+            Ok(event) => event,
+            Err(mpsc::RecvTimeoutError::Timeout) if runtime_thread.is_finished() => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
         if event.source.is_none()
             && matches!(event.kind, HookKind::Graph(hook::GraphEvent::Start { .. }))
         {
@@ -253,8 +211,58 @@ async fn stream_run(
         }
     }
 
-    let _ = ctx_rx.recv();
+    finish_runtime(runtime_thread, ctx_rx)?;
     Ok(())
+}
+
+fn spawn_runtime(
+    accelerator: accelerator::Accelerator,
+    purpose: String,
+    run_dir: Option<std::path::PathBuf>,
+) -> (thread::JoinHandle<()>, mpsc::Receiver<machine::Context>) {
+    let (ctx_tx, ctx_rx) = mpsc::channel();
+    let runtime_thread = thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        runtime.block_on(async {
+            let mut state = machine::RunState {
+                purpose: machine::Purpose::new(purpose),
+                run_dir: run_dir.clone(),
+                ..machine::RunState::default()
+            };
+            if let Some(ref dir) = run_dir {
+                state.environment.cwd = dir.clone();
+                state.environment.root = Some(dir.clone());
+                state.environment.run_dir = Some(dir.clone());
+                state
+                    .environment
+                    .vars
+                    .insert("RCM_RUN_DIR".to_string(), dir.display().to_string());
+            }
+            let output = accelerator.run_with(state).await;
+            let _ = ctx_tx.send(output.context);
+        });
+    });
+    (runtime_thread, ctx_rx)
+}
+
+fn finish_runtime(
+    runtime_thread: thread::JoinHandle<()>,
+    ctx_rx: mpsc::Receiver<machine::Context>,
+) -> anyhow::Result<machine::Context> {
+    if let Err(payload) = runtime_thread.join() {
+        let message = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied())
+            .unwrap_or("unknown panic");
+        return Err(anyhow::anyhow!("RCM runtime panicked: {message}"));
+    }
+    ctx_rx
+        .recv()
+        .map_err(|error| anyhow::anyhow!("RCM runtime finished without context: {error}"))
 }
 
 fn prepare_run_dir(
