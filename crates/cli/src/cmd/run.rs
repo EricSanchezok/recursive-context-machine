@@ -123,7 +123,9 @@ async fn stream_run(
 
     let mut graph_seen = false;
     for event in hook_rx.iter() {
-        if matches!(event.kind, HookKind::Graph(hook::GraphEvent::Start { .. })) {
+        if event.source.is_none()
+            && matches!(event.kind, HookKind::Graph(hook::GraphEvent::Start { .. }))
+        {
             graph_seen = true;
         }
         let line = match &event.kind {
@@ -267,8 +269,8 @@ fn prepare_run_dir(
 
 pub fn is_terminal_event(event: &hook::HookEvent, graph_seen: bool) -> bool {
     match &event.kind {
-        HookKind::Graph(hook::GraphEvent::Done { .. }) => true,
-        HookKind::Machine(hook::MachineEvent::Done) => !graph_seen,
+        HookKind::Graph(hook::GraphEvent::Done { .. }) => event.source.is_none(),
+        HookKind::Machine(hook::MachineEvent::Done) => !graph_seen && event.source.is_none(),
         _ => false,
     }
 }

@@ -1,17 +1,38 @@
 use cli::cmd::run::is_terminal_event;
-use cli::hook::{GraphEvent, HookEvent, HookKind, MachineEvent};
+use cli::hook::{ComponentMeta, GraphEvent, HookEvent, HookKind, MachineEvent};
 
 fn event(kind: HookKind) -> HookEvent {
     HookEvent { source: None, kind }
 }
 
+fn nested_event(kind: HookKind) -> HookEvent {
+    HookEvent {
+        source: Some(ComponentMeta {
+            graph: "survey_pipeline".into(),
+            name: "discovery".into(),
+            index: 1,
+            kind: "accelerator".into(),
+            frontier: Some(2),
+        }),
+        kind,
+    }
+}
+
 #[test]
-fn graph_done_terminates_regardless_of_graph_seen() {
+fn root_graph_done_terminates_after_root_graph_start() {
     let done = event(HookKind::Graph(GraphEvent::Done {
         graph: "main".into(),
     }));
     assert!(is_terminal_event(&done, true));
-    assert!(is_terminal_event(&done, false));
+}
+
+#[test]
+fn nested_graph_done_does_not_terminate_root_stream() {
+    let done = nested_event(HookKind::Graph(GraphEvent::Done {
+        graph: "discovery".into(),
+    }));
+
+    assert!(!is_terminal_event(&done, true));
 }
 
 #[test]
@@ -25,6 +46,14 @@ fn machine_done_terminates_only_when_no_graph_was_seen() {
         !is_terminal_event(&done, true),
         "graph-based run must wait for Graph::Done; Machine::Done fires per-machine"
     );
+}
+
+#[test]
+fn nested_machine_done_never_terminates_root_stream() {
+    let done = nested_event(HookKind::Machine(MachineEvent::Done));
+
+    assert!(!is_terminal_event(&done, false));
+    assert!(!is_terminal_event(&done, true));
 }
 
 #[test]

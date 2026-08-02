@@ -585,10 +585,11 @@ fn run_silent(rx: mpsc::Receiver<HookEvent>, start: std::time::Instant) -> Summa
     };
 
     for event in rx {
+        let root_event = event.source.is_none();
         match event.kind {
-            HookKind::Graph(GraphEvent::Start { .. }) => graph_seen = true,
-            HookKind::Graph(GraphEvent::Done { .. }) => break,
-            HookKind::Machine(MachineEvent::Done) if !graph_seen => break,
+            HookKind::Graph(GraphEvent::Start { .. }) if root_event => graph_seen = true,
+            HookKind::Graph(GraphEvent::Done { .. }) if root_event => break,
+            HookKind::Machine(MachineEvent::Done) if !graph_seen && root_event => break,
             HookKind::Fragment(FragmentEvent::Appended(_))
             | HookKind::Fragment(FragmentEvent::Taken(_))
             | HookKind::Fragment(FragmentEvent::Inserted { .. }) => summary.fragments += 1,
@@ -622,8 +623,8 @@ fn reserve_animation_rows(rows: u16) -> u16 {
 
 fn is_finish_event(view: &ViewState, event: &HookEvent) -> bool {
     match &event.kind {
-        HookKind::Graph(GraphEvent::Done { .. }) => true,
-        HookKind::Machine(MachineEvent::Done) => view.graph.is_none(),
+        HookKind::Graph(GraphEvent::Done { .. }) => event.source.is_none(),
+        HookKind::Machine(MachineEvent::Done) => event.source.is_none() && view.graph.is_none(),
         _ => false,
     }
 }
