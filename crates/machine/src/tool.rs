@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::env::Environment;
 use crate::fragment::ToolResult;
 
-const DEFAULT_TIMEOUT_SECS: u64 = 180;
+pub const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 1_800;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolDefinition {
@@ -37,7 +37,7 @@ pub trait Tool: Send + Sync {
     fn parameters(&self) -> Value;
 
     fn timeout(&self) -> Duration {
-        Duration::from_secs(DEFAULT_TIMEOUT_SECS)
+        Duration::from_secs(DEFAULT_TOOL_TIMEOUT_SECS)
     }
 
     fn execute<'a>(
@@ -45,6 +45,16 @@ pub trait Tool: Send + Sync {
         args: Value,
         env: &'a Environment,
     ) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>> + Send + 'a>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DEFAULT_TOOL_TIMEOUT_SECS;
+
+    #[test]
+    fn tool_default_timeout_allows_thirty_minute_calls() {
+        assert_eq!(DEFAULT_TOOL_TIMEOUT_SECS, 1_800);
+    }
 }
 
 #[derive(Clone, Default)]
