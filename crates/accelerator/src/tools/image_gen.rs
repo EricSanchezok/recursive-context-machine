@@ -15,9 +15,10 @@ use tracing::info;
 
 use super::{relative_path, resolve_path};
 
-const API_URL: &str = "https://apicz.boyuerichdata.com/v1/images/generations";
+const API_URL: &str = "https://llm.yuzhu.tech/v1/images/generations";
 const DEFAULT_MODEL: &str = "gpt-image-2";
 const API_KEY_ENV: &str = "IMAGE_GEN_API_KEY";
+const API_URL_ENV: &str = "IMAGE_GEN_API_URL";
 
 pub struct ImageGenTool;
 
@@ -77,6 +78,12 @@ impl Tool for ImageGenTool {
                 .get(API_KEY_ENV)
                 .filter(|key| !key.is_empty())
                 .ok_or_else(|| format!("{API_KEY_ENV} is not set in the environment"))?;
+            let api_url = env
+                .vars
+                .get(API_URL_ENV)
+                .filter(|url| !url.is_empty())
+                .map(String::as_str)
+                .unwrap_or(API_URL);
 
             let output_path = resolve_path(file_path, env)?;
 
@@ -88,13 +95,16 @@ impl Tool for ImageGenTool {
                 .map_err(|error| format!("failed to create HTTP client: {error}"))?;
 
             let response = client
-                .post(API_URL)
+                .post(api_url)
                 .bearer_auth(api_key)
                 .json(&serde_json::json!({
                     "model": DEFAULT_MODEL,
                     "prompt": prompt,
                     "size": size,
                     "n": 1,
+                    "quality": "low",
+                    "output_format": "png",
+                    "output_compression": 100,
                 }))
                 .send()
                 .await
