@@ -13,10 +13,14 @@ fn scaffolding_env() -> Fragment {
 /// (which `merge_input` always preserves), and the output context gets it via
 /// the reorder step copying the purpose tag.
 fn worker_with_status(name: &str, status: &str) -> accelerator::Accelerator {
+    worker_with_handoff(name, &format!("status: {status}"))
+}
+
+fn worker_with_handoff(name: &str, handoff: &str) -> accelerator::Accelerator {
     let mut ctx = machine::Context::default();
     ctx.append(scaffolding_env());
     let state = machine::RunState {
-        purpose: machine::Purpose::new(format!("status: {status}")),
+        purpose: machine::Purpose::new(handoff),
         environment: machine::Environment::empty("."),
         context: ctx,
         ..machine::RunState::default()
@@ -216,6 +220,123 @@ async fn spawn_lenient_status_parsing_tolerates_trailing_note() {
     );
     assert!(
         !result.content.contains("failed="),
+        "report: {}",
+        result.content
+    );
+}
+
+#[tokio::test]
+async fn spawn_accepts_markdown_emphasis_around_status_key() {
+    let tool = SpawnTool::new(
+        "spawn_test",
+        worker_with_handoff("inner", "- **status**: **ok** (full text)"),
+    );
+    let result = tool
+        .execute(
+            serde_json::json!({"items": [{"id": "M1"}]}),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect("spawn should succeed");
+
+    assert!(
+        result.content.contains("ok=1"),
+        "report: {}",
+        result.content
+    );
+    assert!(
+        !result.content.contains("failed="),
+        "report: {}",
+        result.content
+    );
+}
+
+#[tokio::test]
+async fn spawn_failure_report_identifies_section_items_without_id() {
+    let tool = SpawnTool::new("spawn_section", worker_with_status("inner", "blocked"));
+    let result = tool
+        .execute(
+            serde_json::json!({
+                "items": [{"n": "07", "slug": "open-problems"}]
+            }),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect("spawn should return a failure report");
+
+    assert!(
+        result.content.contains("failed=1"),
+        "report: {}",
+        result.content
+    );
+    assert!(
+        result.content.contains("✗ 07"),
+        "report: {}",
+        result.content
+    );
+    assert!(
+        !result.content.contains("✗ ?"),
+        "report: {}",
+        result.content
+    );
+}
+
+#[tokio::test]
+async fn spawn_caps_model_requested_parallelism() {
+    let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "ok"));
+    let result = tool
+        .execute(
+            serde_json::json!({
+                "items": [{"id": "A"}, {"id": "B"}],
+                "max_parallel": 100_000
+            }),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect("spawn should cap concurrency rather than reject the batch");
+
+    assert!(
+        result.content.contains("max_parallel=32"),
+        "report: {}",
+        result.content
+    );
+}
+
+#[tokio::test]
+async fn spawn_rejects_unbounded_item_batches() {
+    let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "ok"));
+    let items: Vec<serde_json::Value> = (0..1_025)
+        .map(|index| serde_json::json!({"id": format!("item_{index}")}))
+        .collect();
+
+    let error = tool
+        .execute(
+            serde_json::json!({"items": items}),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect_err("oversized spawn batches must be rejected before execution");
+
+    assert!(error.contains("1024"), "error: {error}");
+}
+
+#[tokio::test]
+async fn spawn_uses_the_last_handoff_status() {
+    let tool = SpawnTool::new(
+        "spawn_test",
+        worker_with_handoff("inner", "status: blocked\nstatus: ok"),
+    );
+
+    let result = tool
+        .execute(
+            serde_json::json!({"items": [{"id": "recovered"}]}),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect("spawn should use the final worker status");
+
+    assert!(
+        result.content.contains("ok=1"),
         "report: {}",
         result.content
     );
