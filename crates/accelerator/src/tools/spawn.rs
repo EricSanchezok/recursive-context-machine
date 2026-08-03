@@ -15,6 +15,7 @@ use serde_json::Value;
 use crate::accelerator::Accelerator;
 
 const MAX_SPAWN_PARALLEL: usize = 32;
+const MAX_SPAWN_ITEMS: usize = 1_024;
 const SPAWN_TIMEOUT_SECS: u64 = 43_200;
 
 /// Tool that spawns many worker accelerator instances concurrently.
@@ -55,11 +56,11 @@ impl SpawnTool {
     /// Returns one of `ok` / `partial` / `blocked` / `failed` / `unknown`.
     fn extract_status(output: &RunState) -> &'static str {
         // 1. Check context text fragments (handoff messages from real workers).
-        for fragment in output.context.fragments() {
+        for fragment in output.context.fragments().iter().rev() {
             let Some(text) = fragment.as_text() else {
                 continue;
             };
-            for line in text.lines() {
+            for line in text.lines().rev() {
                 if let Some(status) = Self::classify_status_line(line) {
                     return status;
                 }
@@ -67,7 +68,7 @@ impl SpawnTool {
         }
         // 2. Fallback: scan the purpose (workers with halt-only policies
         //    may encode status in purpose, which survives merge_input).
-        for line in output.purpose.text.lines() {
+        for line in output.purpose.text.lines().rev() {
             if let Some(status) = Self::classify_status_line(line) {
                 return status;
             }
@@ -132,6 +133,7 @@ impl machine::Tool for SpawnTool {
                 "items": {
                     "type": "array",
                     "description": "JSON array of work items. Each item is passed as the work item to one worker instance.",
+                    "maxItems": MAX_SPAWN_ITEMS,
                     "items": { "type": "object" }
                 },
                 "max_parallel": {
@@ -158,6 +160,11 @@ impl machine::Tool for SpawnTool {
                 .get("items")
                 .and_then(|v| v.as_array())
                 .ok_or_else(|| "spawn requires 'items' as a JSON array".to_string())?;
+            if items.len() > MAX_SPAWN_ITEMS {
+                return Err(format!(
+                    "spawn accepts at most {MAX_SPAWN_ITEMS} items per call"
+                ));
+            }
             let max_parallel = args
                 .get("max_parallel")
                 .and_then(|v| v.as_u64())

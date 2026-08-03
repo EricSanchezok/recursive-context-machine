@@ -301,3 +301,43 @@ async fn spawn_caps_model_requested_parallelism() {
         result.content
     );
 }
+
+#[tokio::test]
+async fn spawn_rejects_unbounded_item_batches() {
+    let tool = SpawnTool::new("spawn_test", worker_with_status("inner", "ok"));
+    let items: Vec<serde_json::Value> = (0..1_025)
+        .map(|index| serde_json::json!({"id": format!("item_{index}")}))
+        .collect();
+
+    let error = tool
+        .execute(
+            serde_json::json!({"items": items}),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect_err("oversized spawn batches must be rejected before execution");
+
+    assert!(error.contains("1024"), "error: {error}");
+}
+
+#[tokio::test]
+async fn spawn_uses_the_last_handoff_status() {
+    let tool = SpawnTool::new(
+        "spawn_test",
+        worker_with_handoff("inner", "status: blocked\nstatus: ok"),
+    );
+
+    let result = tool
+        .execute(
+            serde_json::json!({"items": [{"id": "recovered"}]}),
+            &machine::Environment::empty("."),
+        )
+        .await
+        .expect("spawn should use the final worker status");
+
+    assert!(
+        result.content.contains("ok=1"),
+        "report: {}",
+        result.content
+    );
+}
