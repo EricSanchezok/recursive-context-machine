@@ -14,6 +14,10 @@ use serde_json::Value;
 
 use crate::accelerator::Accelerator;
 
+const MAX_SPAWN_PARALLEL: usize = 32;
+const MAX_SPAWN_ITEMS: usize = 1_024;
+const SPAWN_TIMEOUT_SECS: u64 = 43_200;
+
 /// Tool that spawns many worker accelerator instances concurrently.
 ///
 /// Signature visible to the LLM:
@@ -52,11 +56,11 @@ impl SpawnTool {
     /// Returns one of `ok` / `partial` / `blocked` / `failed` / `unknown`.
     fn extract_status(output: &RunState) -> &'static str {
         // 1. Check context text fragments (handoff messages from real workers).
-        for fragment in output.context.fragments() {
+        for fragment in output.context.fragments().iter().rev() {
             let Some(text) = fragment.as_text() else {
                 continue;
             };
-            for line in text.lines() {
+            for line in text.lines().rev() {
                 if let Some(status) = Self::classify_status_line(line) {
                     return status;
                 }
@@ -64,7 +68,7 @@ impl SpawnTool {
         }
         // 2. Fallback: scan the purpose (workers with halt-only policies
         //    may encode status in purpose, which survives merge_input).
-        for line in output.purpose.text.lines() {
+        for line in output.purpose.text.lines().rev() {
             if let Some(status) = Self::classify_status_line(line) {
                 return status;
             }
@@ -84,14 +88,32 @@ impl SpawnTool {
             .trim_start_matches(['-', '*', '•', '#', '>', ' '])
             .trim()
             .to_ascii_lowercase();
-        let value = trimmed.strip_prefix("status:")?;
-        match value.split_whitespace().next()? {
+        let (key, value) = trimmed.split_once(':')?;
+        if key.trim_matches(['*', '_', '`', ' ']) != "status" {
+            return None;
+        }
+        match value
+            .split_whitespace()
+            .next()?
+            .trim_matches(['*', '_', '`'])
+        {
             "ok" => Some("ok"),
             "partial" => Some("partial"),
             "blocked" => Some("blocked"),
             "failed" => Some("failed"),
             _ => None,
         }
+    }
+
+    fn item_label(item: &Value, index: usize) -> String {
+        for field in ["id", "n", "slug", "title"] {
+            if let Some(value) = item.get(field).and_then(Value::as_str)
+                && !value.trim().is_empty()
+            {
+                return value.to_string();
+            }
+        }
+        format!("item[{}]", index + 1)
     }
 }
 
@@ -111,6 +133,7 @@ impl machine::Tool for SpawnTool {
                 "items": {
                     "type": "array",
                     "description": "JSON array of work items. Each item is passed as the work item to one worker instance.",
+                    "maxItems": MAX_SPAWN_ITEMS,
                     "items": { "type": "object" }
                 },
                 "max_parallel": {
@@ -124,7 +147,7 @@ impl machine::Tool for SpawnTool {
     }
 
     fn timeout(&self) -> Duration {
-        Duration::from_secs(600)
+        Duration::from_secs(SPAWN_TIMEOUT_SECS)
     }
 
     fn execute<'a>(
@@ -137,11 +160,16 @@ impl machine::Tool for SpawnTool {
                 .get("items")
                 .and_then(|v| v.as_array())
                 .ok_or_else(|| "spawn requires 'items' as a JSON array".to_string())?;
+            if items.len() > MAX_SPAWN_ITEMS {
+                return Err(format!(
+                    "spawn accepts at most {MAX_SPAWN_ITEMS} items per call"
+                ));
+            }
             let max_parallel = args
                 .get("max_parallel")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(5)
-                .max(1) as usize;
+                .clamp(1, MAX_SPAWN_PARALLEL as u64) as usize;
 
             let total = items.len();
             if total == 0 {
@@ -155,12 +183,8 @@ impl machine::Tool for SpawnTool {
             // Pre-extract item IDs for the summary report.
             let item_ids: Vec<String> = items
                 .iter()
-                .map(|item| {
-                    item.get("id")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| "?".to_string())
-                })
+                .enumerate()
+                .map(|(index, item)| Self::item_label(item, index))
                 .collect();
 
             // Run workers in bounded waves. Use chunks so we never run more
