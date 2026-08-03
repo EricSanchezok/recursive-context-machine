@@ -21,4 +21,4 @@ Rules:
 - Produce exactly one image (the global picture). Do not write any markdown or prose artifact.
 - Keep the figure faithful to the research map: only depict families and relations that exist in the artifacts; do not invent method names.
 - Do not name internal objects or stages (research map, judge panel, pipeline, etc.) anywhere in the image — it is a figure about the field, not about this system.
-- If image_gen fails (e.g. no OPENAI_API_KEY), report status blocked with the reason under risks so the survey_writer can proceed without a figure.
+- If image_gen fails (e.g. no IMAGE_GEN_API_KEY), report status blocked with the reason under risks so the survey_writer can proceed without a figure.
