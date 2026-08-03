@@ -146,10 +146,7 @@ async fn image_generation_uses_gateway_contract_and_writes_png() {
             "model": "gpt-image-2",
             "prompt": "A red fox in an autumn forest",
             "size": "1024x1024",
-            "n": 1,
-            "quality": "low",
-            "output_format": "png",
-            "output_compression": 100
+            "n": 1
         })
     );
     assert_eq!(
