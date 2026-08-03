@@ -102,9 +102,6 @@ impl Tool for ImageGenTool {
                     "prompt": prompt,
                     "size": size,
                     "n": 1,
-                    "quality": "low",
-                    "output_format": "png",
-                    "output_compression": 100,
                 }))
                 .send()
                 .await
