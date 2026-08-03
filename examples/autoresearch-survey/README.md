@@ -25,13 +25,13 @@ purpose 通过 `input.purpose -> anchor.purpose` 注入到 anchor 节点。不�
 ```sh
 cd examples/autoresearch-survey
 export DEEPSEEK_API_KEY=sk-...
-export OPENAI_API_KEY=sk-...   # 可选，仅 image_planner 生成全景图时需要
+export IMAGE_GEN_API_KEY=...   # 可选，仅 image_planner 生成全景图时需要
 ../../target/release/accelerate run rcm/autoresearch_survey.rcm \
   --purpose "KV cache compression for long-context large language model inference" \
   --speed 0 --context
 ```
 
-不带 `--purpose` 时，使用 `anchor.rcm` 里声明的默认 topic。未设置 `OPENAI_API_KEY` 时，全景图步骤会跳过，survey 仍照常生成（无开头插图）。
+不带 `--purpose` 时，使用 `anchor.rcm` 里声明的默认 topic。未设置 `IMAGE_GEN_API_KEY` 时，全景图步骤会跳过，survey 仍照常生成（无开头插图）。
 
 也可以单跑某个单元（同样从本目录）：
 
@@ -72,7 +72,7 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
    并行 coverage、scope、benchmark、gap judges，最后汇总裁决。
 
 9. `image_planner.rcm`  
-   读 research map，调用 `image_gen` 工具（gpt-image-2）生成领域全景图 `08_global_picture.png`。需要 `OPENAI_API_KEY`；缺失时报 blocked，后续会跳过插图继续。
+   读 research map，调用 `image_gen` 工具（gpt-image-2）生成领域全景图 `08_global_picture.png`。需要 `IMAGE_GEN_API_KEY`；缺失时报 blocked，后续会跳过插图继续。
 
 10. `survey_outline.rcm` → `section_expand`（map）→ `survey_assembler.rcm`  
     撰写分三步：`survey_outline` 先定**宏观骨架**（清晰脉络 + 每节的 thesis / 引用卡片 / transfer 角度），并产出一个 JSON 章节清单；`section_expand` 是一个 `map` 节点，对每个章节**并行**地基于卡片写出**足够细致**的一节到 `sections/<n>_<slug>.md`；`survey_assembler` 把各节拼接、插入全景图、并汇成单一去重的参考文献表，产出 `08_survey.md` 与 `index.md`。
@@ -94,7 +94,7 @@ The context contract is documented in [CONTEXT_FLOW.md](CONTEXT_FLOW.md). In sho
 - `cards/<arxiv_id>.md`（每篇精读论文的全文卡片）
 - `05_research_map.md`
 - `06_judge_panel.md`
-- `08_global_picture.png`（需要 `OPENAI_API_KEY`；缺失时跳过）
+- `08_global_picture.png`（需要 `IMAGE_GEN_API_KEY`；缺失时跳过）
 - `00_outline.md`（survey 宏观骨架）
 - `sections/<n>_<slug>.md`（每节扩写）
 - `08_survey.md`
