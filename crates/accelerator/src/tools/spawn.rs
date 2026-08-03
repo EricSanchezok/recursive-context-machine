@@ -14,6 +14,9 @@ use serde_json::Value;
 
 use crate::accelerator::Accelerator;
 
+const MAX_SPAWN_PARALLEL: usize = 32;
+const SPAWN_TIMEOUT_SECS: u64 = 43_200;
+
 /// Tool that spawns many worker accelerator instances concurrently.
 ///
 /// Signature visible to the LLM:
@@ -84,14 +87,32 @@ impl SpawnTool {
             .trim_start_matches(['-', '*', '•', '#', '>', ' '])
             .trim()
             .to_ascii_lowercase();
-        let value = trimmed.strip_prefix("status:")?;
-        match value.split_whitespace().next()? {
+        let (key, value) = trimmed.split_once(':')?;
+        if key.trim_matches(['*', '_', '`', ' ']) != "status" {
+            return None;
+        }
+        match value
+            .split_whitespace()
+            .next()?
+            .trim_matches(['*', '_', '`'])
+        {
             "ok" => Some("ok"),
             "partial" => Some("partial"),
             "blocked" => Some("blocked"),
             "failed" => Some("failed"),
             _ => None,
         }
+    }
+
+    fn item_label(item: &Value, index: usize) -> String {
+        for field in ["id", "n", "slug", "title"] {
+            if let Some(value) = item.get(field).and_then(Value::as_str)
+                && !value.trim().is_empty()
+            {
+                return value.to_string();
+            }
+        }
+        format!("item[{}]", index + 1)
     }
 }
 
@@ -124,7 +145,7 @@ impl machine::Tool for SpawnTool {
     }
 
     fn timeout(&self) -> Duration {
-        Duration::from_secs(600)
+        Duration::from_secs(SPAWN_TIMEOUT_SECS)
     }
 
     fn execute<'a>(
@@ -141,7 +162,7 @@ impl machine::Tool for SpawnTool {
                 .get("max_parallel")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(5)
-                .max(1) as usize;
+                .clamp(1, MAX_SPAWN_PARALLEL as u64) as usize;
 
             let total = items.len();
             if total == 0 {
@@ -155,12 +176,8 @@ impl machine::Tool for SpawnTool {
             // Pre-extract item IDs for the summary report.
             let item_ids: Vec<String> = items
                 .iter()
-                .map(|item| {
-                    item.get("id")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| "?".to_string())
-                })
+                .enumerate()
+                .map(|(index, item)| Self::item_label(item, index))
                 .collect();
 
             // Run workers in bounded waves. Use chunks so we never run more
