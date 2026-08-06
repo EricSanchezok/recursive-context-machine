@@ -252,6 +252,31 @@ fn build_request_preserves_message_order() {
 }
 
 #[test]
+fn build_request_merges_adjacent_system_messages_without_reordering_turns() {
+    let messages = vec![
+        Message::system("agent instructions"),
+        Message::system("cwd: .\nplatform: linux"),
+        Message::user("search for papers"),
+        Message::system("later instruction"),
+    ];
+
+    let request = build_request(&messages, &[], &dummy_model()).expect("non-empty builds");
+    let history: Vec<Message> = request.chat_history.into_iter().collect();
+
+    assert_eq!(history.len(), 3);
+    assert!(matches!(
+        &history[0],
+        Message::System { content }
+            if content == "agent instructions\n\ncwd: .\nplatform: linux"
+    ));
+    assert!(matches!(&history[1], Message::User { .. }));
+    assert!(matches!(
+        &history[2],
+        Message::System { content } if content == "later instruction"
+    ));
+}
+
+#[test]
 fn build_request_empty_messages_returns_hitch() {
     let result = build_request(&[], &[], &dummy_model());
     let Err(hitch) = result else {
