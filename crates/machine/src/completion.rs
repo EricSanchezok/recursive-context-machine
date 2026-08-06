@@ -3,9 +3,10 @@
 //! ## Contract
 //!
 //! [`send`] constructs a [`rig::completion::CompletionRequest`] directly from
-//! the encoded fragments. The `chat_history` slot receives messages in the
-//! exact order produced by [`encode`] — no rotation, no placeholder, no
-//! "initial prompt".
+//! the encoded fragments. The `chat_history` slot preserves their order with
+//! no rotation, placeholder, or fabricated "initial prompt". Adjacent system
+//! fragments are joined into one system message because OpenAI-compatible
+//! gateways commonly optimize or validate a single leading system turn.
 //!
 //! ### Why direct construction (vs. the builder)
 //!
@@ -212,7 +213,8 @@ pub fn build_request(
     tools: &[RigToolDefinition],
     model: &Model,
 ) -> Result<CompletionRequest, Fragment> {
-    let chat_history = OneOrMany::many(messages.iter().cloned()).map_err(|_| {
+    let normalized_messages = merge_adjacent_system_messages(messages);
+    let chat_history = OneOrMany::many(normalized_messages).map_err(|_| {
         Fragment::hitch(
             "completion called with empty context — no messages to send to LLM",
             None,
@@ -233,6 +235,23 @@ pub fn build_request(
         additional_params: None,
         output_schema: None,
     })
+}
+
+fn merge_adjacent_system_messages(messages: &[Message]) -> Vec<Message> {
+    let mut normalized = Vec::with_capacity(messages.len());
+    for message in messages {
+        if let Message::System { content } = message
+            && let Some(Message::System {
+                content: previous_content,
+            }) = normalized.last_mut()
+        {
+            previous_content.push_str("\n\n");
+            previous_content.push_str(content);
+            continue;
+        }
+        normalized.push(message.clone());
+    }
+    normalized
 }
 
 pub fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
