@@ -159,14 +159,6 @@ fn openai_http_client() -> http_client::ReqwestClient {
         .expect("failed to build openai HTTP client")
 }
 
-#[cfg(test)]
-mod transport_tests {
-    #[test]
-    fn openai_http_client_builds_with_gateway_safe_settings() {
-        let _client = super::openai_http_client();
-    }
-}
-
 /// Encode the context while preserving provider-valid retry and tool-call turns.
 ///
 /// Assistant hitches are transport failures, not model output. Keeping one in
@@ -569,5 +561,13 @@ pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    #[test]
+    fn openai_http_client_builds_with_gateway_safe_settings() {
+        let _client = super::openai_http_client();
     }
 }
