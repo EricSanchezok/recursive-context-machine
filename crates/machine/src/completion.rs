@@ -184,10 +184,7 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
         let mut tool_results = Vec::new();
         let mut cursor = index;
 
-        loop {
-            let Some(candidate) = fragments.get(cursor) else {
-                break;
-            };
+        while let Some(candidate) = fragments.get(cursor) {
             let Content::ToolCall(call) = &candidate.content else {
                 break;
             };
