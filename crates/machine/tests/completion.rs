@@ -1,4 +1,4 @@
-use machine::completion::{build_request, decode, encode};
+use machine::completion::{build_request, decode, encode, encode_context};
 use machine::{Content, Fragment, Limit, Model, Protocol, Role};
 use rig::completion::message::{Reasoning, Text as RigText, ToolCall as RigToolCall, ToolFunction};
 use rig::completion::{AssistantContent, Message};
@@ -28,6 +28,64 @@ fn encode_tool_result_maps_to_user_tool_result() {
     let msg = encode(&frag, false).expect("tool result encodes");
     // rig wraps tool results as User messages carrying ToolResult content.
     assert!(matches!(msg, Message::User { .. }));
+}
+
+#[test]
+fn encode_context_drops_assistant_transport_hitches_for_exact_retry() {
+    let fragments = vec![
+        Fragment::system("system"),
+        Fragment::user("request"),
+        Fragment::hitch(
+            "HTTP 504 Gateway Timeout",
+            Some(504),
+            Role::Assistant,
+            None::<&str>,
+        ),
+    ];
+
+    let messages = encode_context(&fragments, false);
+
+    assert_eq!(messages.len(), 2);
+    assert!(matches!(&messages[0], Message::System { .. }));
+    assert!(matches!(&messages[1], Message::User { .. }));
+}
+
+#[test]
+fn encode_context_reconstructs_parallel_tool_call_turn() {
+    let reasoning = "Search both aspects before drafting";
+    let fragments = vec![
+        Fragment::system("system"),
+        Fragment::user("request"),
+        Fragment::tool_call("call_1", "search", json!({"query": "first"}))
+            .with_reasoning(reasoning),
+        Fragment::tool_result("call_1", "first result", None),
+        Fragment::tool_call("call_2", "search", json!({"query": "second"}))
+            .with_reasoning(reasoning),
+        Fragment::tool_result("call_2", "second result", None),
+    ];
+
+    let messages = encode_context(&fragments, false);
+
+    assert_eq!(messages.len(), 5);
+    let Message::Assistant { content, .. } = &messages[2] else {
+        panic!("parallel calls must be reconstructed as one assistant message");
+    };
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::ToolCall(_)))
+            .count(),
+        2,
+    );
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::Reasoning(_)))
+            .count(),
+        1,
+    );
+    assert!(matches!(&messages[3], Message::User { .. }));
+    assert!(matches!(&messages[4], Message::User { .. }));
 }
 
 #[test]

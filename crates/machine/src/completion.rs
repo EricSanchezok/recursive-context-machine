@@ -61,11 +61,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, T
         return (vec![hitch], TokenUsage::empty());
     };
 
-    let messages: Vec<Message> = ctx
-        .fragments()
-        .iter()
-        .filter_map(|frag| encode(frag, model.thinking))
-        .collect();
+    let messages = encode_context(ctx.fragments(), model.thinking);
 
     let tools: Vec<RigToolDefinition> = resources
         .active_tool_definitions()
@@ -144,6 +140,104 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, T
             (vec![hitch], TokenUsage::empty())
         }
     }
+}
+
+/// Encode the context while preserving provider-valid retry and tool-call turns.
+///
+/// Assistant hitches are transport failures, not model output. Keeping one in
+/// chat history would turn a retry into a new prompt containing the gateway
+/// error instead of replaying the failed request. Tool hitches remain encodable
+/// because they are real tool results the model may need to correct.
+///
+/// A DeepSeek response may contain several parallel tool calls with one shared
+/// reasoning block. The machine tape stores each call beside its result for
+/// execution, so this function reconstructs the original assistant turn before
+/// sending the next completion request.
+pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
+    let mut messages = Vec::with_capacity(fragments.len());
+    let mut index = 0;
+
+    while index < fragments.len() {
+        let fragment = &fragments[index];
+
+        if fragment.role == Role::Assistant && matches!(fragment.content, Content::Hitch { .. }) {
+            index += 1;
+            continue;
+        }
+
+        let Content::ToolCall(first_call) = &fragment.content else {
+            if let Some(message) = encode(fragment, thinking) {
+                messages.push(message);
+            }
+            index += 1;
+            continue;
+        };
+        let Some(shared_reasoning) = first_call.reasoning.as_deref() else {
+            if let Some(message) = encode(fragment, thinking) {
+                messages.push(message);
+            }
+            index += 1;
+            continue;
+        };
+
+        let mut assistant_content = Vec::new();
+        let mut tool_results = Vec::new();
+        let mut cursor = index;
+
+        loop {
+            let Some(candidate) = fragments.get(cursor) else {
+                break;
+            };
+            let Content::ToolCall(call) = &candidate.content else {
+                break;
+            };
+            if candidate.role != Role::Assistant
+                || call.reasoning.as_deref() != Some(shared_reasoning)
+            {
+                break;
+            }
+
+            assistant_content.push(AssistantContent::tool_call(
+                &call.id,
+                &call.name,
+                call.arguments.clone(),
+            ));
+            cursor += 1;
+
+            let Some(result_fragment) = fragments.get(cursor) else {
+                break;
+            };
+            let Content::ToolResult(result) = &result_fragment.content else {
+                break;
+            };
+            if result_fragment.role != Role::Tool || result.call_id != call.id {
+                break;
+            }
+            if let Some(message) = encode(result_fragment, thinking) {
+                tool_results.push(message);
+            }
+            cursor += 1;
+        }
+
+        if assistant_content.len() > 1 && assistant_content.len() == tool_results.len() {
+            assistant_content.push(AssistantContent::Reasoning(Reasoning::new(
+                shared_reasoning,
+            )));
+            let content = OneOrMany::many(assistant_content)
+                .expect("parallel tool-call turn always contains at least two calls");
+            messages.push(Message::Assistant { id: None, content });
+            messages.extend(tool_results);
+            index = cursor;
+            continue;
+        }
+
+        if let Some(message) = encode(fragment, thinking) {
+            messages.push(message);
+        }
+        index += 1;
+    }
+
+    messages
 }
 
 async fn send(
