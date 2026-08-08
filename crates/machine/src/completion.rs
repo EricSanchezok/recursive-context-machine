@@ -85,7 +85,9 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, T
 
     let result = match model.protocol {
         Protocol::OpenAI => {
-            let mut builder = rig::providers::openai::CompletionsClient::builder().api_key(api_key);
+            let mut builder = rig::providers::openai::CompletionsClient::builder()
+                .api_key(api_key)
+                .http_client(openai_http_client());
             if let Some(endpoint) = endpoint_url {
                 builder = builder.base_url(endpoint);
             }
@@ -139,6 +141,29 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, T
             warn!(?hitch, "completion failed");
             (vec![hitch], TokenUsage::empty())
         }
+    }
+}
+
+/// Build the transport used for OpenAI-compatible completion endpoints.
+///
+/// Some compatible gateways advertise HTTP/2 but time out on a later, larger
+/// tool-result request even though the same payload completes over HTTP/1.1.
+/// RCM completion calls are independent, so keeping idle upstream connections
+/// provides little benefit and makes gateway behaviour less deterministic.
+/// Force HTTP/1.1 and close idle connections between calls.
+fn openai_http_client() -> http_client::ReqwestClient {
+    http_client::ReqwestClient::builder()
+        .http1_only()
+        .pool_max_idle_per_host(0)
+        .build()
+        .expect("failed to build openai HTTP client")
+}
+
+#[cfg(test)]
+mod transport_tests {
+    #[test]
+    fn openai_http_client_builds_with_gateway_safe_settings() {
+        let _client = super::openai_http_client();
     }
 }
 
