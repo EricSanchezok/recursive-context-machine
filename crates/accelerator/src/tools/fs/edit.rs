@@ -405,11 +405,11 @@ fn whitespace_normalized_replacer(content: &str, find: &str) -> Vec<String> {
 /// than the actual file has.
 fn indentation_flexible_replacer(content: &str, find: &str) -> Vec<String> {
     let find_lines: Vec<&str> = find.lines().collect();
-    if find_lines.is_empty() {
+    let content_lines: Vec<&str> = content.lines().collect();
+    if find_lines.is_empty() || find_lines.len() > content_lines.len() {
         return vec![];
     }
     let dedented_find = strip_common_indent(&find_lines);
-    let content_lines: Vec<&str> = content.lines().collect();
 
     let mut results = Vec::new();
     for start in 0..=content_lines.len().saturating_sub(find_lines.len()) {
@@ -568,7 +568,8 @@ fn similar_lines_hint(content: &str, find: &str) -> String {
     let content_lines: Vec<&str> = content.lines().collect();
     let find_lines: Vec<&str> = find.lines().collect();
 
-    if content_lines.len() > 5000 || find_lines.is_empty() {
+    if content_lines.len() > 5000 || find_lines.is_empty() || find_lines.len() > content_lines.len()
+    {
         return "No match found.".to_string();
     }
 
