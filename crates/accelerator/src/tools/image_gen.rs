@@ -412,7 +412,9 @@ impl Tool for ImageGenTool {
                 .vars
                 .get(API_KEY_ENV)
                 .filter(|key| !key.is_empty())
-                .ok_or_else(|| format!("{API_KEY_ENV} is not set in the environment"))?;
+                .ok_or_else(|| {
+                    tool_error("image_configuration_missing", None, false, Some("api_key"))
+                })?;
             let api_url = env
                 .vars
                 .get(API_URL_ENV)

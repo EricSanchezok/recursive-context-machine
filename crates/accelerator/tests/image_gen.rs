@@ -96,7 +96,7 @@ async fn image_generation_requires_dedicated_api_key() {
 
     assert_eq!(
         result.unwrap_err(),
-        "IMAGE_GEN_API_KEY is not set in the environment"
+        "image_gen_error code=image_configuration_missing retryable=false provider_code=api_key"
     );
 }
 

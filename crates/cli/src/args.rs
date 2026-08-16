@@ -18,6 +18,17 @@ pub enum Command {
     Inventory(InventoryArgs),
     /// Render a template for a GitHub event into a runnable .rcm file.
     Dispatch(DispatchArgs),
+    /// Generate one fixed, non-sensitive image for provider diagnostics.
+    ImageCanary(ImageCanaryArgs),
+}
+
+/// --- Image canary --------------------------------------------------------
+
+#[derive(Args)]
+pub struct ImageCanaryArgs {
+    /// Output path for the verified canary image.
+    #[arg(long, required = true)]
+    pub output: PathBuf,
 }
 
 /// --- Run ----------------------------------------------------------------
@@ -141,5 +152,16 @@ mod tests {
         ]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn image_canary_requires_an_output_path() {
+        let cli = Cli::try_parse_from(["accelerate", "image-canary", "--output", "canary.png"])
+            .expect("image canary should parse");
+
+        let Command::ImageCanary(args) = cli.command else {
+            panic!("expected image canary command");
+        };
+        assert_eq!(args.output, std::path::Path::new("canary.png"));
     }
 }
