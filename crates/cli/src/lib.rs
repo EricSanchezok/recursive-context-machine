@@ -10,4 +10,4 @@ pub mod tape_animation {
     };
 }
 
-pub use args::{Cli, Command, Format, RunArgs};
+pub use args::{Cli, Command, Format, ImageCanaryArgs, RunArgs};
