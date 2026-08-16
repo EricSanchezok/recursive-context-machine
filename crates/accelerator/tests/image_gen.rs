@@ -204,6 +204,45 @@ async fn image_generation_does_not_retry_http_400() {
 }
 
 #[tokio::test]
+async fn image_generation_exposes_sanitized_reason_only_in_diagnostic_mode() {
+    let response = r#"{"detail":"Invalid JWT: Not enough segments; credential=super-secret"}"#;
+    let (gateway_url, received_requests) =
+        image_gateway(vec![(401, response), (401, response)]).await;
+    let mut environment = Environment::empty(".");
+    environment
+        .vars
+        .insert("IMAGE_GEN_API_KEY".into(), "gateway-secret".into());
+    environment
+        .vars
+        .insert("IMAGE_GEN_API_URL".into(), gateway_url);
+
+    let ordinary_error = ImageGenTool
+        .execute(
+            json!({"prompt": "survey prompt", "filePath": "unused.png"}),
+            &environment,
+        )
+        .await
+        .expect_err("HTTP 401 should fail");
+    assert!(!ordinary_error.contains("provider_reason="));
+    assert!(!ordinary_error.contains("super-secret"));
+
+    environment
+        .vars
+        .insert("IMAGE_GEN_DIAGNOSTIC".into(), "true".into());
+    let diagnostic_error = ImageGenTool
+        .execute(
+            json!({"prompt": "fixed canary", "filePath": "unused.png"}),
+            &environment,
+        )
+        .await
+        .expect_err("diagnostic HTTP 401 should fail");
+    assert!(diagnostic_error.contains("provider_reason=invalid_jwt"));
+    assert!(!diagnostic_error.contains("super-secret"));
+    assert!(!diagnostic_error.contains("Not enough segments"));
+    assert_eq!(received_requests.await.unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn image_generation_retries_http_429_once() {
     let success_body = format!(r#"{{"data":[{{"b64_json":"{PNG_BASE64}"}}]}}"#);
     let (gateway_url, received_requests) = image_gateway(vec![
