@@ -75,7 +75,11 @@ fn status_error(status: StatusCode, body: &[u8]) -> String {
     tool_error(code, Some(status), retryable, provider_code.as_deref())
 }
 
-async fn response_bytes_bounded(mut response: Response, limit: usize) -> Result<Vec<u8>, String> {
+async fn response_bytes_bounded(
+    mut response: Response,
+    limit: usize,
+    deadline: tokio::time::Instant,
+) -> Result<Vec<u8>, String> {
     if response
         .content_length()
         .is_some_and(|content_length| content_length > limit as u64)
@@ -88,14 +92,29 @@ async fn response_bytes_bounded(mut response: Response, limit: usize) -> Result<
         ));
     }
     let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| {
-        tool_error(
-            "image_provider_unavailable",
-            Some(response.status()),
-            true,
-            None,
-        )
-    })? {
+    loop {
+        let chunk = match tokio::time::timeout_at(deadline, response.chunk()).await {
+            Ok(Ok(chunk)) => chunk,
+            Ok(Err(_)) => {
+                return Err(tool_error(
+                    "image_provider_unavailable",
+                    Some(response.status()),
+                    true,
+                    Some("network_error"),
+                ));
+            }
+            Err(_) => {
+                return Err(tool_error(
+                    "image_provider_unavailable",
+                    Some(response.status()),
+                    true,
+                    Some("timeout"),
+                ));
+            }
+        };
+        let Some(chunk) = chunk else {
+            break;
+        };
         if body.len().saturating_add(chunk.len()) > limit {
             return Err(tool_error(
                 "image_response_too_large",
@@ -318,7 +337,7 @@ async fn download_image(
         };
         let status = response.status();
         if !status.is_success() {
-            let body = response_bytes_bounded(response, ERROR_BODY_MAX_BYTES)
+            let body = response_bytes_bounded(response, ERROR_BODY_MAX_BYTES, deadline)
                 .await
                 .unwrap_or_default();
             let retryable = status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
@@ -342,7 +361,7 @@ async fn download_image(
                 Some("invalid_content_type"),
             ));
         };
-        let bytes = match response_bytes_bounded(response, IMAGE_MAX_BYTES).await {
+        let bytes = match response_bytes_bounded(response, IMAGE_MAX_BYTES, deadline).await {
             Ok(bytes) => bytes,
             Err(error) if error.contains("retryable=true") && !*retry_used => {
                 *retry_used = true;
@@ -469,7 +488,7 @@ impl Tool for ImageGenTool {
                 } else {
                     ERROR_BODY_MAX_BYTES
                 };
-                let body = match response_bytes_bounded(response, body_limit).await {
+                let body = match response_bytes_bounded(response, body_limit, deadline).await {
                     Ok(body) => body,
                     Err(error) if error.contains("retryable=true") && !retry_used => {
                         retry_used = true;
@@ -547,6 +566,7 @@ impl Tool for ImageGenTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncWriteExt;
 
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\nfixture";
 
@@ -635,5 +655,39 @@ mod tests {
         assert!(error.contains("code=image_provider_unavailable"));
         assert!(error.contains("retryable=true"));
         assert!(error.contains("provider_code=timeout"));
+    }
+
+    #[tokio::test]
+    async fn expired_response_body_deadline_is_reported_as_retryable_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1\r\n\r\n",
+                )
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+        let response = reqwest::Client::new()
+            .get(format!("http://{address}"))
+            .send()
+            .await
+            .unwrap();
+
+        let error = response_bytes_bounded(
+            response,
+            JSON_MAX_BYTES,
+            tokio::time::Instant::now() - Duration::from_millis(1),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.contains("code=image_provider_unavailable"));
+        assert!(error.contains("retryable=true"));
+        assert!(error.contains("provider_code=timeout"));
+        server.abort();
     }
 }
