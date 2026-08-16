@@ -1,4 +1,4 @@
-use accelerator::tools::ImageGenTool;
+use accelerator::tools::{IMAGE_GEN_DIAGNOSTIC_ENV, ImageGenTool};
 use anyhow::{Context, Result, anyhow};
 use machine::{Environment, Tool};
 
@@ -31,6 +31,9 @@ pub async fn run(args: ImageCanaryArgs) -> Result<()> {
             environment.vars.insert(key.to_owned(), value);
         }
     }
+    environment
+        .vars
+        .insert(IMAGE_GEN_DIAGNOSTIC_ENV.to_owned(), "true".to_owned());
 
     let result = ImageGenTool
         .execute(

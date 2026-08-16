@@ -17,7 +17,7 @@ pub use arxiv::{ArxivDownloadTool, ArxivSearchTool};
 pub use find::FindTool;
 pub use fs::FsTool;
 pub use git::{GitTool, check_safety as check_git_safety, tokenize as tokenize_git};
-pub use image_gen::ImageGenTool;
+pub use image_gen::{IMAGE_GEN_DIAGNOSTIC_ENV, ImageGenTool};
 pub use lsp::LspTool;
 pub use rdc_read::RdcReadTool;
 pub use rdc_write::RdcWriteTool;
