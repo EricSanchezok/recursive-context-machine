@@ -23,6 +23,7 @@ const DEFAULT_MODEL: &str = "gpt-image-2";
 const API_KEY_ENV: &str = "IMAGE_GEN_API_KEY";
 const API_URL_ENV: &str = "IMAGE_GEN_API_URL";
 const TRUSTED_HOSTS_ENV: &str = "IMAGE_GEN_TRUSTED_HOSTS";
+pub const IMAGE_GEN_DIAGNOSTIC_ENV: &str = "IMAGE_GEN_DIAGNOSTIC";
 const IMAGE_MAX_BYTES: usize = 20 * 1024 * 1024;
 const JSON_MAX_BYTES: usize = (IMAGE_MAX_BYTES * 4 / 3) + (1024 * 1024);
 const ERROR_BODY_MAX_BYTES: usize = 64 * 1024;
@@ -44,6 +45,43 @@ fn sanitized_provider_code(body: &[u8]) -> Option<String> {
     (!sanitized.is_empty()).then_some(sanitized)
 }
 
+fn sanitized_provider_reason(body: &[u8]) -> Option<&'static str> {
+    let payload: Value = serde_json::from_slice(body).ok()?;
+    let message = payload["detail"]
+        .as_str()
+        .or_else(|| payload["error"]["message"].as_str())
+        .or_else(|| payload["message"].as_str())?
+        .to_ascii_lowercase();
+
+    if message.contains("invalid jwt") {
+        Some("invalid_jwt")
+    } else if message.contains("quota")
+        || message.contains("balance")
+        || message.contains("credit")
+        || message.contains("billing")
+    {
+        Some("quota_or_balance")
+    } else if message.contains("permission")
+        || message.contains("forbidden")
+        || message.contains("access denied")
+        || message.contains("not allowed")
+        || message.contains("entitlement")
+    {
+        Some("access_denied")
+    } else if message.contains("credential")
+        || message.contains("api key")
+        || message.contains("token")
+        || message.contains("unauthorized")
+        || message.contains("not authenticated")
+    {
+        Some("invalid_credentials")
+    } else if message.contains("model") && message.contains("not") {
+        Some("model_unavailable")
+    } else {
+        Some("unclassified")
+    }
+}
+
 fn tool_error(
     code: &str,
     status: Option<StatusCode>,
@@ -60,7 +98,7 @@ fn tool_error(
     format!("image_gen_error {}", fields.join(" "))
 }
 
-fn status_error(status: StatusCode, body: &[u8]) -> String {
+fn status_error(status: StatusCode, body: &[u8], include_provider_reason: bool) -> String {
     let retryable = status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
     let code = if status == StatusCode::TOO_MANY_REQUESTS {
         "image_rate_limited"
@@ -72,7 +110,12 @@ fn status_error(status: StatusCode, body: &[u8]) -> String {
         "image_request_rejected"
     };
     let provider_code = sanitized_provider_code(body);
-    tool_error(code, Some(status), retryable, provider_code.as_deref())
+    let mut error = tool_error(code, Some(status), retryable, provider_code.as_deref());
+    if include_provider_reason && let Some(reason) = sanitized_provider_reason(body) {
+        error.push_str(" provider_reason=");
+        error.push_str(reason);
+    }
+    error
 }
 
 async fn response_bytes_bounded(
@@ -321,6 +364,7 @@ async fn download_image(
     trusted: &[String],
     deadline: tokio::time::Instant,
     retry_used: &mut bool,
+    include_provider_reason: bool,
 ) -> Result<Vec<u8>, String> {
     let url = Url::parse(url)
         .map_err(|_| tool_error("image_url_rejected", None, false, Some("invalid_url")))?;
@@ -346,7 +390,7 @@ async fn download_image(
                 tokio::time::sleep(RETRY_DELAY).await;
                 continue;
             }
-            return Err(status_error(status, &body));
+            return Err(status_error(status, &body, include_provider_reason));
         }
         let content_type = response
             .headers()
@@ -440,6 +484,10 @@ impl Tool for ImageGenTool {
                 .filter(|url| !url.is_empty())
                 .map(String::as_str)
                 .unwrap_or(API_URL);
+            let include_provider_reason = env
+                .vars
+                .get(IMAGE_GEN_DIAGNOSTIC_ENV)
+                .is_some_and(|value| value == "true");
 
             let output_path = resolve_path(file_path, env)?;
 
@@ -506,7 +554,7 @@ impl Tool for ImageGenTool {
                     tokio::time::sleep(RETRY_DELAY).await;
                     continue;
                 }
-                return Err(status_error(status, &body));
+                return Err(status_error(status, &body, include_provider_reason));
             };
 
             let body: Value = serde_json::from_slice(&response_body).map_err(|_| {
@@ -531,7 +579,14 @@ impl Tool for ImageGenTool {
                 validate_image(decoded, None)?
             } else if let Some(url) = data.and_then(|item| item["url"].as_str()) {
                 let trusted = trusted_hosts(api_url, env.vars.get(TRUSTED_HOSTS_ENV))?;
-                download_image(url, &trusted, deadline, &mut retry_used).await?
+                download_image(
+                    url,
+                    &trusted,
+                    deadline,
+                    &mut retry_used,
+                    include_provider_reason,
+                )
+                .await?
             } else {
                 return Err(tool_error(
                     "image_response_invalid",
