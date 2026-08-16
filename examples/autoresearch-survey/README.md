@@ -26,12 +26,20 @@ purpose 通过 `input.purpose -> anchor.purpose` 注入到 anchor 节点。不�
 cd examples/autoresearch-survey
 export DEEPSEEK_API_KEY=sk-...
 export IMAGE_GEN_API_KEY=...   # 可选，仅 image_planner 生成全景图时需要
+# 仅当网关返回不同域名的 HTTPS 图片 URL 时设置，多个精确主机名用逗号分隔
+export IMAGE_GEN_TRUSTED_HOSTS=images.example.com
 ../../target/release/accelerate run rcm/autoresearch_survey.rcm \
   --purpose "KV cache compression for long-context large language model inference" \
   --speed 0 --context
 ```
 
 不带 `--purpose` 时，使用 `anchor.rcm` 里声明的默认 topic。未设置 `IMAGE_GEN_API_KEY` 时，全景图步骤会跳过，survey 仍照常生成（无开头插图）。
+
+图片适配器接受网关返回的 `b64_json`，也接受受控 HTTPS URL。URL 默认只信任
+`IMAGE_GEN_API_URL` 的主机；额外主机必须通过 `IMAGE_GEN_TRUSTED_HOSTS` 精确列出。
+下载禁止重定向和私网/回环地址，并校验 MIME、文件签名和 20 MiB 大小上限。
+网络错误、HTTP 429 和 5xx 在总计 12 分钟预算内至多重试一次；其他 4xx 或
+无效响应直接返回脱敏的稳定错误码，且不会输出提示词或供应商响应正文。
 
 也可以单跑某个单元（同样从本目录）：
 
