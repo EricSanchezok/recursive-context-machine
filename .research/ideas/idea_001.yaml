@@ -1,0 +1,7 @@
+id: idea_001
+title: "MoEH: 1M 参数 MoE advisor 输出 step-level 动作先验,经 logit mixing 干预 7B executor"
+status: exploring
+round: 1
+created: 2026-08-18T09:22:31.576Z
+plan_refs: []
+story_ref: story_1787044951579
