@@ -1,0 +1,20 @@
+slug: carlosjimenez_2023_swebench_can_language_models_resolve_realworld_github_issues
+title: "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?"
+authors:
+  - Carlos E. Jimenez
+  - John Yang
+  - Alexander Wettig
+  - Shunyu Yao
+  - Kexin Pei
+  - Ofir Press
+  - Karthik Narasimhan
+year: 2023
+venue: arXiv (Cornell University)
+arxiv: "2310.06770"
+doi: 10.48550/arxiv.2310.06770
+tags:
+  - benchmark
+relevance: core
+cite_key: carlosjimenez2023swebenchcanlanguagemodelsresolverealworldgithubissues
+created: 2026-08-18T09:27:43.764177Z
+updated: 2026-08-18T09:27:43.764177Z

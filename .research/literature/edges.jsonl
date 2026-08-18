@@ -1,0 +1,4 @@
+{"from":"idea_001","to":"parthasawa_2025_how_to_train_your_advisor_steering_blackbox_llms_with_advisor_models","type":"inspired_by","evidence":"MoEH 是 Advisor Models 家族变体——区别在输出格式从 NL 建议换成动作分布(logit mixing)","created":"2026-08-18T09:31:06.282Z"}
+{"from":"idea_001","to":"biswasengupta_2026_harbor_automated_harness_optimization","type":"extends","evidence":"HARBOR/Last-Harness/Meta-Harness 自动化 harness 设计,MoEH 把 harness 经验压进权重;对比:Continual Harness 是 reset-free 在线自进化(邻近但不同)","created":"2026-08-18T09:31:06.309Z"}
+{"from":"idea_001","to":"G01","type":"addresses_gap","evidence":"MoEH 的核心定位:1M 参数 MoE advisor 输出 step-level 动作先验,填补\"参数化动作先验\"空白","created":"2026-08-18T09:31:06.338Z"}
+{"from":"idea_001","to":"weiweisun_2025_scaling_longhorizon_llm_agent_via_contextfolding","type":"extends","evidence":"FoldGRPO/MEM1 都是非参数化上下文压缩;MoEH 是参数化压缩(经验进权重)——同一问题空间的不同解","created":"2026-08-18T09:31:06.355Z"}
