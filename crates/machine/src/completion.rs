@@ -251,10 +251,15 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
             let Some(result_fragment) = fragments.get(cursor) else {
                 break;
             };
-            let Content::ToolResult(result) = &result_fragment.content else {
-                break;
+            let result_call_id = match &result_fragment.content {
+                Content::ToolResult(result) => Some(result.call_id.as_str()),
+                Content::Hitch {
+                    call_id: Some(call_id),
+                    ..
+                } => Some(call_id.as_str()),
+                _ => None,
             };
-            if result_fragment.role != Role::Tool || result.call_id != call.id {
+            if result_fragment.role != Role::Tool || result_call_id != Some(call.id.as_str()) {
                 break;
             }
             if let Some(message) = encode(result_fragment, thinking) {
