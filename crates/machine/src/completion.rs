@@ -166,10 +166,11 @@ fn openai_http_client() -> http_client::ReqwestClient {
 /// error instead of replaying the failed request. Tool hitches remain encodable
 /// because they are real tool results the model may need to correct.
 ///
-/// A DeepSeek response may contain several parallel tool calls with one shared
-/// reasoning block. The machine tape stores each call beside its result for
-/// execution, so this function reconstructs the original assistant turn before
-/// sending the next completion request.
+/// A DeepSeek response may contain visible assistant text and one or more tool
+/// calls with one shared reasoning block. The machine tape stores text as its
+/// own fragment and each call beside its result for execution, so this function
+/// reconstructs the original assistant turn before sending the next completion
+/// request.
 pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
     let mut messages = Vec::with_capacity(fragments.len());
     let mut index = 0;
@@ -182,13 +183,40 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
             continue;
         }
 
-        let Content::ToolCall(first_call) = &fragment.content else {
+        let mut tool_start = index;
+        let mut leading_text = Vec::new();
+        while let Some(candidate) = fragments.get(tool_start) {
+            let Content::Text(text) = &candidate.content else {
+                break;
+            };
+            if candidate.role != Role::Assistant {
+                break;
+            }
+            leading_text.push(AssistantContent::text(&text.text));
+            tool_start += 1;
+        }
+
+        let Some(tool_fragment) = fragments.get(tool_start) else {
             if let Some(message) = encode(fragment, thinking) {
                 messages.push(message);
             }
             index += 1;
             continue;
         };
+        let Content::ToolCall(first_call) = &tool_fragment.content else {
+            if let Some(message) = encode(fragment, thinking) {
+                messages.push(message);
+            }
+            index += 1;
+            continue;
+        };
+        if tool_fragment.role != Role::Assistant {
+            if let Some(message) = encode(fragment, thinking) {
+                messages.push(message);
+            }
+            index += 1;
+            continue;
+        }
         let Some(shared_reasoning) = first_call.reasoning.as_deref() else {
             if let Some(message) = encode(fragment, thinking) {
                 messages.push(message);
@@ -197,9 +225,10 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
             continue;
         };
 
-        let mut assistant_content = Vec::new();
+        let mut assistant_content = leading_text;
         let mut tool_results = Vec::new();
-        let mut cursor = index;
+        let mut tool_call_count = 0;
+        let mut cursor = tool_start;
 
         while let Some(candidate) = fragments.get(cursor) {
             let Content::ToolCall(call) = &candidate.content else {
@@ -216,6 +245,7 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
                 &call.name,
                 call.arguments.clone(),
             ));
+            tool_call_count += 1;
             cursor += 1;
 
             let Some(result_fragment) = fragments.get(cursor) else {
@@ -233,7 +263,8 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
             cursor += 1;
         }
 
-        if assistant_content.len() > 1 && assistant_content.len() == tool_results.len() {
+        let has_leading_text = tool_start > index;
+        if (has_leading_text || tool_call_count > 1) && tool_call_count == tool_results.len() {
             assistant_content.push(AssistantContent::Reasoning(Reasoning::new(
                 shared_reasoning,
             )));
