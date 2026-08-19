@@ -89,6 +89,46 @@ fn encode_context_reconstructs_parallel_tool_call_turn() {
 }
 
 #[test]
+fn encode_context_reconstructs_text_and_tool_call_as_one_assistant_turn() {
+    let reasoning = "Read the canary input before writing the output";
+    let response = [
+        assistant_reasoning(reasoning),
+        AssistantContent::Text(RigText {
+            text: "I will read the fixed input first.".into(),
+        }),
+        assistant_tool_call("call_1", "fs"),
+    ];
+    let mut fragments = vec![Fragment::system("system"), Fragment::user("request")];
+    fragments.extend(decode(response.iter()));
+    fragments.push(Fragment::tool_result("call_1", "CANARY INPUT", None));
+
+    let messages = encode_context(&fragments, true);
+
+    assert_eq!(messages.len(), 4);
+    let Message::Assistant { content, .. } = &messages[2] else {
+        panic!("mixed response must be reconstructed as one assistant message");
+    };
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::Text(_)))
+            .count(),
+        1,
+    );
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::ToolCall(_)))
+            .count(),
+        1,
+    );
+    assert!(content.iter().any(|item| {
+        matches!(item, AssistantContent::Reasoning(value) if value.display_text() == reasoning)
+    }));
+    assert!(matches!(&messages[3], Message::User { .. }));
+}
+
+#[test]
 fn encode_tool_call_without_thinking_omits_reasoning() {
     let frag = tool_call_fragment();
     let msg = encode(&frag, false).expect("tool call encodes");
@@ -465,9 +505,18 @@ fn decode_preserves_reasoning_across_text_before_tool_call() {
 
     fragments.push(Fragment::tool_result("call_1", "written", None));
     let messages = encode_context(&fragments, true);
-    let Message::Assistant { content, .. } = &messages[1] else {
-        panic!("expected replayed assistant tool-call message");
+    assert_eq!(messages.len(), 2);
+    let Message::Assistant { content, .. } = &messages[0] else {
+        panic!("expected reconstructed mixed assistant message");
     };
+    assert!(content.iter().any(|item| {
+        matches!(item, AssistantContent::Text(text) if text.text == "The schema is clear.")
+    }));
+    assert!(
+        content
+            .iter()
+            .any(|item| matches!(item, AssistantContent::ToolCall(_)))
+    );
     assert!(content.iter().any(|item| {
         matches!(item, AssistantContent::Reasoning(reasoning)
             if reasoning.display_text() == "I should explain before writing")
