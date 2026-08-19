@@ -442,6 +442,39 @@ fn decode_discards_reasoning_before_text_turn() {
 }
 
 #[test]
+fn decode_preserves_reasoning_across_text_before_tool_call() {
+    let response = [
+        assistant_reasoning("I should explain before writing"),
+        AssistantContent::Text(RigText {
+            text: "The schema is clear.".into(),
+        }),
+        assistant_tool_call("call_1", "fs"),
+    ];
+
+    let mut fragments = decode(response.iter());
+
+    assert_eq!(fragments.len(), 2);
+    assert!(matches!(&fragments[0].content, Content::Text(t) if t.text == "The schema is clear."));
+    let Content::ToolCall(tool_call) = &fragments[1].content else {
+        panic!("expected ToolCall after visible assistant text");
+    };
+    assert_eq!(
+        tool_call.reasoning.as_deref(),
+        Some("I should explain before writing")
+    );
+
+    fragments.push(Fragment::tool_result("call_1", "written", None));
+    let messages = encode_context(&fragments, true);
+    let Message::Assistant { content, .. } = &messages[1] else {
+        panic!("expected replayed assistant tool-call message");
+    };
+    assert!(content.iter().any(|item| {
+        matches!(item, AssistantContent::Reasoning(reasoning)
+            if reasoning.display_text() == "I should explain before writing")
+    }));
+}
+
+#[test]
 fn decode_tool_call_without_reasoning_has_none() {
     let response = [assistant_tool_call("call_1", "shell")];
 

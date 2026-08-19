@@ -371,14 +371,13 @@ pub fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fra
     // tool_calls — we replicate the same reasoning onto each of them, so the
     // turn survives being split into one Fragment per call.
     //
-    // Buffer accumulates Reasoning blocks (rare multi-block case) but is
-    // *not* cleared on ToolCall — only on Text or Image, which mark the
-    // start of a new logical turn.
+    // A completion response is one assistant turn. Providers may emit visible
+    // text before a tool call in that same turn, so its reasoning must remain
+    // available until every tool call in the response has been decoded.
     let mut pending_reasoning: Vec<String> = Vec::new();
     for content in choice {
         match content {
             AssistantContent::Text(text) => {
-                pending_reasoning.clear();
                 fragments.push(Fragment::assistant(&text.text));
             }
             AssistantContent::Reasoning(reasoning) => {
@@ -396,7 +395,6 @@ pub fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fra
                 fragments.push(frag);
             }
             AssistantContent::Image(content_image) => {
-                pending_reasoning.clear();
                 let source = match &content_image.data {
                     rig::completion::message::DocumentSourceKind::Url(url) => {
                         crate::fragment::DataSource::Url(url.clone())
