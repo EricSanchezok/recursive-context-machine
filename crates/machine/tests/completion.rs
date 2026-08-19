@@ -129,6 +129,87 @@ fn encode_context_reconstructs_text_and_tool_call_as_one_assistant_turn() {
 }
 
 #[test]
+fn encode_context_reconstructs_mixed_turn_with_failed_tool_result() {
+    let reasoning = "Read the input before writing the output";
+    let fragments = vec![
+        Fragment::system("system"),
+        Fragment::user("request"),
+        Fragment::assistant("I will read the input first."),
+        Fragment::tool_call("call_1", "fs", json!({"path": "input.txt"})).with_reasoning(reasoning),
+        Fragment::hitch(
+            "tool request timed out",
+            Some(504),
+            Role::Tool,
+            Some("call_1"),
+        ),
+    ];
+
+    let messages = encode_context(&fragments, true);
+
+    assert_eq!(messages.len(), 4);
+    let Message::Assistant { content, .. } = &messages[2] else {
+        panic!("failed mixed turn must remain one assistant message");
+    };
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::Text(_)))
+            .count(),
+        1,
+    );
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::ToolCall(_)))
+            .count(),
+        1,
+    );
+    assert!(content.iter().any(|item| {
+        matches!(item, AssistantContent::Reasoning(value) if value.display_text() == reasoning)
+    }));
+    assert!(matches!(&messages[3], Message::User { .. }));
+}
+
+#[test]
+fn encode_context_reconstructs_parallel_turn_with_failed_tool_result() {
+    let reasoning = "Search both sources before drafting";
+    let fragments = vec![
+        Fragment::system("system"),
+        Fragment::user("request"),
+        Fragment::tool_call("call_1", "search", json!({"query": "first"}))
+            .with_reasoning(reasoning),
+        Fragment::tool_result("call_1", "first result", None),
+        Fragment::tool_call("call_2", "search", json!({"query": "second"}))
+            .with_reasoning(reasoning),
+        Fragment::hitch(
+            "upstream search unavailable",
+            Some(503),
+            Role::Tool,
+            Some("call_2"),
+        ),
+    ];
+
+    let messages = encode_context(&fragments, true);
+
+    assert_eq!(messages.len(), 5);
+    let Message::Assistant { content, .. } = &messages[2] else {
+        panic!("failed parallel turn must remain one assistant message");
+    };
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::ToolCall(_)))
+            .count(),
+        2,
+    );
+    assert!(content.iter().any(|item| {
+        matches!(item, AssistantContent::Reasoning(value) if value.display_text() == reasoning)
+    }));
+    assert!(matches!(&messages[3], Message::User { .. }));
+    assert!(matches!(&messages[4], Message::User { .. }));
+}
+
+#[test]
 fn encode_tool_call_without_thinking_omits_reasoning() {
     let frag = tool_call_fragment();
     let msg = encode(&frag, false).expect("tool call encodes");
