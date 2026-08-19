@@ -60,6 +60,12 @@ accelerate run examples/research-assistant/rcm/weather.rcm --stream
 accelerate run examples/research-assistant/rcm/captain.rcm --speed 300
 ```
 
+Streaming `completion_end` events include additive, sanitized completion
+telemetry when emitted by RCM v0.2.16 or later: `outcome`, `duration_ms`, and,
+for failures, `http_status`, `failure_kind`, and `retryable`. Provider response
+text, prompts, and credentials are never included. Consumers must continue to
+accept older events where these fields are absent.
+
 ### gRPC + Python Demo
 
 RCM exposes a gRPC server for programmatic control. The Python SDK lets you

@@ -5,6 +5,11 @@ edition = "2024"
 publish = false
 description = "RCM machine — core context primitives"
 
+[package.metadata.cargo-machete]
+# Imported through its Rust crate name (`rig`), so source scanning cannot map
+# the dependency key back to `rig-core`.
+ignored = ["rig-core"]
+
 [dependencies]
 utils = { version = "0.1.0", path = "../utils" }
 tokio = { workspace = true }
