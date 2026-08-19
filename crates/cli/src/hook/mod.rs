@@ -75,6 +75,11 @@ pub enum CompletionEvent {
         total_tokens: u64,
         cached_input_tokens: u64,
         cache_creation_input_tokens: u64,
+        outcome: Option<String>,
+        http_status: Option<u16>,
+        failure_kind: Option<String>,
+        retryable: Option<bool>,
+        duration_ms: Option<u64>,
     },
 }
 
@@ -346,6 +351,18 @@ impl HookEvent {
                 total_tokens: fields.u64("total_tokens").unwrap_or(0),
                 cached_input_tokens: fields.u64("cached_input_tokens").unwrap_or(0),
                 cache_creation_input_tokens: fields.u64("cache_creation_input_tokens").unwrap_or(0),
+                outcome: fields.string("outcome").filter(|value| !value.is_empty()),
+                http_status: fields
+                    .u64("http_status")
+                    .filter(|value| *value > 0)
+                    .and_then(|value| u16::try_from(value).ok()),
+                failure_kind: fields
+                    .string("failure_kind")
+                    .filter(|value| !value.is_empty()),
+                retryable: (fields.string("outcome").as_deref() == Some("failure"))
+                    .then(|| fields.bool("retryable"))
+                    .flatten(),
+                duration_ms: fields.u64("duration_ms"),
             }),
             "tool_call" => HookKind::Tool(ToolEvent::Call {
                 call_id: fields.string("call_id").unwrap_or_default(),
