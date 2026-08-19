@@ -130,24 +130,9 @@ async fn stream_run(
             HookKind::Completion(hook::CompletionEvent::Start) => {
                 json_line("completion_start", serde_json::json!({}))
             }
-            HookKind::Completion(hook::CompletionEvent::End {
-                fragments,
-                input_tokens,
-                output_tokens,
-                total_tokens,
-                cached_input_tokens,
-                cache_creation_input_tokens,
-            }) => json_line(
-                "completion_end",
-                serde_json::json!({
-                    "fragments": fragments,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "total_tokens": total_tokens,
-                    "cached_input_tokens": cached_input_tokens,
-                    "cache_creation_input_tokens": cache_creation_input_tokens,
-                }),
-            ),
+            HookKind::Completion(completion @ hook::CompletionEvent::End { .. }) => {
+                json_line("completion_end", completion_event_json(completion))
+            }
             HookKind::Tool(hook::ToolEvent::Call {
                 call_id,
                 tool,
@@ -290,6 +275,54 @@ fn json_line(event_type: &str, payload: serde_json::Value) -> String {
         serde_json::Value::String(event_type.to_string()),
     );
     serde_json::to_string(&obj).unwrap_or_default()
+}
+
+/// Serialize a completion event using only the additive, sanitized stream fields.
+pub fn completion_event_json(event: &hook::CompletionEvent) -> serde_json::Value {
+    let hook::CompletionEvent::End {
+        fragments,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        cached_input_tokens,
+        cache_creation_input_tokens,
+        outcome,
+        http_status,
+        failure_kind,
+        retryable,
+        duration_ms,
+    } = event
+    else {
+        return serde_json::json!({});
+    };
+
+    let mut payload = serde_json::json!({
+        "fragments": fragments,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "cache_creation_input_tokens": cache_creation_input_tokens,
+    });
+    let object = payload
+        .as_object_mut()
+        .expect("completion payload is an object");
+    if let Some(value) = outcome {
+        object.insert("outcome".into(), serde_json::json!(value));
+    }
+    if let Some(value) = http_status {
+        object.insert("http_status".into(), serde_json::json!(value));
+    }
+    if let Some(value) = failure_kind {
+        object.insert("failure_kind".into(), serde_json::json!(value));
+    }
+    if let Some(value) = retryable {
+        object.insert("retryable".into(), serde_json::json!(value));
+    }
+    if let Some(value) = duration_ms {
+        object.insert("duration_ms".into(), serde_json::json!(value));
+    }
+    payload
 }
 
 fn component_meta_json(meta: &hook::ComponentMeta) -> serde_json::Value {
