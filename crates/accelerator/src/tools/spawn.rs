@@ -200,14 +200,6 @@ impl machine::Tool for SpawnTool {
                         let worker = self.worker.clone();
                         let item_text =
                             serde_json::to_string_pretty(item).unwrap_or_else(|_| item.to_string());
-                        // NOTE: every worker in the wave shares the SAME
-                        // Environment (same RDC_TOKEN, RDC_RESEARCH_ID, cwd).
-                        // Workers therefore MUST NOT rdc_write `update` the
-                        // same entity_id concurrently — concurrent PATCHes to
-                        // one RDC entity race (last write wins, earlier
-                        // writes silently lost). Have each worker `create` its
-                        // own entity, or coalesce shared writes in a serial
-                        // component downstream of this fan-out.
                         let mut worker_state = RunState {
                             environment: env.clone(),
                             ..RunState::default()
