@@ -16,6 +16,13 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - Doc comments on public APIs are acceptable only when the purpose is not obvious from
   the name and signature alone.
 - No inline comments that restate the next line of code.
+- Implementation materially derived from a paper, standard, upstream source or
+  community discussion, benchmark, experiment, or research result must include a
+  nearby `Provenance:` comment with a stable locator and a `Local adaptation:`
+  comment explaining what RCM adopts or changes.
+- For multi-file or generated implementations, place provenance at the single
+  authoritative source, generator, template, or manifest. Copied code, data, and
+  assets must also preserve applicable license obligations.
 - No "defaults to ..." or "(... minutes)" decay comments that specify values — they go
   stale on every config change. Types and const names are the source of truth.
 - Section dividers like `// ── Foo ──` are not allowed in files under 200 lines.
@@ -143,3 +150,8 @@ must follow these conventions. Do not override unless explicitly instructed by t
 - Downloaded papers (PDFs) go in `research/` as well.
 - Keep `research/` organized — group related files into subdirectories by topic
   when a single topic accumulates multiple files.
+- When a research artifact materially informs shipped code, link the artifact from
+  the authoritative implementation's `Provenance:` marker and record the local
+  adaptation there. A commit or pull-request link alone is not durable provenance.
+- Routine language usage, direct official API calls, and general patterns without a
+  specific material source do not require citations.
