@@ -170,10 +170,11 @@ fn openai_http_client() -> http_client::ReqwestClient {
 /// error instead of replaying the failed request. Tool hitches remain encodable
 /// because they are real tool results the model may need to correct.
 ///
-/// A DeepSeek response may contain several parallel tool calls with one shared
-/// reasoning block. The machine tape stores each call beside its result for
-/// execution, so this function reconstructs the original assistant turn before
-/// sending the next completion request.
+/// A DeepSeek response may contain visible assistant text and one or more tool
+/// calls with one shared reasoning block. The machine tape stores text as its
+/// own fragment and each call beside its result for execution, so this function
+/// reconstructs the original assistant turn before sending the next completion
+/// request.
 pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
     let mut messages = Vec::with_capacity(fragments.len());
     let mut index = 0;
@@ -186,13 +187,40 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
             continue;
         }
 
-        let Content::ToolCall(first_call) = &fragment.content else {
+        let mut tool_start = index;
+        let mut leading_text = Vec::new();
+        while let Some(candidate) = fragments.get(tool_start) {
+            let Content::Text(text) = &candidate.content else {
+                break;
+            };
+            if candidate.role != Role::Assistant {
+                break;
+            }
+            leading_text.push(AssistantContent::text(&text.text));
+            tool_start += 1;
+        }
+
+        let Some(tool_fragment) = fragments.get(tool_start) else {
             if let Some(message) = encode(fragment, thinking) {
                 messages.push(message);
             }
             index += 1;
             continue;
         };
+        let Content::ToolCall(first_call) = &tool_fragment.content else {
+            if let Some(message) = encode(fragment, thinking) {
+                messages.push(message);
+            }
+            index += 1;
+            continue;
+        };
+        if tool_fragment.role != Role::Assistant {
+            if let Some(message) = encode(fragment, thinking) {
+                messages.push(message);
+            }
+            index += 1;
+            continue;
+        }
         let Some(shared_reasoning) = first_call.reasoning.as_deref() else {
             if let Some(message) = encode(fragment, thinking) {
                 messages.push(message);
@@ -201,9 +229,10 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
             continue;
         };
 
-        let mut assistant_content = Vec::new();
+        let mut assistant_content = leading_text;
         let mut tool_results = Vec::new();
-        let mut cursor = index;
+        let mut tool_call_count = 0;
+        let mut cursor = tool_start;
 
         while let Some(candidate) = fragments.get(cursor) {
             let Content::ToolCall(call) = &candidate.content else {
@@ -220,15 +249,21 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
                 &call.name,
                 call.arguments.clone(),
             ));
+            tool_call_count += 1;
             cursor += 1;
 
             let Some(result_fragment) = fragments.get(cursor) else {
                 break;
             };
-            let Content::ToolResult(result) = &result_fragment.content else {
-                break;
+            let result_call_id = match &result_fragment.content {
+                Content::ToolResult(result) => Some(result.call_id.as_str()),
+                Content::Hitch {
+                    call_id: Some(call_id),
+                    ..
+                } => Some(call_id.as_str()),
+                _ => None,
             };
-            if result_fragment.role != Role::Tool || result.call_id != call.id {
+            if result_fragment.role != Role::Tool || result_call_id != Some(call.id.as_str()) {
                 break;
             }
             if let Some(message) = encode(result_fragment, thinking) {
@@ -237,7 +272,8 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
             cursor += 1;
         }
 
-        if assistant_content.len() > 1 && assistant_content.len() == tool_results.len() {
+        let has_leading_text = tool_start > index;
+        if (has_leading_text || tool_call_count > 1) && tool_call_count == tool_results.len() {
             assistant_content.push(AssistantContent::Reasoning(Reasoning::new(
                 shared_reasoning,
             )));
@@ -394,14 +430,13 @@ pub fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fra
     // tool_calls — we replicate the same reasoning onto each of them, so the
     // turn survives being split into one Fragment per call.
     //
-    // Buffer accumulates Reasoning blocks (rare multi-block case) but is
-    // *not* cleared on ToolCall — only on Text or Image, which mark the
-    // start of a new logical turn.
+    // A completion response is one assistant turn. Providers may emit visible
+    // text before a tool call in that same turn, so its reasoning must remain
+    // available until every tool call in the response has been decoded.
     let mut pending_reasoning: Vec<String> = Vec::new();
     for content in choice {
         match content {
             AssistantContent::Text(text) => {
-                pending_reasoning.clear();
                 fragments.push(Fragment::assistant(&text.text));
             }
             AssistantContent::Reasoning(reasoning) => {
@@ -419,7 +454,6 @@ pub fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fra
                 fragments.push(frag);
             }
             AssistantContent::Image(content_image) => {
-                pending_reasoning.clear();
                 let source = match &content_image.data {
                     rig::completion::message::DocumentSourceKind::Url(url) => {
                         crate::fragment::DataSource::Url(url.clone())

@@ -89,6 +89,127 @@ fn encode_context_reconstructs_parallel_tool_call_turn() {
 }
 
 #[test]
+fn encode_context_reconstructs_text_and_tool_call_as_one_assistant_turn() {
+    let reasoning = "Read the canary input before writing the output";
+    let response = [
+        assistant_reasoning(reasoning),
+        AssistantContent::Text(RigText {
+            text: "I will read the fixed input first.".into(),
+        }),
+        assistant_tool_call("call_1", "fs"),
+    ];
+    let mut fragments = vec![Fragment::system("system"), Fragment::user("request")];
+    fragments.extend(decode(response.iter()));
+    fragments.push(Fragment::tool_result("call_1", "CANARY INPUT", None));
+
+    let messages = encode_context(&fragments, true);
+
+    assert_eq!(messages.len(), 4);
+    let Message::Assistant { content, .. } = &messages[2] else {
+        panic!("mixed response must be reconstructed as one assistant message");
+    };
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::Text(_)))
+            .count(),
+        1,
+    );
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::ToolCall(_)))
+            .count(),
+        1,
+    );
+    assert!(content.iter().any(|item| {
+        matches!(item, AssistantContent::Reasoning(value) if value.display_text() == reasoning)
+    }));
+    assert!(matches!(&messages[3], Message::User { .. }));
+}
+
+#[test]
+fn encode_context_reconstructs_mixed_turn_with_failed_tool_result() {
+    let reasoning = "Read the input before writing the output";
+    let fragments = vec![
+        Fragment::system("system"),
+        Fragment::user("request"),
+        Fragment::assistant("I will read the input first."),
+        Fragment::tool_call("call_1", "fs", json!({"path": "input.txt"})).with_reasoning(reasoning),
+        Fragment::hitch(
+            "tool request timed out",
+            Some(504),
+            Role::Tool,
+            Some("call_1"),
+        ),
+    ];
+
+    let messages = encode_context(&fragments, true);
+
+    assert_eq!(messages.len(), 4);
+    let Message::Assistant { content, .. } = &messages[2] else {
+        panic!("failed mixed turn must remain one assistant message");
+    };
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::Text(_)))
+            .count(),
+        1,
+    );
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::ToolCall(_)))
+            .count(),
+        1,
+    );
+    assert!(content.iter().any(|item| {
+        matches!(item, AssistantContent::Reasoning(value) if value.display_text() == reasoning)
+    }));
+    assert!(matches!(&messages[3], Message::User { .. }));
+}
+
+#[test]
+fn encode_context_reconstructs_parallel_turn_with_failed_tool_result() {
+    let reasoning = "Search both sources before drafting";
+    let fragments = vec![
+        Fragment::system("system"),
+        Fragment::user("request"),
+        Fragment::tool_call("call_1", "search", json!({"query": "first"}))
+            .with_reasoning(reasoning),
+        Fragment::tool_result("call_1", "first result", None),
+        Fragment::tool_call("call_2", "search", json!({"query": "second"}))
+            .with_reasoning(reasoning),
+        Fragment::hitch(
+            "upstream search unavailable",
+            Some(503),
+            Role::Tool,
+            Some("call_2"),
+        ),
+    ];
+
+    let messages = encode_context(&fragments, true);
+
+    assert_eq!(messages.len(), 5);
+    let Message::Assistant { content, .. } = &messages[2] else {
+        panic!("failed parallel turn must remain one assistant message");
+    };
+    assert_eq!(
+        content
+            .iter()
+            .filter(|item| matches!(item, AssistantContent::ToolCall(_)))
+            .count(),
+        2,
+    );
+    assert!(content.iter().any(|item| {
+        matches!(item, AssistantContent::Reasoning(value) if value.display_text() == reasoning)
+    }));
+    assert!(matches!(&messages[3], Message::User { .. }));
+    assert!(matches!(&messages[4], Message::User { .. }));
+}
+
+#[test]
 fn encode_tool_call_without_thinking_omits_reasoning() {
     let frag = tool_call_fragment();
     let msg = encode(&frag, false).expect("tool call encodes");
@@ -439,6 +560,48 @@ fn decode_discards_reasoning_before_text_turn() {
 
     assert_eq!(fragments.len(), 1);
     assert!(matches!(&fragments[0].content, Content::Text(t) if t.text == "here is the answer"));
+}
+
+#[test]
+fn decode_preserves_reasoning_across_text_before_tool_call() {
+    let response = [
+        assistant_reasoning("I should explain before writing"),
+        AssistantContent::Text(RigText {
+            text: "The schema is clear.".into(),
+        }),
+        assistant_tool_call("call_1", "fs"),
+    ];
+
+    let mut fragments = decode(response.iter());
+
+    assert_eq!(fragments.len(), 2);
+    assert!(matches!(&fragments[0].content, Content::Text(t) if t.text == "The schema is clear."));
+    let Content::ToolCall(tool_call) = &fragments[1].content else {
+        panic!("expected ToolCall after visible assistant text");
+    };
+    assert_eq!(
+        tool_call.reasoning.as_deref(),
+        Some("I should explain before writing")
+    );
+
+    fragments.push(Fragment::tool_result("call_1", "written", None));
+    let messages = encode_context(&fragments, true);
+    assert_eq!(messages.len(), 2);
+    let Message::Assistant { content, .. } = &messages[0] else {
+        panic!("expected reconstructed mixed assistant message");
+    };
+    assert!(content.iter().any(|item| {
+        matches!(item, AssistantContent::Text(text) if text.text == "The schema is clear.")
+    }));
+    assert!(
+        content
+            .iter()
+            .any(|item| matches!(item, AssistantContent::ToolCall(_)))
+    );
+    assert!(content.iter().any(|item| {
+        matches!(item, AssistantContent::Reasoning(reasoning)
+            if reasoning.display_text() == "I should explain before writing")
+    }));
 }
 
 #[test]
