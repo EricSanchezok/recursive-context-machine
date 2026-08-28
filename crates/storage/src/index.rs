@@ -145,7 +145,7 @@ impl SparseIndex {
         }
 
         let mut items = Vec::with_capacity(item_count);
-        for chunk in items_data.chunks_exact(ENTRY_SIZE) {
+        for chunk in items_data.as_chunks::<ENTRY_SIZE>().0 {
             let offset = le_u64(chunk, 0);
             let byte_off = le_u64(chunk, 8);
             items.push((offset, byte_off));
