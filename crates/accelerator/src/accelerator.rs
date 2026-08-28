@@ -210,7 +210,12 @@ impl PrimitiveAccelerator {
 
         loop {
             // Derived fresh each step: obs must never be a stale snapshot.
+            // The ledger digest is enriched from tool state — the machine
+            // itself never performs IO.
             let mut obs = machine::obs::measure(&machine_state.run);
+            if let Some(run_dir) = machine_state.run.run_dir.as_deref() {
+                obs.ledger_digest = crate::tools::ledger_digest_for(run_dir);
+            }
             let action = policy
                 .decide(PolicyView {
                     run: &machine_state.run,
