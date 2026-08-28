@@ -8,6 +8,7 @@ use machine::{
 use utils::{AcceleratorId, Name};
 
 use crate::graph::Graph;
+use crate::trajectory::TrajectoryRecorder;
 
 fn is_scaffolding(fragment: &Fragment) -> bool {
     fragment.role == Role::System
@@ -84,8 +85,12 @@ impl Accelerator {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = RunState> + Send>> {
         Box::pin(async move {
             let input = self.merge_input(input);
+            // Label for the trajectory WAL directory: readable name plus the
+            // unique accelerator id, so graph components sharing a run_dir
+            // never collide on the same WAL.
+            let label = format!("{}-{}", self.name.as_str(), self.id);
             match self.body {
-                AcceleratorBody::Primitive(primitive) => primitive.fire(input).await,
+                AcceleratorBody::Primitive(primitive) => primitive.fire(input, &label).await,
                 AcceleratorBody::Composite(graph) => graph.run(input).await,
             }
         })
@@ -168,7 +173,7 @@ struct PrimitiveAccelerator {
 }
 
 impl PrimitiveAccelerator {
-    async fn fire(self, state: RunState) -> RunState {
+    async fn fire(self, state: RunState, machine_label: &str) -> RunState {
         let mut machine_state = MachineState {
             run: state,
             frame: MachineFrame::default(),
@@ -185,7 +190,22 @@ impl PrimitiveAccelerator {
         let policy = self.policy;
         let tool_runtime = self.tool_runtime;
         let mut reorder_pending = needs_reorder;
-
+        // Trajectory recording is opt-in: only when the caller supplied a
+        // run directory. Graph components share run_dir but run concurrently,
+        // so each recorder writes its own per-machine WAL under trajectory/.
+        let mut recorder = machine_state.run.run_dir.as_ref().and_then(|run_dir| {
+            match TrajectoryRecorder::open(run_dir, machine_label) {
+                Ok(recorder) => Some(recorder),
+                Err(error) => {
+                    tracing::warn!(
+                        run_dir = %run_dir.display(),
+                        ?error,
+                        "trajectory recorder unavailable; continuing without recording"
+                    );
+                    None
+                }
+            }
+        });
         hook!(event = "machine_start", purpose = %machine_state.run.purpose.text);
 
         loop {
@@ -237,11 +257,18 @@ impl PrimitiveAccelerator {
                     },
                 )
                 .await;
+            if let Some(ref mut recorder) = recorder {
+                let ledger_transitions = machine::ledger_transitions_in(&result.event.effects);
+                recorder.record_step(result.event.step, &obs, &ledger_transitions, &result.event);
+            }
             if result.done {
                 break;
             }
         }
 
+        if let Some(ref mut recorder) = recorder {
+            recorder.checkpoint(&machine_state);
+        }
         machine_state.run
     }
 }

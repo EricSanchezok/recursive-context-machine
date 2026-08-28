@@ -1,5 +1,5 @@
 use accelerator::{Catalog, ResourceSelection};
-use machine::{ExecutionMode, Machine, MachineFrame, MachineState, Overlay, Purpose, RunState};
+use machine::{ExecutionMode, Machine, MachineFrame, MachineState, Purpose, RunState};
 use tonic::{Request, Response, Status};
 
 use crate::action_space::build_action_space;
@@ -65,12 +65,40 @@ impl Rcm for RcmService {
             .map_err(Status::invalid_argument)?;
 
         let machine_id = utils::MachineId::new();
+        // Trajectory recording is data-collection-on-by-default for the
+        // server. An explicit run_dir is honored as the run directory with
+        // the WAL under run_dir/trajectory/<machine_id> — the same layout
+        // the CLI writes. Without one, the run directory is unset and the
+        // WAL lands directly under RCM_SERVER_TRAJECTORY_DIR/<machine_id>.
+        let (run_dir, trajectory_dir) = match request.run_dir.filter(|dir| !dir.is_empty()) {
+            Some(explicit) => {
+                let run_dir = std::path::PathBuf::from(explicit);
+                let trajectory_dir = run_dir.join("trajectory").join(machine_id.as_str());
+                (Some(run_dir), trajectory_dir)
+            }
+            None => {
+                let root = std::env::var("RCM_SERVER_TRAJECTORY_DIR")
+                    .unwrap_or_else(|_| "./rcm-trajectories".to_string());
+                (None, std::path::Path::new(&root).join(machine_id.as_str()))
+            }
+        };
+        let store = match storage::Store::open(&trajectory_dir) {
+            Ok(store) => Some(store),
+            Err(error) => {
+                tracing::warn!(
+                    dir = %trajectory_dir.display(),
+                    ?error,
+                    "trajectory store unavailable; run continues without recording"
+                );
+                None
+            }
+        };
         let run = Run {
             machine: Machine::new(machine_id.as_str(), "rcm"),
             state: MachineState {
                 run: RunState {
                     purpose: Purpose::new(request.purpose),
-                    run_dir: None,
+                    run_dir,
                     context: machine::Context::new(),
                     environment,
                     resources: runtime_resources.resources,
@@ -79,6 +107,7 @@ impl Rcm for RcmService {
                 frame: MachineFrame::default(),
             },
             tool_runtime: runtime_resources.tool_runtime,
+            store,
         };
 
         let action_space = build_action_space(&run);
@@ -109,10 +138,14 @@ impl Rcm for RcmService {
             .get_mut(&machine_id)
             .ok_or(Status::not_found("machine_id not found"))?;
 
+        // Decision-time observation, derived before the action is applied.
         // The gRPC Step path has no policy object to declare an overlay;
-        // external controllers stay on the tape-only protocol (v1).
-        let overlay_declared = Overlay::default();
-        run.machine
+        // external controllers stay on the tape-only protocol (v1), so the
+        // measured default (no declaration) is already accurate.
+        let obs = machine::obs::measure(&run.state.run);
+        let overlay_declared = machine::Overlay::default();
+        let result = run
+            .machine
             .apply(
                 action,
                 &mut run.state,
@@ -122,6 +155,21 @@ impl Rcm for RcmService {
                 },
             )
             .await;
+        if let Some(ref mut store) = run.store {
+            let trajectory = storage::TrajectoryEvent {
+                step: result.event.step,
+                obs,
+                ledger_transitions: machine::ledger_transitions_in(&result.event.effects),
+                event: result.event.clone(),
+            };
+            if let Err(error) = store.record_trajectory(&trajectory) {
+                tracing::warn!(
+                    machine_id = machine_id.as_str(),
+                    ?error,
+                    "trajectory write failed; step result is unaffected"
+                );
+            }
+        }
 
         let action_space = build_action_space(run);
         let state = build_state(run);
@@ -135,6 +183,16 @@ impl Rcm for RcmService {
         let machine_id = utils::MachineId::from_raw(request.into_inner().machine_id)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let mut manager = self.manager.lock().await;
+        if let Some(run) = manager.get_mut(&machine_id)
+            && let Some(ref mut store) = run.store
+            && let Err(error) = store.checkpoint(&run.state)
+        {
+            tracing::warn!(
+                machine_id = machine_id.as_str(),
+                ?error,
+                "final trajectory checkpoint failed"
+            );
+        }
         manager.destroy(&machine_id);
         Ok(Response::new(()))
     }
