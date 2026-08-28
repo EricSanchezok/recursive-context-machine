@@ -1,6 +1,6 @@
 # RCM State Layer Design v1 — obs / view / ledger
 
-> 状态: **Implemented** (2026-08-29, branch `feat/state-layer`) · 依托: MoEH idea_001
+> 状态: **Implemented** (2026-08-29, PR #154, branch `feat/state-layer-v4`) · 依托: MoEH idea_001
 > 决策链: `.research/timeline.jsonl` (insight×3 + decision×2) · 工程契约:
 > Blueprint note `nte_048dc0694001qw7breUlAbspUK`
 > P3 (LLM manager kill test) 按用户决策延后; P1/P2/P4/P5 已实现并验证。
