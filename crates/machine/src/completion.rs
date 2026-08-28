@@ -313,6 +313,10 @@ pub fn assemble_messages(
     }
     messages
 }
+
+// `Fragment` as the error type is intentional (see `build_request` below);
+// newer clippy (1.98+) flags its size — same waiver, same rationale.
+#[allow(clippy::result_large_err)]
 async fn send(
     endpoint: &impl CompletionModel,
     model: &Model,
