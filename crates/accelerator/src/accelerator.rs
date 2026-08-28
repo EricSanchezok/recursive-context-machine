@@ -189,12 +189,15 @@ impl PrimitiveAccelerator {
         hook!(event = "machine_start", purpose = %machine_state.run.purpose.text);
 
         loop {
+            // Derived fresh each step: obs must never be a stale snapshot.
+            let mut obs = machine::obs::measure(&machine_state.run);
             let action = policy
                 .decide(PolicyView {
                     run: &machine_state.run,
                     inbox: &machine_state.frame.inbox,
                     step: machine_state.frame.step,
                     status: machine_state.frame.status,
+                    obs: &obs,
                 })
                 .await;
 
@@ -203,12 +206,34 @@ impl PrimitiveAccelerator {
                 reorder_context_before_first_halt(&mut machine_state.run, &base_purpose);
             }
 
+            // Overlay is declared alongside the decision but consumed only
+            // when that decision is Halt; every other action carries an
+            // empty declaration.
+            let overlay_declared = if matches!(action, Action::Halt) {
+                let overlay = policy.overlay(&PolicyView {
+                    run: &machine_state.run,
+                    inbox: &machine_state.frame.inbox,
+                    step: machine_state.frame.step,
+                    status: machine_state.frame.status,
+                    obs: &obs,
+                });
+                obs.overlay_status = machine::OverlayStatus {
+                    declared: !overlay.is_empty(),
+                    system_prefix_count: overlay.system_prefix.len() as u64,
+                    tail_count: overlay.tail.len() as u64,
+                };
+                overlay
+            } else {
+                machine::Overlay::default()
+            };
+
             let result = machine
                 .apply(
                     action,
                     &mut machine_state,
                     ExecutionMode::Live {
                         tool_runtime: &tool_runtime,
+                        overlay: &overlay_declared,
                     },
                 )
                 .await;

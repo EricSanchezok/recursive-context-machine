@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::fragment::Fragment;
 use crate::inbox::Inbox;
 use crate::machine::{MachineStatus, RunState};
+use crate::obs::Obs;
+use crate::overlay::Overlay;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Action {
@@ -79,6 +81,7 @@ pub struct PolicyView<'a> {
     pub inbox: &'a Inbox,
     pub step: u64,
     pub status: MachineStatus,
+    pub obs: &'a Obs,
 }
 
 pub trait Policy: Send + Sync {
@@ -92,6 +95,14 @@ pub trait Policy: Send + Sync {
         &'a self,
         view: PolicyView<'a>,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>>;
+
+    /// Projection declared for the next completion request. Consumed only
+    /// at Halt; never materialized on the tape; re-derived every turn.
+    /// Empty by default — policies that do not opt in produce requests
+    /// byte-identical to pre-overlay behavior.
+    fn overlay(&self, _view: &PolicyView<'_>) -> Overlay {
+        Overlay::default()
+    }
 }
 
 impl Clone for Box<dyn Policy> {
