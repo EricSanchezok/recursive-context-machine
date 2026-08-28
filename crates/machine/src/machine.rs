@@ -81,7 +81,10 @@ impl MachineStatus {
 }
 
 pub enum ExecutionMode<'a> {
-    Live { tool_runtime: &'a ToolRuntime },
+    Live {
+        tool_runtime: &'a ToolRuntime,
+        overlay: &'a crate::overlay::Overlay,
+    },
 }
 
 impl Machine {
@@ -106,7 +109,10 @@ impl Machine {
 
         match &action {
             Action::Halt => {
-                let ExecutionMode::Live { tool_runtime } = mode;
+                let ExecutionMode::Live {
+                    tool_runtime,
+                    overlay,
+                } = mode;
                 let machine_id = self.id.to_string();
                 let model_name = state
                     .run
@@ -129,6 +135,7 @@ impl Machine {
                     &state.run.environment,
                     &state.run.resources,
                     tool_runtime,
+                    overlay,
                 )
                 .await;
                 let completion_id = state.run.telemetry.next_completion_id();

@@ -1,6 +1,9 @@
 mod common;
 
-use machine::{Action, ExecutionMode, Fragment, Inbox, Machine, MachineState, ToolRuntime};
+use machine::{
+    Action, ExecutionMode, Fragment, Inbox, Machine, MachineState, Overlay, ToolRuntime,
+};
+
 use serde_json::json;
 
 async fn run_actions(actions: &[Action]) -> MachineState {
@@ -16,6 +19,7 @@ async fn run_actions(actions: &[Action]) -> MachineState {
                 &mut state,
                 ExecutionMode::Live {
                     tool_runtime: &tool_runtime,
+                    overlay: &Overlay::default(),
                 },
             )
             .await;
@@ -149,6 +153,7 @@ async fn take_drains_inbox_into_context() {
             &mut state,
             ExecutionMode::Live {
                 tool_runtime: &tool_runtime,
+                overlay: &Overlay::default(),
             },
         )
         .await;
@@ -158,6 +163,7 @@ async fn take_drains_inbox_into_context() {
             &mut state,
             ExecutionMode::Live {
                 tool_runtime: &tool_runtime,
+                overlay: &Overlay::default(),
             },
         )
         .await;
@@ -256,7 +262,8 @@ async fn complete_no_active_model_returns_hitch() {
     let mut resources = common::test_resources();
     resources.deactivate_model();
 
-    let (fragments, tokens) = machine::completion::complete(&context, &resources).await;
+    let (fragments, tokens) =
+        machine::completion::complete(&context, &resources, &Overlay::default()).await;
     assert_eq!(fragments.len(), 1);
     assert_eq!(fragments[0].role, machine::Role::System);
     assert_eq!(tokens.total_tokens, 0);

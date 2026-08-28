@@ -19,13 +19,13 @@ pub async fn react(
     env: &Environment,
     resources: &Resources,
     tool_runtime: &ToolRuntime,
+    overlay: &crate::overlay::Overlay,
 ) -> (Vec<Fragment>, TokenUsage) {
     let started_at = Instant::now();
 
     hook!(event = "completion_start", machine_id);
 
-    let (fragments, usage) = completion::complete(ctx, resources).await;
-
+    let (fragments, usage) = completion::complete(ctx, resources, overlay).await;
     hook!(
         event = "completion_end",
         machine_id,

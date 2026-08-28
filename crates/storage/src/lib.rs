@@ -1,5 +1,5 @@
 pub use error::{WalError, WalResult};
-pub use store::Store;
+pub use store::{Store, TrajectoryEvent};
 
 pub mod error;
 pub mod index;
@@ -262,6 +262,30 @@ impl Wal {
         Ok(())
     }
 
+    /// Write a snapshot without trimming the segments it covers.
+    ///
+    /// Trajectory stores keep the event history itself as the payload —
+    /// trimming would destroy the very data the checkpoint complements.
+    /// Restore semantics are unchanged: the snapshot subsumes the prefix,
+    /// and replay still starts at the snapshot offset.
+    pub fn checkpoint_retaining_events(&mut self, offset: u64, state: &[u8]) -> WalResult<()> {
+        tracing::debug!(
+            offset,
+            size = state.len(),
+            "writing event-retaining checkpoint"
+        );
+        if offset > self.manifest.next_offset() {
+            return Err(WalError::OffsetOutOfRange {
+                requested: offset,
+                next: self.manifest.next_offset(),
+            });
+        }
+        snapshot::save(&self.dir, offset, state)?;
+        self.manifest.set_snap_offset(offset)?;
+        snapshot::retain_latest(&self.dir, 2)?;
+        Ok(())
+    }
+
     pub fn load(&self) -> WalResult<Option<(u64, Vec<u8>)>> {
         snapshot::load(&self.dir, &self.manifest)
     }
@@ -283,7 +307,17 @@ impl Wal {
                 next: snapshot_offset,
             });
         }
+        self.replay_segments(offset)
+    }
 
+    /// Replay every retained item from the beginning, ignoring the snapshot
+    /// lower bound. Trajectory stores retain all events (their checkpoints
+    /// never trim), so this yields the complete recorded history.
+    pub fn replay_from_origin(&self) -> WalResult<ReplayIter<'_>> {
+        self.replay_segments(0)
+    }
+
+    fn replay_segments(&self, offset: u64) -> WalResult<ReplayIter<'_>> {
         // Build sorted (seg_id, first_offset) list for all segments.
         let mut segments: Vec<(u64, u64)> = Vec::new();
         for (&seg_id, reader) in &self.readers {

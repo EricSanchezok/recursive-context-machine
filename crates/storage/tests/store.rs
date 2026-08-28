@@ -1,9 +1,9 @@
 use machine::{
-    Action, Effect, Fragment, InboxItem, MachineState, Model, Resources, StoredEvent,
+    Action, Effect, Fragment, InboxItem, MachineState, Model, Obs, Resources, StoredEvent,
     ToolDefinition,
 };
 use serde_json::json;
-use storage::Store;
+use storage::{Store, TrajectoryEvent};
 use tempfile::TempDir;
 
 fn model(name: &str) -> Model {
@@ -31,8 +31,14 @@ fn state_with_resources() -> MachineState {
     state
 }
 
-fn event(step: u64, action: Action, effects: Vec<Effect>) -> StoredEvent {
-    StoredEvent::new(step, action, effects)
+fn trajectory(step: u64, action: Action, effects: Vec<Effect>) -> TrajectoryEvent {
+    TrajectoryEvent {
+        step,
+        obs: Obs::default(),
+        overlay_declared: machine::Overlay::default(),
+        ledger_transitions: Vec::new(),
+        event: StoredEvent::new(step, action, effects),
+    }
 }
 
 #[tokio::test]
@@ -48,7 +54,7 @@ async fn record_and_restore_context_actions() {
     let mut store = Store::open(dir.path()).unwrap();
 
     store
-        .record(&event(
+        .record_trajectory(&trajectory(
             1,
             Action::Append(Fragment::user("hello")),
             vec![
@@ -63,7 +69,7 @@ async fn record_and_restore_context_actions() {
         ))
         .unwrap();
     store
-        .record(&event(
+        .record_trajectory(&trajectory(
             2,
             Action::Append(Fragment::assistant("world")),
             vec![
@@ -93,7 +99,7 @@ async fn restore_replays_runtime_resource_actions() {
     store.checkpoint(&state).unwrap();
 
     store
-        .record(&event(
+        .record_trajectory(&trajectory(
             1,
             Action::Model("fast".into()),
             vec![
@@ -107,7 +113,7 @@ async fn restore_replays_runtime_resource_actions() {
         ))
         .unwrap();
     store
-        .record(&event(
+        .record_trajectory(&trajectory(
             2,
             Action::Activate("search".into()),
             vec![
@@ -121,7 +127,7 @@ async fn restore_replays_runtime_resource_actions() {
         ))
         .unwrap();
     store
-        .record(&event(
+        .record_trajectory(&trajectory(
             3,
             Action::Deactivate("search".into()),
             vec![
@@ -165,7 +171,7 @@ async fn failed_action_replays_recorded_inbox_hitch() {
     );
 
     store
-        .record(&event(
+        .record_trajectory(&trajectory(
             1,
             Action::Remove(999),
             vec![
@@ -201,7 +207,7 @@ async fn completion_output_replays_through_inbox_and_take() {
     let completion_id = machine::CompletionId(1);
 
     store
-        .record(&event(
+        .record_trajectory(&trajectory(
             1,
             Action::Halt,
             vec![
@@ -231,7 +237,7 @@ async fn completion_output_replays_through_inbox_and_take() {
         ))
         .unwrap();
     store
-        .record(&event(
+        .record_trajectory(&trajectory(
             2,
             Action::Take,
             vec![
@@ -267,7 +273,7 @@ async fn checkpoint_skips_replaying_old_events() {
     let mut store = Store::open(dir.path()).unwrap();
 
     store
-        .record(&event(
+        .record_trajectory(&trajectory(
             1,
             Action::Append(Fragment::user("before")),
             vec![
@@ -286,7 +292,7 @@ async fn checkpoint_skips_replaying_old_events() {
     checkpoint.frame.step = 1;
     store.checkpoint(&checkpoint).unwrap();
     store
-        .record(&event(
+        .record_trajectory(&trajectory(
             2,
             Action::Append(Fragment::assistant("after")),
             vec![
@@ -308,4 +314,37 @@ async fn checkpoint_skips_replaying_old_events() {
         Some("checkpoint")
     );
     assert_eq!(restored.run.context.fragments()[1].as_text(), Some("after"));
+}
+
+#[tokio::test]
+async fn trajectories_round_trip_observation_snapshots() {
+    let dir = TempDir::new().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+
+    let mut observed = Obs::default();
+    observed.budget.context_limit = 128_000;
+    observed.budget.estimated_input = 4_096;
+    observed.budget.last_actual_input = Some(3_850);
+    let recorded = TrajectoryEvent {
+        step: 7,
+        obs: observed,
+        overlay_declared: machine::Overlay::default(),
+        ledger_transitions: Vec::new(),
+        event: StoredEvent::new(
+            7,
+            Action::Take,
+            vec![Effect::ActionCounted {
+                action: "take".into(),
+            }],
+        ),
+    };
+    store.record_trajectory(&recorded).unwrap();
+
+    let replayed = store.trajectories().await.unwrap();
+    assert_eq!(replayed.len(), 1);
+    assert_eq!(replayed[0].step, 7);
+    assert_eq!(replayed[0].obs.budget.context_limit, 128_000);
+    assert_eq!(replayed[0].obs.budget.estimated_input, 4_096);
+    assert_eq!(replayed[0].obs.budget.last_actual_input, Some(3_850));
+    assert_eq!(replayed[0].event.action, Action::Take);
 }
