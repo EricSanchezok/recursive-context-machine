@@ -83,12 +83,14 @@ async fn drive_until_halt(
     let tool_runtime = ToolRuntime::new();
 
     for _ in 0..100 {
+        let obs = machine::obs::measure(&state.run);
         let action = captain
             .decide(PolicyView {
                 run: &state.run,
                 inbox: &state.frame.inbox,
                 step: state.frame.step,
                 status: state.frame.status,
+                obs: &obs,
             })
             .await;
         match action {
@@ -105,6 +107,7 @@ async fn drive_until_halt(
                         &mut state,
                         ExecutionMode::Live {
                             tool_runtime: &tool_runtime,
+                            overlay: &machine::Overlay::default(),
                         },
                     )
                     .await;

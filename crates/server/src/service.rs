@@ -65,12 +65,36 @@ impl Rcm for RcmService {
             .map_err(Status::invalid_argument)?;
 
         let machine_id = utils::MachineId::new();
+        // Trajectory recording is data-collection-on-by-default for the
+        // server: an explicit run_dir wins; otherwise record under the
+        // server trajectory root keyed by machine id.
+        let trajectory_dir = request
+            .run_dir
+            .filter(|dir| !dir.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                let root = std::env::var("RCM_SERVER_TRAJECTORY_DIR")
+                    .unwrap_or_else(|_| "./rcm-trajectories".to_string());
+                std::path::Path::new(&root).join(machine_id.as_str())
+            });
+        let run_dir = trajectory_dir.parent().map(|parent| parent.to_path_buf());
+        let store = match storage::Store::open(&trajectory_dir) {
+            Ok(store) => Some(store),
+            Err(error) => {
+                tracing::warn!(
+                    dir = %trajectory_dir.display(),
+                    ?error,
+                    "trajectory store unavailable; run continues without recording"
+                );
+                None
+            }
+        };
         let run = Run {
             machine: Machine::new(machine_id.as_str(), "rcm"),
             state: MachineState {
                 run: RunState {
                     purpose: Purpose::new(request.purpose),
-                    run_dir: None,
+                    run_dir,
                     context: machine::Context::new(),
                     environment,
                     resources: runtime_resources.resources,
@@ -79,6 +103,7 @@ impl Rcm for RcmService {
                 frame: MachineFrame::default(),
             },
             tool_runtime: runtime_resources.tool_runtime,
+            store,
         };
 
         let action_space = build_action_space(&run);
@@ -109,15 +134,43 @@ impl Rcm for RcmService {
             .get_mut(&machine_id)
             .ok_or(Status::not_found("machine_id not found"))?;
 
-        run.machine
+        // Decision-time observation, derived before the action is applied.
+        let mut obs = machine::obs::measure(&run.state.run);
+        // The gRPC Step path has no policy object to declare an overlay;
+        // external controllers stay on the tape-only protocol (v1).
+        let overlay_declared = machine::Overlay::default();
+        obs.overlay_status = machine::OverlayStatus {
+            declared: false,
+            system_prefix_count: 0,
+            tail_count: 0,
+        };
+        let result = run
+            .machine
             .apply(
                 action,
                 &mut run.state,
                 ExecutionMode::Live {
                     tool_runtime: &run.tool_runtime,
+                    overlay: &overlay_declared,
                 },
             )
             .await;
+        if let Some(ref mut store) = run.store {
+            let trajectory = storage::TrajectoryEvent {
+                step: result.event.step,
+                obs,
+                overlay_declared,
+                ledger_transitions: machine::ledger_transitions_in(&result.event.effects),
+                event: result.event.clone(),
+            };
+            if let Err(error) = store.record_trajectory(&trajectory) {
+                tracing::warn!(
+                    machine_id = machine_id.as_str(),
+                    ?error,
+                    "trajectory write failed; step result is unaffected"
+                );
+            }
+        }
 
         let action_space = build_action_space(run);
         let state = build_state(run);
@@ -131,6 +184,16 @@ impl Rcm for RcmService {
         let machine_id = utils::MachineId::from_raw(request.into_inner().machine_id)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let mut manager = self.manager.lock().await;
+        if let Some(run) = manager.get_mut(&machine_id)
+            && let Some(ref mut store) = run.store
+            && let Err(error) = store.checkpoint(&run.state)
+        {
+            tracing::warn!(
+                machine_id = machine_id.as_str(),
+                ?error,
+                "final trajectory checkpoint failed"
+            );
+        }
         manager.destroy(&machine_id);
         Ok(Response::new(()))
     }

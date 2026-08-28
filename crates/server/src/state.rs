@@ -7,12 +7,14 @@ use crate::rcm;
 pub fn build_state(run: &Run) -> rcm::State {
     let state = &run.state;
     let run_state = &state.run;
+    let obs = machine::obs::measure(run_state);
     let counts = run_state
         .telemetry
         .action_counts
         .iter()
         .map(|(action, count)| (action.to_string(), *count))
         .collect();
+
     rcm::State {
         purpose: run_state.purpose.text.clone(),
         machine_id: run.machine.id.to_string(),
@@ -55,6 +57,19 @@ pub fn build_state(run: &Run) -> rcm::State {
             .root
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned()),
+        obs: Some(obs_to_proto(&obs)),
+    }
+}
+
+fn obs_to_proto(obs: &machine::obs::Obs) -> rcm::Obs {
+    rcm::Obs {
+        budget: Some(rcm::Budget {
+            context_limit: obs.budget.context_limit,
+            estimated_input: obs.budget.estimated_input,
+            soft_threshold: obs.budget.soft_threshold,
+            headroom: obs.budget.headroom,
+            last_actual_input: obs.budget.last_actual_input,
+        }),
     }
 }
 
