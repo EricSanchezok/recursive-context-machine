@@ -5,6 +5,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Wal, WalError, WalResult};
 
+/// One recorded decision point: the observation the policy saw, the action
+/// it chose, and the effects the machine applied. This is the training-data
+/// unit for offline policy learning and the audit trail for replay.
+///
+/// `overlay_declared` records the projection declaration (counts and
+/// content); projected content itself is ephemeral and re-derived by the
+/// policy on every turn, so only the declaration enters the audit trail.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrajectoryEvent {
+    pub step: u64,
+    pub obs: machine::Obs,
+    pub overlay_declared: machine::Overlay,
+    /// Ledger state migrations caused by this step's tool calls, lifted
+    /// from ledger tool results by `machine::ledger_transitions_in`.
+    pub ledger_transitions: Vec<machine::LedgerTransition>,
+    pub event: StoredEvent,
+}
+
 pub struct Store {
     wal: Wal,
 }
@@ -16,15 +34,18 @@ impl Store {
         })
     }
 
-    pub fn record(&mut self, event: &StoredEvent) -> WalResult<u64> {
-        let payload = encode(event)?;
+    pub fn record_trajectory(&mut self, trajectory: &TrajectoryEvent) -> WalResult<u64> {
+        let payload = encode(trajectory)?;
         let (offset, _) = self.wal.append(&payload)?;
         Ok(offset)
     }
 
     pub fn checkpoint(&mut self, state: &MachineState) -> WalResult<()> {
         let payload = encode(state)?;
-        self.wal.checkpoint(self.wal.next_offset(), &payload)
+        // Trajectory stores retain their events: the WAL is the payload,
+        // not a disposable prefix of it.
+        self.wal
+            .checkpoint_retaining_events(self.wal.next_offset(), &payload)
     }
 
     pub async fn restore(&self) -> WalResult<Option<MachineState>> {
@@ -37,9 +58,9 @@ impl Store {
         let mut applied_event = false;
         for item in self.wal.replay(start_offset)? {
             let (_, payload) = item?;
-            let event = decode::<StoredEvent>(&payload)?;
-            state.frame.step = event.step;
-            machine.replay_effects(&mut state, &event.effects);
+            let trajectory = decode::<TrajectoryEvent>(&payload)?;
+            state.frame.step = trajectory.event.step;
+            machine.replay_effects(&mut state, &trajectory.event.effects);
             applied_event = true;
         }
 
@@ -48,6 +69,21 @@ impl Store {
         } else {
             Ok(None)
         }
+    }
+
+    /// Read back the full recorded trajectory (envelopes, not bare events).
+    /// Used by tests and offline training pipelines to consume
+    /// `(obs, action, effects)` tuples exactly as the policy experienced them.
+    pub async fn trajectories(&self) -> WalResult<Vec<TrajectoryEvent>> {
+        let mut trajectories = Vec::new();
+        // From origin, not from the last checkpoint: trajectory stores
+        // retain all events, and the training pipeline wants every
+        // (obs, action, effects) pair ever recorded.
+        for item in self.wal.replay_from_origin()? {
+            let (_, payload) = item?;
+            trajectories.push(decode::<TrajectoryEvent>(&payload)?);
+        }
+        Ok(trajectories)
     }
 
     pub fn next_offset(&self) -> u64 {
