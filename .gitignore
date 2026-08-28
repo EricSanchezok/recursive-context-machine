@@ -53,3 +53,6 @@ data/
 
 # Distribution — rcm-dist is a separate public repo cloned alongside
 rcm-dist/
+
+# Runtime trajectory artifacts (server default-on recording)
+rcm-trajectories/
