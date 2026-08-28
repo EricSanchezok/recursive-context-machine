@@ -1,5 +1,5 @@
 use accelerator::{Catalog, ResourceSelection};
-use machine::{ExecutionMode, Machine, MachineFrame, MachineState, Purpose, RunState};
+use machine::{ExecutionMode, Machine, MachineFrame, MachineState, Overlay, Purpose, RunState};
 use tonic::{Request, Response, Status};
 
 use crate::action_space::build_action_space;
@@ -109,12 +109,16 @@ impl Rcm for RcmService {
             .get_mut(&machine_id)
             .ok_or(Status::not_found("machine_id not found"))?;
 
+        // The gRPC Step path has no policy object to declare an overlay;
+        // external controllers stay on the tape-only protocol (v1).
+        let overlay_declared = Overlay::default();
         run.machine
             .apply(
                 action,
                 &mut run.state,
                 ExecutionMode::Live {
                     tool_runtime: &run.tool_runtime,
+                    overlay: &overlay_declared,
                 },
             )
             .await;
