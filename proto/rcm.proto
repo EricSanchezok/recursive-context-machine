@@ -20,6 +20,10 @@ message OpenRequest {
   repeated string models = 6;
   repeated string mcps = 7;
   string environment = 8;
+  // Optional directory for trajectory WAL recording. When omitted, the
+  // server records under its trajectory root (RCM_SERVER_TRAJECTORY_DIR,
+  // default ./rcm-trajectories/) keyed by machine id.
+  optional string run_dir = 9;
 }
 
 message ModelSpec {
@@ -158,7 +162,7 @@ message ActionItem {
   FragmentContent sink = 3;
 }
 
-// ── State ───────────────────────────────────────────────
+// ── State ────────────────────────────────────────────────
 
 message State {
   string purpose = 1;
@@ -179,6 +183,21 @@ message State {
   repeated ModelProfile model_profiles = 16;
   string platform = 17;
   optional string root = 18;
+  Obs obs = 19;
+}
+
+// ── Obs (controller observation) ─────────────────────────
+
+message Obs {
+  Budget budget = 1;
+}
+
+message Budget {
+  uint64 context_limit = 1;
+  uint64 estimated_input = 2;
+  uint64 soft_threshold = 3;
+  uint64 headroom = 4;
+  optional uint64 last_actual_input = 5;
 }
 
 message Usage {

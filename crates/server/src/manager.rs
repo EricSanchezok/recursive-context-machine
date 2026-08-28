@@ -6,6 +6,9 @@ pub struct Run {
     pub machine: Machine,
     pub state: MachineState,
     pub tool_runtime: ToolRuntime,
+    /// Per-machine trajectory store. Always present unless opening the WAL
+    /// failed — trajectory loss must never prevent a run from existing.
+    pub store: Option<storage::Store>,
 }
 
 pub struct MachineManager {
