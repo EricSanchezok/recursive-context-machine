@@ -26,10 +26,17 @@ pub async fn react(
     hook!(event = "completion_start", machine_id);
 
     let (fragments, usage) = completion::complete(ctx, resources, overlay).await;
+    let elapsed = started_at.elapsed();
+    let telemetry = crate::event::completion_telemetry(&fragments);
     hook!(
         event = "completion_end",
         machine_id,
-        duration = %humantime(started_at.elapsed()),
+        duration = %humantime(elapsed),
+        duration_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+        outcome = telemetry.outcome,
+        http_status = telemetry.http_status.unwrap_or_default(),
+        failure_kind = telemetry.failure_kind.unwrap_or_default(),
+        retryable = telemetry.retryable.unwrap_or(false),
         fragments = fragments.len(),
         input_tokens = usage.input_tokens,
         output_tokens = usage.output_tokens,
