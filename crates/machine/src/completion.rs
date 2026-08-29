@@ -49,7 +49,11 @@ use crate::usage::TokenUsage;
 use tracing::{debug, warn};
 
 /// Call the active LLM and return the response fragments or an error.
-pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, TokenUsage) {
+pub async fn complete(
+    ctx: &Context,
+    resources: &Resources,
+    overlay: &crate::overlay::Overlay,
+) -> (Vec<Fragment>, TokenUsage) {
     let Some(model) = resources.active_model() else {
         warn!("completion requested but no active model is set");
         let hitch = Fragment::hitch(
@@ -61,7 +65,7 @@ pub async fn complete(ctx: &Context, resources: &Resources) -> (Vec<Fragment>, T
         return (vec![hitch], TokenUsage::empty());
     };
 
-    let messages = encode_context(ctx.fragments(), model.thinking);
+    let messages = assemble_messages(ctx.fragments(), model.thinking, overlay);
 
     let tools: Vec<RigToolDefinition> = resources
         .active_tool_definitions()
@@ -290,6 +294,29 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
     messages
 }
 
+/// Assemble the full request message list: overlay prefix, encoded tape,
+/// overlay tail. With an empty overlay this is exactly `encode_context` —
+/// the golden-equivalence property the overlay layer must preserve.
+pub fn assemble_messages(
+    fragments: &[Fragment],
+    thinking: bool,
+    overlay: &crate::overlay::Overlay,
+) -> Vec<Message> {
+    let mut messages =
+        Vec::with_capacity(overlay.system_prefix.len() + overlay.tail.len() + fragments.len());
+    for prefix in &overlay.system_prefix {
+        messages.push(Message::system(prefix.clone()));
+    }
+    messages.extend(encode_context(fragments, thinking));
+    for tail in &overlay.tail {
+        messages.push(Message::system(tail.clone()));
+    }
+    messages
+}
+
+// `Fragment` as the error type is intentional (see `build_request` below);
+// newer clippy (1.98+) flags its size — same waiver, same rationale.
+#[allow(clippy::result_large_err)]
 async fn send(
     endpoint: &impl CompletionModel,
     model: &Model,

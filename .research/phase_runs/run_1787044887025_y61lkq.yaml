@@ -1,0 +1,29 @@
+id: run_1787044887025_y61lkq
+phase: explore
+status: active
+created: 2026-08-18T09:21:27.025Z
+updated: 2026-08-18T09:31:06.366Z
+inner_loop:
+  state: attempt
+  created: 2026-08-18T09:21:27.025Z
+  updated: 2026-08-18T09:21:27.025Z
+  round: 1
+  attempts: 10
+  stagnation_rounds: 0
+  escalation_count: 0
+  budget:
+    max_attempts: 6
+    max_stagnation: 2
+    max_escalations: 2
+  summary: "Wiki updated: link"
+refs: {}
+human_checkpoints: []
+artifacts: {}
+summary: Project initialized — starting with exploration
+context_refresh:
+  refreshed_at: 2026-08-18T09:21:27.040Z
+  trigger: phase_entry
+  loaded:
+    anchor: 用 1M 参数的 MoE advisor 输出 step-level 动作先验,通过 logit mixing 干预 7B executor,把 agent 经验从 prompt 压进权重,实现恒定 prompt 长度的长 horizon agent;并在 RCM 上落地多 harness 数据收集与先验注入。
+  used_wiki_refs: []
+  checked_skill_rules: []

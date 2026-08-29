@@ -5,6 +5,7 @@ mod find;
 mod fs;
 mod git;
 mod image_gen;
+mod ledger;
 mod lsp;
 mod rdc_read;
 mod rdc_write;
@@ -18,6 +19,7 @@ pub use find::FindTool;
 pub use fs::FsTool;
 pub use git::{GitTool, check_safety as check_git_safety, tokenize as tokenize_git};
 pub use image_gen::{IMAGE_GEN_DIAGNOSTIC_ENV, ImageGenTool};
+pub use ledger::{LedgerTool, ledger_digest_for};
 pub use lsp::LspTool;
 pub use rdc_read::RdcReadTool;
 pub use rdc_write::RdcWriteTool;
@@ -47,6 +49,7 @@ pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
         std::sync::Arc::new(FsTool),
         std::sync::Arc::new(GitTool),
         std::sync::Arc::new(ImageGenTool),
+        std::sync::Arc::new(LedgerTool),
         std::sync::Arc::new(LspTool),
         std::sync::Arc::new(RdcReadTool),
         std::sync::Arc::new(RdcWriteTool),

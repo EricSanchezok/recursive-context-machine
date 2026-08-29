@@ -20,6 +20,8 @@ pub mod hook;
 pub mod inbox;
 pub mod machine;
 pub mod model;
+pub mod obs;
+pub mod overlay;
 pub mod policy;
 pub mod purpose;
 pub(crate) mod reactor;
@@ -36,6 +38,11 @@ pub use fragment::{
 pub use inbox::{Inbox, InboxItem};
 pub use machine::{ExecutionMode, Machine, MachineFrame, MachineState, MachineStatus, RunState};
 pub use model::{Cost, DEFAULT_MODEL_TIMEOUT_SECS, Limit, Modalities, Modality, Model, Protocol};
+pub use obs::{
+    Budget, LedgerDigest, LedgerDigestEntry, LedgerTransition, Obs, OverlayStatus,
+    ledger_transitions_in,
+};
+pub use overlay::Overlay;
 pub use policy::{ACTION_VERBS, Action, Policy, PolicyView};
 pub use purpose::Purpose;
 pub use record::{Effect, StepResult, StoredEvent};
