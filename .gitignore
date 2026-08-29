@@ -56,3 +56,7 @@ rcm-dist/
 
 # Runtime trajectory artifacts (server default-on recording)
 rcm-trajectories/
+
+# Research state (MoEH project) — local-only, managed by research tools
+.research/
+/pyproject.toml
