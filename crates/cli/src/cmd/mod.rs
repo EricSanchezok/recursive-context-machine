@@ -2,6 +2,7 @@ pub mod dispatch;
 mod image_canary;
 mod inventory;
 mod parse;
+pub mod report;
 pub mod run;
 
 use crate::args::{Cli, Command};
