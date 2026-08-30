@@ -39,8 +39,8 @@ pub use inbox::{Inbox, InboxItem};
 pub use machine::{ExecutionMode, Machine, MachineFrame, MachineState, MachineStatus, RunState};
 pub use model::{Cost, DEFAULT_MODEL_TIMEOUT_SECS, Limit, Modalities, Modality, Model, Protocol};
 pub use obs::{
-    Budget, LedgerDigest, LedgerDigestEntry, LedgerTransition, Obs, OverlayStatus,
-    ledger_transitions_in,
+    Budget, LedgerDigest, LedgerDigestEntry, LedgerTransition, Obs, OverlayStatus, RegistryEvent,
+    ResourceDigest, ledger_transitions_in, registry_events_in,
 };
 pub use overlay::Overlay;
 pub use policy::{ACTION_VERBS, Action, Policy, PolicyView};

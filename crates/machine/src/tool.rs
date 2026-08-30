@@ -96,4 +96,11 @@ impl ToolRuntime {
                 .or_insert_with(|| tool.clone());
         }
     }
+
+    /// Remove one executor, returning it when present. Registry drain uses
+    /// this to retire resources at runtime; execution of in-flight calls
+    /// is unaffected because tool handles are `Arc` clones.
+    pub fn remove(&mut self, name: &str) -> Option<std::sync::Arc<dyn Tool>> {
+        self.executors.remove(name)
+    }
 }
