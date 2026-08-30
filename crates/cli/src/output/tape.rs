@@ -437,6 +437,10 @@ pub(crate) struct Summary {
     pub(crate) fragments: usize,
     pub(crate) tool_calls: usize,
     pub(crate) duration_s: f64,
+    /// Completion (LLM turn) count and token totals for run reports.
+    pub(crate) completions: u64,
+    pub(crate) input_tokens: u64,
+    pub(crate) output_tokens: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -480,6 +484,9 @@ where
             fragments: 0,
             tool_calls: 0,
             duration_s: 0.0,
+            completions: 0,
+            input_tokens: 0,
+            output_tokens: 0,
         },
         origin_y: 0,
         reserved_rows: reserved_rows.max(MIN_VIEW_ROWS),
@@ -543,6 +550,9 @@ pub(crate) fn run_animation(
             fragments: 0,
             tool_calls: 0,
             duration_s: 0.0,
+            completions: 0,
+            input_tokens: 0,
+            output_tokens: 0,
         },
         origin_y,
         reserved_rows,
@@ -590,6 +600,9 @@ fn run_silent(
         fragments: 0,
         tool_calls: 0,
         duration_s: 0.0,
+        completions: 0,
+        input_tokens: 0,
+        output_tokens: 0,
     };
 
     loop {
@@ -611,6 +624,15 @@ fn run_silent(
                 summary.fragments = summary.fragments.saturating_sub(1);
             }
             HookKind::Tool(ToolEvent::Result { .. }) => summary.tool_calls += 1,
+            HookKind::Completion(CompletionEvent::End {
+                input_tokens,
+                output_tokens,
+                ..
+            }) => {
+                summary.completions += 1;
+                summary.input_tokens = summary.input_tokens.saturating_add(input_tokens);
+                summary.output_tokens = summary.output_tokens.saturating_add(output_tokens);
+            }
             _ => {}
         }
     }
@@ -660,6 +682,9 @@ fn finish_animation(view: &mut ViewState, step: Duration, start: std::time::Inst
         fragments: view.summary.fragments,
         tool_calls: view.summary.tool_calls,
         duration_s: view.summary.duration_s,
+        completions: view.summary.completions,
+        input_tokens: view.summary.input_tokens,
+        output_tokens: view.summary.output_tokens,
     }
 }
 
@@ -915,6 +940,17 @@ fn apply_event(view: &mut ViewState, event: HookEvent) {
         }
         HookKind::Tool(event) => apply_tool_event(view, source.as_ref(), event),
         HookKind::Completion(event) => {
+            if let CompletionEvent::End {
+                input_tokens,
+                output_tokens,
+                ..
+            } = &event
+            {
+                view.summary.completions += 1;
+                view.summary.input_tokens = view.summary.input_tokens.saturating_add(*input_tokens);
+                view.summary.output_tokens =
+                    view.summary.output_tokens.saturating_add(*output_tokens);
+            }
             apply_completion_event(tape_for_source(view, source.as_ref()), event)
         }
         HookKind::Machine(event) => {
