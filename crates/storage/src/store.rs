@@ -19,6 +19,11 @@ pub struct TrajectoryEvent {
     /// Ledger state migrations caused by this step's tool calls, lifted
     /// from ledger tool results by `machine::ledger_transitions_in`.
     pub ledger_transitions: Vec<machine::LedgerTransition>,
+    /// Resource-registry mutations applied by this step's drain pass —
+    /// the self-evolution provenance (what the agent changed about its
+    /// own harness, and when).
+    #[serde(default)]
+    pub registry_events: Vec<machine::RegistryEvent>,
     pub event: StoredEvent,
 }
 

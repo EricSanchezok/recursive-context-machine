@@ -11,6 +11,7 @@ pub mod mcp;
 pub mod policy;
 pub mod prompts;
 pub mod provider;
+pub mod registry;
 pub mod tools;
 pub mod trajectory;
 pub mod wire;

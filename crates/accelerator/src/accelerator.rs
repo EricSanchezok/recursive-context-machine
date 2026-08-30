@@ -188,7 +188,9 @@ impl PrimitiveAccelerator {
 
         let mut machine = Machine::new("ephemeral", "ephemeral");
         let policy = self.policy;
-        let tool_runtime = self.tool_runtime;
+        // Mutable for the registry drain pass: runtime-installed tools are
+        // inserted here between steps.
+        let mut tool_runtime = self.tool_runtime;
         let mut reorder_pending = needs_reorder;
         // Trajectory recording is opt-in: only when the caller supplied a
         // run directory. Graph components share run_dir but run concurrently,
@@ -210,11 +212,12 @@ impl PrimitiveAccelerator {
 
         loop {
             // Derived fresh each step: obs must never be a stale snapshot.
-            // The ledger digest is enriched from tool state — the machine
-            // itself never performs IO.
+            // The ledger and registry digests are enriched from tool state —
+            // the machine itself never performs IO.
             let mut obs = machine::obs::measure(&machine_state.run);
             if let Some(run_dir) = machine_state.run.run_dir.as_deref() {
                 obs.ledger_digest = crate::tools::ledger_digest_for(run_dir);
+                obs.resources_digest = crate::registry::digest_for(Some(run_dir));
             }
             let action = policy
                 .decide(PolicyView {
@@ -262,9 +265,23 @@ impl PrimitiveAccelerator {
                     },
                 )
                 .await;
+            // Registry drain-sync: apply every mutation the resources tool
+            // queued during this step's completion, so runtime-registered
+            // tools and prompts are callable on the next step.
+            let registry_events = crate::registry::drain(
+                machine_state.run.run_dir.as_deref(),
+                &mut machine_state.run.resources,
+                &mut tool_runtime,
+            );
             if let Some(ref mut recorder) = recorder {
                 let ledger_transitions = machine::ledger_transitions_in(&result.event.effects);
-                recorder.record_step(result.event.step, &obs, &ledger_transitions, &result.event);
+                recorder.record_step(
+                    result.event.step,
+                    &obs,
+                    &ledger_transitions,
+                    &registry_events,
+                    &result.event,
+                );
             }
             if result.done {
                 break;

@@ -35,12 +35,14 @@ impl TrajectoryRecorder {
         step: u64,
         obs: &Obs,
         ledger_transitions: &[LedgerTransition],
+        registry_events: &[machine::RegistryEvent],
         event: &StoredEvent,
     ) {
         let trajectory = TrajectoryEvent {
             step,
             obs: obs.clone(),
             ledger_transitions: ledger_transitions.to_vec(),
+            registry_events: registry_events.to_vec(),
             event: event.clone(),
         };
         if let Err(error) = self.store.record_trajectory(&trajectory) {

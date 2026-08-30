@@ -27,7 +27,7 @@ pub use webfetch::WebFetchTool;
 use std::path::{Component, Path, PathBuf};
 
 use crate::catalog::Catalog;
-
+use crate::registry::ResourcesTool;
 pub fn register(catalog: &mut Catalog) {
     for tool in builtin_tools() {
         catalog
@@ -47,6 +47,7 @@ pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
         std::sync::Arc::new(ImageGenTool),
         std::sync::Arc::new(LedgerTool),
         std::sync::Arc::new(LspTool),
+        std::sync::Arc::new(ResourcesTool),
         std::sync::Arc::new(ShellTool),
         std::sync::Arc::new(WaitTool),
         std::sync::Arc::new(WebFetchTool),
