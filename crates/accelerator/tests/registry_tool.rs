@@ -1,10 +1,5 @@
-use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-
 use accelerator::registry::{GENERATED_PREFIX, ResourcesTool};
-use machine::{Environment, Tool, ToolDefinition, ToolRuntime};
+use machine::{Environment, Tool, ToolRuntime};
 
 /// Minimal MCP stdio server: one tool `echo` that returns its input.
 /// Speaks the newline-delimited JSON-RPC 2.0 subset McpRegistry uses
