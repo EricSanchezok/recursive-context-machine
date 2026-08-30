@@ -124,6 +124,70 @@ fn collect_from_tool_result(
     }
 }
 
+/// One resource-registry mutation caused by the `resources` tool, lifted
+/// into the trajectory envelope. Self-evolution provenance: what the agent
+/// changed about its own harness, and when.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RegistryEvent {
+    pub op: String,
+    pub kind: String,
+    pub name: String,
+}
+
+/// Extract registry events from a step's effects by parsing tool-result
+/// fragments emitted by the resources tool (`"tool": "resources"` bodies).
+/// Shared parser for the accelerator loop and the gRPC server; the machine
+/// itself does no IO.
+pub fn registry_events_in(effects: &[crate::record::Effect]) -> Vec<RegistryEvent> {
+    let mut events = Vec::new();
+    for effect in effects {
+        match effect {
+            crate::record::Effect::CompletionRecorded { inbox_items, .. } => {
+                for item in inbox_items {
+                    collect_registry_from_tool_result(&item.fragment, &mut events);
+                }
+            }
+            crate::record::Effect::InboxPushed { item } => {
+                collect_registry_from_tool_result(&item.fragment, &mut events);
+            }
+            _ => {}
+        }
+    }
+    events
+}
+
+fn collect_registry_from_tool_result(
+    fragment: &crate::fragment::Fragment,
+    sink: &mut Vec<RegistryEvent>,
+) {
+    let crate::fragment::Content::ToolResult(tool_result) = &fragment.content else {
+        return;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&tool_result.content) else {
+        return;
+    };
+    if value.get("tool").and_then(|tool| tool.as_str()) != Some("resources") {
+        return;
+    }
+    let Some(entries) = value.get("events").and_then(|list| list.as_array()) else {
+        return;
+    };
+    for entry in entries {
+        let (Some(op), Some(kind), Some(name)) = (
+            entry.get("op").and_then(|field| field.as_str()),
+            entry.get("kind").and_then(|field| field.as_str()),
+            entry.get("name").and_then(|field| field.as_str()),
+        ) else {
+            continue;
+        };
+        sink.push(RegistryEvent {
+            op: op.to_string(),
+            kind: kind.to_string(),
+            name: name.to_string(),
+        });
+    }
+}
+
 /// Digest of the policy-declared overlay for this turn. Counts only —
 /// projected content itself never enters observation.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,11 +197,24 @@ pub struct OverlayStatus {
     pub tail_count: u64,
 }
 
+/// Digest of the runtime resource registry. `None` until the agent (or the
+/// harness) registers a resource — no phantom "empty registry" in every
+/// observation. Enriched by the accelerator; the machine performs no IO.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResourceDigest {
+    pub total: u64,
+    pub by_kind: HashMap<String, u64>,
+    /// Registered resource names, sorted for stable serialization.
+    pub names: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Obs {
     pub budget: Budget,
     pub ledger_digest: Option<LedgerDigest>,
     pub overlay_status: OverlayStatus,
+    #[serde(default)]
+    pub resources_digest: Option<ResourceDigest>,
 }
 
 /// Derive a fresh observation from the run state. Pure: no IO, no caching.
@@ -150,6 +227,9 @@ pub fn measure(run: &RunState) -> Obs {
         // The overlay is policy-declared and cannot be derived from state;
         // the caller fills this once the declaration is known.
         overlay_status: OverlayStatus::default(),
+        // The resource registry is likewise accelerator-side state; the
+        // fire loop enriches this digest after calling measure.
+        resources_digest: None,
     }
 }
 
