@@ -10,6 +10,7 @@ pub mod lsp;
 pub mod mcp;
 pub mod policy;
 pub mod prompts;
+pub mod registry;
 pub mod tools;
 pub mod trajectory;
 pub mod wire;
