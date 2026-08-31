@@ -208,6 +208,21 @@ pub struct ResourceDigest {
     pub names: Vec<String>,
 }
 
+/// One row of the context directory — the policy/tool-facing read-only
+/// view of a document cell. Metadata and a bounded preview, never content.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CellDirEntry {
+    pub id: u64,
+    pub anchor: Option<String>,
+    pub role: String,
+    pub kind: String,
+    pub tag: String,
+    pub bytes: u64,
+    pub created_step: u64,
+    pub last_seen_step: u64,
+    pub preview: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Obs {
     pub budget: Budget,
@@ -215,6 +230,8 @@ pub struct Obs {
     pub overlay_status: OverlayStatus,
     #[serde(default)]
     pub resources_digest: Option<ResourceDigest>,
+    #[serde(default)]
+    pub context_directory: Vec<CellDirEntry>,
 }
 
 /// Derive a fresh observation from the run state. Pure: no IO, no caching.
@@ -230,6 +247,46 @@ pub fn measure(run: &RunState) -> Obs {
         // The resource registry is likewise accelerator-side state; the
         // fire loop enriches this digest after calling measure.
         resources_digest: None,
+        // The directory is derived from the document itself.
+        context_directory: directory_of(run),
+    }
+}
+
+/// Directory rows for every cell, document order, preview capped.
+fn directory_of(run: &RunState) -> Vec<CellDirEntry> {
+    const PREVIEW_CHARS: usize = 80;
+    run.context
+        .fragments()
+        .iter()
+        .map(|cell| {
+            let meta = run.context.meta(cell.id());
+            let full_text = cell.content_as_text();
+            let preview: String = full_text.chars().take(PREVIEW_CHARS).collect();
+            CellDirEntry {
+                id: cell.id(),
+                anchor: cell.anchor.clone(),
+                role: format!("{:?}", cell.role).to_lowercase(),
+                kind: kind_of(cell).to_string(),
+                tag: cell.tag.clone(),
+                bytes: crate::context::Context::cell_bytes(cell),
+                created_step: meta.created_step,
+                last_seen_step: meta.last_seen_step,
+                preview,
+            }
+        })
+        .collect()
+}
+
+fn kind_of(cell: &crate::fragment::Fragment) -> &'static str {
+    match &cell.content {
+        crate::fragment::Content::Text(_) => "text",
+        crate::fragment::Content::Image(_) => "image",
+        crate::fragment::Content::Audio(_) => "audio",
+        crate::fragment::Content::Video(_) => "video",
+        crate::fragment::Content::Document(_) => "document",
+        crate::fragment::Content::ToolCall(_) => "tool_call",
+        crate::fragment::Content::ToolResult(_) => "tool_result",
+        crate::fragment::Content::Hitch { .. } => "hitch",
     }
 }
 
