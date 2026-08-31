@@ -38,6 +38,7 @@ fn trajectory(step: u64, action: Action, effects: Vec<Effect>) -> TrajectoryEven
         obs: Obs::default(),
         ledger_transitions: Vec::new(),
         registry_events: Vec::new(),
+        drain_effects: Vec::new(),
         event: StoredEvent::new(step, action, effects),
     }
 }
@@ -383,6 +384,7 @@ async fn trajectories_round_trip_observation_snapshots() {
         obs: observed,
         ledger_transitions: Vec::new(),
         registry_events: Vec::new(),
+        drain_effects: Vec::new(),
         event: StoredEvent::new(
             7,
             Action::Halt,

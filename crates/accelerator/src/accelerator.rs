@@ -178,6 +178,15 @@ impl PrimitiveAccelerator {
             run: state,
             frame: MachineFrame::default(),
         };
+        // Generative tools reach the model through this metered gateway,
+        // carried on the environment. Published before every decide so
+        // tools always see the step-start document and active model. A
+        // pre-injected assistant (tests inject a stub) wins over the
+        // production gateway.
+        let assistant = Arc::new(crate::assistant::AssistantGateway::new());
+        if machine_state.run.environment.assistant.is_none() {
+            machine_state.run.environment.assistant = Some(assistant.clone());
+        }
         let base_purpose = machine_state.run.purpose.text.clone();
         let needs_reorder = machine_state
             .run
@@ -219,6 +228,7 @@ impl PrimitiveAccelerator {
                 obs.ledger_digest = crate::tools::ledger_digest_for(run_dir);
                 obs.resources_digest = crate::registry::digest_for(Some(run_dir));
             }
+            assistant.publish(&machine_state);
             let action = policy
                 .decide(PolicyView {
                     run: &machine_state.run,
@@ -273,6 +283,13 @@ impl PrimitiveAccelerator {
                 &mut machine_state.run.resources,
                 &mut tool_runtime,
             );
+            // Drain-edits channel: tool payloads carrying `"edits"` arrays
+            // (context.compact) apply through the same validation path as
+            // Edit actions, without consuming a step.
+            let drain_effects = machine.apply_drain_edits(
+                &mut machine_state,
+                machine::obs::drain_edits_in(&result.event.effects),
+            );
             if let Some(ref mut recorder) = recorder {
                 let ledger_transitions = machine::ledger_transitions_in(&result.event.effects);
                 recorder.record_step(
@@ -280,6 +297,7 @@ impl PrimitiveAccelerator {
                     &obs,
                     &ledger_transitions,
                     &registry_events,
+                    &drain_effects,
                     &result.event,
                 );
             }

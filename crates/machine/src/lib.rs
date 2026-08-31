@@ -11,6 +11,7 @@
 //! | [`Policy`] | Owned by caller |
 //! | [`Machine`] | Interpreter that turns actions into recorded effects |
 
+pub mod assistant;
 pub mod completion;
 pub mod context;
 pub mod edit;
@@ -31,6 +32,9 @@ pub mod resources;
 pub mod tool;
 pub mod usage;
 
+pub use assistant::{
+    AssistantFuture, AssistantRequest, CompletionAssistant, MAX_COMPLETIONS_PER_TOOL_CALL,
+};
 pub use context::{CellMeta, Context, ContextIdNotFound, PROTECTED_ANCHORS, SLOT_ORDER};
 pub use edit::{CellPredicate, ContentSpec, EditOp, Position, Selector};
 pub use env::Environment;

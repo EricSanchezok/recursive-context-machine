@@ -1040,7 +1040,35 @@ fn apply_fragment_event(tape: &mut TapeState, event: FragmentEvent) {
         FragmentEvent::Replaced(meta) => enqueue_replace(tape, meta),
         FragmentEvent::Removed { id } => enqueue_remove(tape, id),
         FragmentEvent::Swapped { first, second } => enqueue_swap(tape, first, second),
+        FragmentEvent::Moved { id, after } => relocate_cell(tape, id, after),
+        // The consume event precedes the insert of the same content; render
+        // it as a status tick rather than a second cell write.
+        FragmentEvent::Consumed { call_id } => {
+            tape.status = if call_id.is_empty() {
+                "consumed oldest".into()
+            } else {
+                format!("consumed {call_id}")
+            };
+        }
     }
+}
+
+/// Relocate one tape cell after another (Edit Move op): reorder the model
+/// immediately and record it; no animation op — the next write flashes the
+/// new neighborhood.
+fn relocate_cell(tape: &mut TapeState, id: u64, after: u64) {
+    let Some(from) = tape.cells.iter().position(|cell| cell.id == id) else {
+        return;
+    };
+    let cell = tape.cells.remove(from);
+    let index = tape
+        .cells
+        .iter()
+        .position(|cell| cell.id == after)
+        .map(|index| index + 1)
+        .unwrap_or(tape.cells.len());
+    tape.cells.insert(index, cell);
+    tape.last_action = format!("move #{id} after #{after}");
 }
 
 fn apply_tool_event(view: &mut ViewState, source: Option<&ComponentMeta>, event: ToolEvent) {

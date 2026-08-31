@@ -1,24 +1,30 @@
 //! Built-in tools for the accelerator.
 
 mod arxiv;
+mod compact;
 mod find;
 mod fs;
 mod git;
 mod image_gen;
 mod ledger;
 mod lsp;
+mod memory;
 pub mod shell;
 mod spawn;
 mod wait;
 mod webfetch;
 
 pub use arxiv::{ArxivDownloadTool, ArxivSearchTool};
+pub use compact::ContextCompactTool;
 pub use find::FindTool;
 pub use fs::FsTool;
 pub use git::{GitTool, check_safety as check_git_safety, tokenize as tokenize_git};
 pub use image_gen::{IMAGE_GEN_DIAGNOSTIC_ENV, ImageGenTool};
 pub use ledger::{LedgerTool, ledger_digest_for};
 pub use lsp::LspTool;
+pub use memory::{
+    MemoryFormatTool, MemorySearchTool, MemoryWriteTool, reset_for_tests as reset_memory_for_tests,
+};
 pub use shell::{OUTPUT_CAP_BYTES, ShellTool, build_result, collect_output};
 pub use spawn::SpawnTool;
 pub use wait::WaitTool;
@@ -41,12 +47,16 @@ pub fn builtin_tools() -> Vec<std::sync::Arc<dyn machine::Tool>> {
     vec![
         std::sync::Arc::new(ArxivSearchTool),
         std::sync::Arc::new(ArxivDownloadTool),
+        std::sync::Arc::new(ContextCompactTool),
         std::sync::Arc::new(FindTool),
         std::sync::Arc::new(FsTool),
         std::sync::Arc::new(GitTool),
         std::sync::Arc::new(ImageGenTool),
         std::sync::Arc::new(LedgerTool),
         std::sync::Arc::new(LspTool),
+        std::sync::Arc::new(MemoryFormatTool),
+        std::sync::Arc::new(MemorySearchTool),
+        std::sync::Arc::new(MemoryWriteTool),
         std::sync::Arc::new(ResourcesTool),
         std::sync::Arc::new(ShellTool),
         std::sync::Arc::new(WaitTool),

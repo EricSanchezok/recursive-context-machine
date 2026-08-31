@@ -199,7 +199,23 @@ pub fn build_action_space(run: &Run) -> ActionSpace {
         );
     }
 
-    ActionSpace { actions }
+    // Document outline: labels for the first ENVELOPE_DIRECTORY_ROWS cells
+    // (anchor when present, else #id) plus the exact total, so external
+    // controllers can address cells without fetching full state.
+    let cells = context.fragments();
+    let document_outline: Vec<String> = cells
+        .iter()
+        .take(machine::obs::ENVELOPE_DIRECTORY_ROWS)
+        .map(|cell| match &cell.anchor {
+            Some(anchor) => anchor.clone(),
+            None => format!("#{}", cell.id()),
+        })
+        .collect();
+    ActionSpace {
+        actions,
+        document_outline,
+        document_cells: cells.len() as u64,
+    }
 }
 
 fn sink_clip(content: FragmentContent) -> FragmentContent {

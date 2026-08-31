@@ -188,6 +188,50 @@ fn collect_registry_from_tool_result(
     }
 }
 
+/// Extract tool-returned edit payloads from a step's effects: tool results
+/// whose JSON body carries an `"edits"` array of serialized [`EditOp`]s
+/// (context.compact is the first producer). The fire loop applies them via
+/// [`crate::Machine::apply_drain_edits`] — the same validation path as
+/// Edit actions. Shared parser for the accelerator loop and the gRPC
+/// server; the machine itself does no IO.
+pub fn drain_edits_in(effects: &[crate::record::Effect]) -> Vec<crate::edit::EditOp> {
+    let mut ops = Vec::new();
+    for effect in effects {
+        match effect {
+            crate::record::Effect::CompletionRecorded { inbox_items, .. } => {
+                for item in inbox_items {
+                    collect_edits_from_tool_result(&item.fragment, &mut ops);
+                }
+            }
+            crate::record::Effect::InboxPushed { item } => {
+                collect_edits_from_tool_result(&item.fragment, &mut ops);
+            }
+            _ => {}
+        }
+    }
+    ops
+}
+
+fn collect_edits_from_tool_result(
+    fragment: &crate::fragment::Fragment,
+    sink: &mut Vec<crate::edit::EditOp>,
+) {
+    let crate::fragment::Content::ToolResult(tool_result) = &fragment.content else {
+        return;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&tool_result.content) else {
+        return;
+    };
+    let Some(entries) = value.get("edits").and_then(|list| list.as_array()) else {
+        return;
+    };
+    for entry in entries {
+        if let Ok(op) = serde_json::from_value::<crate::edit::EditOp>(entry.clone()) {
+            sink.push(op);
+        }
+    }
+}
+
 /// Digest of the policy-declared overlay for this turn. Counts only —
 /// projected content itself never enters observation.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -232,10 +276,20 @@ pub struct Obs {
     pub resources_digest: Option<ResourceDigest>,
     #[serde(default)]
     pub context_directory: Vec<CellDirEntry>,
+    /// True row count of the directory; `context_directory` may carry a
+    /// truncated copy (envelope writers cap it) while this stays exact.
+    #[serde(default)]
+    pub context_directory_total: u64,
 }
+
+/// How many directory rows a recorded envelope keeps before truncation.
+/// The full directory stays available on the live state and in proto State.
+pub const ENVELOPE_DIRECTORY_ROWS: usize = 32;
 
 /// Derive a fresh observation from the run state. Pure: no IO, no caching.
 pub fn measure(run: &RunState) -> Obs {
+    let directory = directory_rows(&run.context);
+    let context_directory_total = directory.len() as u64;
     Obs {
         budget: measure_budget(run),
         // The ledger lives in accelerator tool state, not RunState; the
@@ -248,18 +302,21 @@ pub fn measure(run: &RunState) -> Obs {
         // fire loop enriches this digest after calling measure.
         resources_digest: None,
         // The directory is derived from the document itself.
-        context_directory: directory_of(run),
+        context_directory: directory,
+        context_directory_total,
     }
 }
 
-/// Directory rows for every cell, document order, preview capped.
-fn directory_of(run: &RunState) -> Vec<CellDirEntry> {
+/// Directory rows for a context, document order, preview capped. Public so
+/// the machine can refresh the tool-environment snapshot before every tool
+/// execution, and the accelerator can enrich obs identically.
+pub fn directory_rows(context: &crate::context::Context) -> Vec<CellDirEntry> {
     const PREVIEW_CHARS: usize = 80;
-    run.context
+    context
         .fragments()
         .iter()
         .map(|cell| {
-            let meta = run.context.meta(cell.id());
+            let meta = context.meta(cell.id());
             let full_text = cell.content_as_text();
             let preview: String = full_text.chars().take(PREVIEW_CHARS).collect();
             CellDirEntry {

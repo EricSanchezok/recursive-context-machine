@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::{Deserialize, Serialize};
 
 use crate::context::Context;
-use crate::edit::{ContentSpec, EditOp, Position, Selector};
+use crate::edit::{ContentSpec, EditOp};
 use crate::env::Environment;
 use crate::event::{content_kind, preview, role_name};
 use crate::fragment::{Fragment, Role};
@@ -136,11 +136,14 @@ impl Machine {
                     messages = state.run.context.fragments().len(),
                     tools = state.run.resources.active_tools.len(),
                 );
-
+                // Tools spawned by the reactor see the directory as of
+                // this request (same refresh the Tool branch performs).
+                let mut request_env = state.run.environment.clone();
+                request_env.context_directory = crate::obs::directory_rows(&state.run.context);
                 let (fragments, tokens) = reactor::react(
                     &machine_id,
                     &state.run.context,
-                    &state.run.environment,
+                    &request_env,
                     &state.run.resources,
                     tool_runtime,
                     overlay,
@@ -203,20 +206,27 @@ impl Machine {
                     tool = name.as_str(),
                     arguments = %args,
                 );
+                // Refresh the read-only directory snapshot so tools see the
+                // document as of this step (staleness/range decisions).
+                let mut tool_env = state.run.environment.clone();
+                tool_env.context_directory = crate::obs::directory_rows(&state.run.context);
                 let fragment = reactor::execute_single_tool(
                     &machine_id,
                     &name,
                     &call_id,
                     args,
-                    &state.run.environment,
+                    &tool_env,
                     &state.run.resources,
                     tool_runtime,
                 )
                 .await;
+                // Metered assistant spend rides the tool payload; lift it
+                // into the WAL so replayed trajectories carry the cost.
+                let tokens = tool_usage_in(&fragment);
                 effects.push(Effect::ToolCompleted {
                     name: name.clone(),
                     call_id: call_id.clone(),
-                    tokens: None,
+                    tokens,
                 });
                 effects.push(Effect::InboxPushed {
                     item: InboxItem::new(fragment, None),
@@ -329,7 +339,7 @@ impl Machine {
                 if let Some(anchor) = &anchor {
                     fragment.anchor = Some(anchor.clone());
                 }
-                let after = match resolve_position(&state.run.context, &position) {
+                let after = match state.run.context.resolve_position(&position) {
                     Ok(after) => after,
                     Err(message) => {
                         push_system_hitch_effect(effects, message);
@@ -351,7 +361,7 @@ impl Machine {
                     source_completion,
                 });
             }
-            EditOp::Delete { selector } => match resolve_selector(&state.run.context, &selector) {
+            EditOp::Delete { selector } => match state.run.context.select(&selector) {
                 Ok(ids) => {
                     let mut protected: Vec<String> = Vec::new();
                     for id in ids {
@@ -388,7 +398,7 @@ impl Machine {
                     );
                     return;
                 };
-                match resolve_position(&state.run.context, &after) {
+                match state.run.context.resolve_position(&after) {
                     Ok(Some(after_id)) => {
                         effects.push(Effect::ContextMoved {
                             id,
@@ -412,22 +422,17 @@ impl Machine {
     /// the same sequential semantics; effects nest under
     /// [`Effect::DrainEdits`] so one replay entry reproduces them.
     pub fn apply_drain_edits(&self, state: &mut MachineState, ops: Vec<EditOp>) -> Vec<Effect> {
-        let mut outer = Vec::new();
-        for op in ops {
+        let mut effects = Vec::new();
+        for op in ops.clone() {
             let mut op_effects = Vec::new();
             self.resolve_op(state, op, &mut op_effects);
             self.apply_live_effects(state, &op_effects);
-            outer.extend(op_effects);
+            effects.extend(op_effects);
         }
-        if outer.is_empty() {
+        if effects.is_empty() {
             return Vec::new();
         }
-        let effects = outer.clone();
-        let drain = Effect::DrainEdits {
-            ops: Vec::new(),
-            effects,
-        };
-        vec![drain]
+        vec![Effect::DrainEdits { ops, effects }]
     }
 
     pub fn replay_effects(&self, state: &mut MachineState, effects: &[Effect]) {
@@ -657,100 +662,6 @@ fn call_id_of(content: &ContentSpec) -> Option<String> {
     }
 }
 
-/// Resolve an insert/move position to an "after" cell id. `End` resolves to
-/// None (append). Anchors and ids must exist.
-fn resolve_position(context: &Context, position: &Position) -> Result<Option<u64>, String> {
-    match position {
-        Position::End => Ok(None),
-        Position::Id(id) => context
-            .get(*id)
-            .map(|_| Some(*id))
-            .ok_or_else(|| format!("cell id {id} not found in context")),
-        Position::Anchor(anchor) => context
-            .find_anchor(anchor)
-            .map(Some)
-            .ok_or_else(|| format!("anchor '{anchor}' not found in context")),
-    }
-}
-
-/// Resolve a delete selector to an ordered, deduplicated id set.
-fn resolve_selector(context: &Context, selector: &Selector) -> Result<Vec<u64>, String> {
-    match selector {
-        Selector::Anchor(anchor) => {
-            let id = context
-                .find_anchor(anchor)
-                .ok_or_else(|| format!("anchor '{anchor}' not found in context"))?;
-            Ok(vec![id])
-        }
-        Selector::Id(id) => context
-            .get(*id)
-            .map(|_| vec![*id])
-            .ok_or_else(|| format!("cell id {id} not found in context")),
-        Selector::Range { from, to } => {
-            let from_position = resolve_position(context, from)?
-                .and_then(|id| context.position_of(id))
-                .ok_or_else(|| "range 'from' cannot resolve to a cell".to_string())?;
-            let to_position = resolve_position(context, to)?
-                .and_then(|id| context.position_of(id))
-                .ok_or_else(|| "range 'to' cannot resolve to a cell".to_string())?;
-            let (start, end) = if from_position <= to_position {
-                (from_position, to_position)
-            } else {
-                (to_position, from_position)
-            };
-            Ok(context.fragments()[start..=end]
-                .iter()
-                .map(Fragment::id)
-                .collect())
-        }
-        Selector::Where(predicate) => {
-            let mut matches: Vec<u64> = Vec::new();
-            for cell in context.fragments() {
-                if predicate_matches(predicate, cell) {
-                    matches.push(cell.id());
-                }
-            }
-            if let Some(skip) = predicate.skip_newest {
-                let skip = skip as usize;
-                if matches.len() > skip {
-                    matches.truncate(matches.len() - skip);
-                } else {
-                    matches.clear();
-                }
-            }
-            Ok(matches)
-        }
-    }
-}
-
-fn predicate_matches(predicate: &crate::edit::CellPredicate, cell: &Fragment) -> bool {
-    if let Some(role) = &predicate.role
-        && !role.eq_ignore_ascii_case(&format!("{:?}", cell.role))
-    {
-        return false;
-    }
-    if let Some(tag) = &predicate.tag
-        && cell.tag != *tag
-    {
-        return false;
-    }
-    if let Some(kind) = &predicate.kind
-        && !kind.eq_ignore_ascii_case(content_kind_of(cell))
-    {
-        return false;
-    }
-    if let Some(bytes) = predicate.bytes_gt
-        && Context::cell_bytes(cell) <= bytes
-    {
-        return false;
-    }
-    true
-}
-
-fn content_kind_of(cell: &Fragment) -> &str {
-    content_kind(cell)
-}
-
 #[derive(Clone, Copy)]
 enum HookMode {
     Emit,
@@ -768,4 +679,18 @@ fn push_system_hitch_effect(effects: &mut Vec<Effect>, message: String) {
     effects.push(Effect::InboxPushed {
         item: InboxItem::new(fragment, None),
     });
+}
+
+/// Lift metered assistant spend out of a tool-result fragment. Generative
+/// tools report their completion cost as `"usage": {..}` in the payload;
+/// the machine mirrors it into the WAL so replays carry the same cost.
+fn tool_usage_in(fragment: &Fragment) -> Option<crate::usage::TokenUsage> {
+    let crate::fragment::Content::ToolResult(result) = &fragment.content else {
+        return None;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&result.content) else {
+        return None;
+    };
+    let usage = value.get("usage")?;
+    serde_json::from_value(usage.clone()).ok()
 }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::edit::{CellPredicate, Position, Selector};
 use crate::fragment::Fragment;
 
 /// Header-slot ordering for named anchors: stable, cache-friendly layout.
@@ -178,6 +179,73 @@ impl Context {
             .map(Fragment::id)
     }
 
+    /// Resolve an insert/move position to an "after" cell id. `End`
+    /// resolves to `None` (append). Anchors and ids must exist.
+    pub fn resolve_position(&self, position: &Position) -> Result<Option<u64>, String> {
+        match position {
+            Position::End => Ok(None),
+            Position::Id(id) => self
+                .get(*id)
+                .map(|_| Some(*id))
+                .ok_or_else(|| format!("cell id {id} not found in context")),
+            Position::Anchor(anchor) => self
+                .find_anchor(anchor)
+                .map(Some)
+                .ok_or_else(|| format!("anchor '{anchor}' not found in context")),
+        }
+    }
+
+    /// Resolve a selector to an ordered id set in document order. The same
+    /// rules the machine applies to Delete ops; exposed so generative
+    /// tools resolve source ranges with identical semantics.
+    pub fn select(&self, selector: &Selector) -> Result<Vec<u64>, String> {
+        match selector {
+            Selector::Anchor(anchor) => {
+                let id = self
+                    .find_anchor(anchor)
+                    .ok_or_else(|| format!("anchor '{anchor}' not found in context"))?;
+                Ok(vec![id])
+            }
+            Selector::Id(id) => self
+                .get(*id)
+                .map(|_| vec![*id])
+                .ok_or_else(|| format!("cell id {id} not found in context")),
+            Selector::Range { from, to } => {
+                let from_position = self
+                    .resolve_position(from)?
+                    .and_then(|id| self.position_of(id))
+                    .ok_or_else(|| "range 'from' cannot resolve to a cell".to_string())?;
+                let to_position = self
+                    .resolve_position(to)?
+                    .and_then(|id| self.position_of(id))
+                    .ok_or_else(|| "range 'to' cannot resolve to a cell".to_string())?;
+                let (start, end) = if from_position <= to_position {
+                    (from_position, to_position)
+                } else {
+                    (to_position, from_position)
+                };
+                Ok(self.cells[start..=end].iter().map(Fragment::id).collect())
+            }
+            Selector::Where(predicate) => {
+                let mut matches: Vec<u64> = self
+                    .cells
+                    .iter()
+                    .filter(|cell| predicate_matches(predicate, cell))
+                    .map(Fragment::id)
+                    .collect();
+                if let Some(skip) = predicate.skip_newest {
+                    let skip = skip as usize;
+                    if matches.len() > skip {
+                        matches.truncate(matches.len() - skip);
+                    } else {
+                        matches.clear();
+                    }
+                }
+                Ok(matches)
+            }
+        }
+    }
+
     /// Idempotent named-slot write with an explicit cell id: replace in
     /// place when the anchor exists (keeping the found cell's id), else
     /// insert at the SLOT_ORDER position under the given id. Effect replay
@@ -286,4 +354,29 @@ impl Context {
         fragment.id = id;
         self.next_id = self.next_id.max(id + 1);
     }
+}
+
+/// Structural predicate over cells; fields AND together.
+fn predicate_matches(predicate: &CellPredicate, cell: &Fragment) -> bool {
+    if let Some(role) = &predicate.role
+        && !role.eq_ignore_ascii_case(&format!("{:?}", cell.role))
+    {
+        return false;
+    }
+    if let Some(tag) = &predicate.tag
+        && cell.tag != *tag
+    {
+        return false;
+    }
+    if let Some(kind) = &predicate.kind
+        && !kind.eq_ignore_ascii_case(crate::event::content_kind(cell))
+    {
+        return false;
+    }
+    if let Some(bytes) = &predicate.bytes_gt
+        && Context::cell_bytes(cell) <= *bytes
+    {
+        return false;
+    }
+    true
 }

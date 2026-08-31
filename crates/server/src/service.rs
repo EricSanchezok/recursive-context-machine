@@ -97,6 +97,8 @@ impl Rcm for RcmService {
                 None
             }
         };
+        let assistant = std::sync::Arc::new(accelerator::assistant::AssistantGateway::new());
+        environment.assistant = Some(assistant.clone());
         let run = Run {
             machine: Machine::new(machine_id.as_str(), "rcm"),
             state: MachineState {
@@ -111,6 +113,7 @@ impl Rcm for RcmService {
                 frame: MachineFrame::default(),
             },
             tool_runtime: runtime_resources.tool_runtime,
+            assistant,
             store,
         };
 
@@ -148,6 +151,9 @@ impl Rcm for RcmService {
         // measured default (no declaration) is already accurate.
         let obs = machine::obs::measure(&run.state.run);
         let overlay_declared = machine::Overlay::default();
+        // Snapshot publication mirrors the fire loop: generative tools see
+        // the step-start document and the active model.
+        run.assistant.publish(&run.state);
         let result = run
             .machine
             .apply(
@@ -159,12 +165,24 @@ impl Rcm for RcmService {
                 },
             )
             .await;
+        // Same drain passes as the fire loop: registry mutations first,
+        // then tool-returned edit payloads (context.compact).
+        let registry_events = accelerator::registry::drain(
+            run.state.run.run_dir.as_deref(),
+            &mut run.state.run.resources,
+            &mut run.tool_runtime,
+        );
+        let drain_effects = run.machine.apply_drain_edits(
+            &mut run.state,
+            machine::obs::drain_edits_in(&result.event.effects),
+        );
         if let Some(ref mut store) = run.store {
             let trajectory = storage::TrajectoryEvent {
                 step: result.event.step,
                 obs,
                 ledger_transitions: machine::ledger_transitions_in(&result.event.effects),
-                registry_events: Vec::new(),
+                registry_events,
+                drain_effects,
                 event: result.event.clone(),
             };
             if let Err(error) = store.record_trajectory(&trajectory) {

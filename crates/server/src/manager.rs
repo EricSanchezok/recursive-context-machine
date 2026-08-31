@@ -1,11 +1,16 @@
-use machine::{Machine, MachineState, ToolRuntime};
 use std::collections::HashMap;
+use std::sync::Arc;
+
+use machine::{Machine, MachineState, ToolRuntime};
 use utils::MachineId;
 
 pub struct Run {
     pub machine: Machine,
     pub state: MachineState,
     pub tool_runtime: ToolRuntime,
+    /// Metered gateway for generative tools (context.compact). Published
+    /// before every step so tools see the step-start document and model.
+    pub assistant: Arc<accelerator::assistant::AssistantGateway>,
     /// Per-machine trajectory store. Always present unless opening the WAL
     /// failed — trajectory loss must never prevent a run from existing.
     pub store: Option<storage::Store>,

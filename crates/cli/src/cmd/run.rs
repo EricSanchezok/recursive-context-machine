@@ -70,11 +70,13 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
 //   component_start, component_done, component_skipped
 //   machine_start, machine_done, halt, completion_start, completion_end
 //   tool_call, tool_result, tool_error
-//   appended, taken, inserted, replaced, removed
+//   appended, taken, inserted, replaced, removed, swapped
+//   moved, consumed (document-model v2: Move op, inbox consumption)
 //   model, activate, deactivate, resource
 //
 // All field names use snake_case.
-// Consumer: portal-gateway/src/hub/parse-rcm.ts
+// Consumer: portal-gateway/src/hub/parse-rcm.ts (gateway sync waived for
+// the v2 additions; the gateway ignores unrecognized event types)
 // ===========================================================================
 async fn stream_run(
     accelerator: accelerator::Accelerator,
@@ -207,6 +209,12 @@ async fn stream_run(
                 "swapped",
                 serde_json::json!({ "first": first, "second": second }),
             ),
+            HookKind::Fragment(hook::FragmentEvent::Moved { id, after }) => {
+                json_line("moved", serde_json::json!({ "id": id, "after": after }))
+            }
+            HookKind::Fragment(hook::FragmentEvent::Consumed { call_id }) => {
+                json_line("consumed", serde_json::json!({ "call_id": call_id }))
+            }
             HookKind::Resource(hook::ResourceEvent::Model { name }) => {
                 json_line("model", serde_json::json!({ "name": name }))
             }

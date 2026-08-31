@@ -1,6 +1,7 @@
 //! RCM Accelerator — composable execution via accelerator graphs.
 
 pub mod accelerator;
+pub mod assistant;
 pub mod catalog;
 pub mod condition;
 pub mod environment;

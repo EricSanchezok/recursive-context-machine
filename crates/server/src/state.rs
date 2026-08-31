@@ -58,6 +58,25 @@ pub fn build_state(run: &Run) -> rcm::State {
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned()),
         obs: Some(obs_to_proto(&obs)),
+        // Full directory, every row — the WAL envelope caps its copy.
+        context_directory: machine::obs::directory_rows(&run_state.context)
+            .into_iter()
+            .map(directory_entry_to_proto)
+            .collect(),
+    }
+}
+
+fn directory_entry_to_proto(entry: machine::obs::CellDirEntry) -> rcm::CellDirectoryEntry {
+    rcm::CellDirectoryEntry {
+        id: entry.id,
+        anchor: entry.anchor,
+        role: entry.role,
+        kind: entry.kind,
+        tag: entry.tag,
+        bytes: entry.bytes,
+        created_step: entry.created_step,
+        last_seen_step: entry.last_seen_step,
+        preview: entry.preview,
     }
 }
 
@@ -155,6 +174,7 @@ fn fragment_to_proto(fragment: &Fragment) -> rcm::Fragment {
         tag: Some(fragment.tag.clone()),
         content_text: Some(fragment.content_as_text()),
         media_source: media_source_from_content(&fragment.content),
+        anchor: fragment.anchor.clone(),
     }
 }
 
