@@ -246,3 +246,107 @@ fn humantime(duration: Duration) -> String {
         format!("{:.1}s", milliseconds as f64 / 1000.0)
     }
 }
+
+/// Execute one tool invocation outside a completion cycle (policy-initiated
+/// `Action::Tool`). Shares the reactor's timeout, hook, and error semantics
+/// so policy-side and model-side tool calls behave identically.
+pub async fn execute_single_tool(
+    machine_id: &str,
+    tool_name: &str,
+    call_id: &str,
+    arguments: serde_json::Value,
+    env: &Environment,
+    resources: &Resources,
+    tool_runtime: &ToolRuntime,
+) -> Fragment {
+    let lookup = resources.lookup(tool_name);
+    let tool_arc = match lookup {
+        LookupResult::Active => tool_runtime.get_arc(tool_name),
+        _ => None,
+    };
+    let Some(tool_arc) = tool_arc else {
+        let message = match lookup {
+            LookupResult::NotFound => {
+                let mut available: Vec<&str> =
+                    resources.active_tools.iter().map(String::as_str).collect();
+                available.sort_unstable();
+                format!(
+                    "tool '{}' not found. Available tools: {}",
+                    tool_name,
+                    available.join(", ")
+                )
+            }
+            LookupResult::Inactive => {
+                format!("tool '{}' is disabled — activate it before use", tool_name)
+            }
+            LookupResult::Active => {
+                format!("tool '{}' has no runtime executor", tool_name)
+            }
+        };
+        warn!(tool = tool_name, %message, "policy tool call failed");
+        return Fragment::hitch(message, None, Role::Tool, Some(call_id));
+    };
+
+    let deadline = Duration::from_secs(tool_arc.timeout().as_secs());
+    let env_arc = Arc::new(env.clone());
+    let started_at = Instant::now();
+    let result = timeout(deadline, tool_arc.execute(arguments, &env_arc)).await;
+    let elapsed = started_at.elapsed();
+
+    match result {
+        Ok(Ok(tool_result)) => {
+            info!(
+                tool = tool_name,
+                result = tool_result.content,
+                "tool executed"
+            );
+            hook!(
+                event = "tool_result",
+                machine_id,
+                call_id,
+                tool = tool_name,
+                result = %tool_result.content,
+                duration = %humantime(elapsed),
+            );
+            Fragment::tool_result(call_id, tool_result.content, tool_result.title)
+        }
+        Ok(Err(message)) => {
+            warn!(tool = tool_name, message, "tool failed");
+            hook!(
+                event = "tool_error",
+                machine_id,
+                call_id,
+                tool = tool_name,
+                error = %message,
+                duration = %humantime(elapsed),
+            );
+            Fragment::hitch(
+                format!("tool '{}' error: {}", tool_name, message),
+                None,
+                Role::Tool,
+                Some(call_id),
+            )
+        }
+        Err(_) => {
+            let message = format!(
+                "tool '{}' timed out after {}s",
+                tool_name,
+                deadline.as_secs()
+            );
+            warn!(
+                tool = tool_name,
+                timeout = deadline.as_secs(),
+                "tool timed out"
+            );
+            hook!(
+                event = "tool_error",
+                machine_id,
+                call_id,
+                tool = tool_name,
+                error = %message,
+                duration = %humantime(elapsed),
+            );
+            Fragment::hitch(message, None, Role::Tool, Some(call_id))
+        }
+    }
+}

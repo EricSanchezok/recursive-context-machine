@@ -134,24 +134,37 @@ async fn captain_prepares_prompt_first_model_and_all_tools() {
 }
 
 #[tokio::test]
-async fn captain_normalizes_agent_prompt_to_unique_first_fragment() {
+async fn captain_normalizes_agent_prompt_to_unique_anchored_slot() {
     let captain = Captain::new();
     let mut ctx = Context::new();
     ctx.append(Fragment::user("existing user content"));
-    ctx.append(Fragment::system("old prompt").with_tag("agent"));
-    ctx.append(Fragment::system("extra prompt").with_tag("agent"));
+    // v2 canonical input: the agent cell is an anchored slot with stale
+    // content; captain must replace it in place (idempotent Set).
+    ctx.set_named("@agent", Fragment::system("old prompt").with_tag("agent"));
     let mut resources = resources();
 
     drive_until_halt(&captain, &mut ctx, &mut resources, "").await;
 
-    let agent_fragments: Vec<_> = ctx
+    let agent_cells: Vec<_> = ctx
         .fragments()
         .iter()
-        .filter(|fragment| fragment.role == Role::System && fragment.tag == "agent")
+        .filter(|fragment| fragment.anchor.as_deref() == Some("@agent"))
         .collect();
-    assert_eq!(agent_fragments.len(), 1);
-    assert_eq!(ctx.fragments()[0].tag, "agent");
-    assert_eq!(ctx.fragments()[0].as_text(), Some("Captain prompt"));
+    assert_eq!(agent_cells.len(), 1, "exactly one @agent slot");
+    assert_eq!(agent_cells[0].tag, "agent");
+    assert_eq!(agent_cells[0].as_text(), Some("Captain prompt"));
+    // The slot outranks unanchored content (SLOT_ORDER header region).
+    assert!(
+        ctx.fragments()
+            .iter()
+            .position(|fragment| fragment.anchor.as_deref() == Some("@agent"))
+            .unwrap()
+            < ctx
+                .fragments()
+                .iter()
+                .position(|fragment| fragment.tag == "user")
+                .unwrap()
+    );
 }
 
 #[tokio::test]

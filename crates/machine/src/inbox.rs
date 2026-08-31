@@ -48,6 +48,36 @@ impl Inbox {
         self.items.pop_front()
     }
 
+    /// Pop the first item whose ToolResult content matches `call_id`.
+    /// Document-order FIFO among matches; items without a matching call id
+    /// stay queued. `None` when nothing matches (or the inbox is empty).
+    pub fn pop_by_call_id(&mut self, call_id: &str) -> Option<InboxItem> {
+        let index = self.items.iter().position(|item| {
+            matches!(
+                &item.fragment.content,
+                crate::fragment::Content::ToolResult(result) if result.call_id == call_id
+            )
+        })?;
+        self.items.remove(index)
+    }
+
+    /// Peek (clone, no pop) the item a consume-op would take: the first
+    /// ToolResult matching `call_id`, or the front item when `call_id` is
+    /// None. Resolution reads the inbox without mutating it — the actual
+    /// pop happens when `InboxConsumed` is applied.
+    pub fn find_item(&self, call_id: Option<&str>) -> Option<InboxItem> {
+        match call_id {
+            Some(call_id) => self.items.iter().find(|item| {
+                matches!(
+                    &item.fragment.content,
+                    crate::fragment::Content::ToolResult(result) if result.call_id == call_id
+                )
+            }),
+            None => self.items.front(),
+        }
+        .cloned()
+    }
+
     pub fn peek(&self) -> Option<&InboxItem> {
         self.items.front()
     }

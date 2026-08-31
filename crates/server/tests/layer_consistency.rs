@@ -49,24 +49,22 @@ fn all_action_variants_have_verb_in_const_list() {
     let verbs: HashSet<&str> = ACTION_VERBS.iter().copied().collect();
 
     // Collect all unique verbs from Action variants
+    // Collect all unique verbs from Action variants (v2: seven verbs).
     let action_verbs: HashSet<&str> = vec![
-        Action::Append(machine::Fragment::user("x")).verb(),
-        Action::Insert {
-            after: 0,
-            fragment: machine::Fragment::user("x"),
+        Action::Edit {
+            ops: Vec::new(),
+            because: None,
         }
         .verb(),
-        Action::Replace {
-            id: 0,
-            fragment: machine::Fragment::user("x"),
+        Action::Tool {
+            name: "x".into(),
+            args: serde_json::json!({}),
+            because: None,
         }
         .verb(),
-        Action::Remove(0).verb(),
-        Action::Swap(0, 1).verb(),
         Action::Model("x".into()).verb(),
         Action::Activate("x".into()).verb(),
         Action::Deactivate("x".into()).verb(),
-        Action::Take.verb(),
         Action::Halt.verb(),
         Action::Done.verb(),
     ]

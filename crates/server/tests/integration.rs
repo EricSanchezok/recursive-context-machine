@@ -51,7 +51,7 @@ async fn open_returns_actions_for_prompts() {
     let append_labels: Vec<_> = space
         .actions
         .iter()
-        .filter(|a| a.command.as_ref().unwrap().verb == "Append")
+        .filter(|a| a.command.as_ref().unwrap().verb == "Edit")
         .map(|a| a.label.clone())
         .collect();
     assert!(append_labels.contains(&"Append captain".to_string()));
@@ -159,12 +159,13 @@ async fn remove_action_after_append() {
         .unwrap()
         .into_inner();
     assert_eq!(step1.state.as_ref().unwrap().fragments.len(), 1);
+    // v2: structural deletes are Edit items labeled "Delete #N".
     let remove_cmd = step1
         .action_space
         .unwrap()
         .actions
         .iter()
-        .find(|a| a.command.as_ref().unwrap().verb == "Remove")
+        .find(|a| a.label == "Delete #1")
         .unwrap()
         .command
         .clone()
@@ -185,9 +186,9 @@ async fn remove_action_after_append() {
 }
 
 #[tokio::test]
-async fn take_in_consumption_mode() {
+async fn consume_action_in_consumption_mode() {
     let runtime = new_service();
-    let (mid, _) = open(&runtime, "take-test", &[]).await;
+    let (mid, _) = open(&runtime, "consume-test", &[]).await;
     {
         let mut mgr = runtime.manager.lock().await;
         let run = mgr
@@ -198,17 +199,28 @@ async fn take_in_consumption_mode() {
             .inbox
             .push(machine::Fragment::system("LLM response"));
     }
+    // v2: inbox consumption is an Edit(Inbox) item labeled "Consume oldest".
     let step = runtime
         .step(Request::new(server::rcm::StepRequest {
             machine_id: mid.clone(),
             command: Some(ActionCommand {
-                verb: "Take".into(),
+                verb: "Edit".into(),
+                edit_ops_json: Some(
+                    r#"[{"Insert":{"position":"End","content":{"Inbox":{"call_id":null}},"anchor":null}}]"#.into(),
+                ),
                 ..Default::default()
             }),
         }))
         .await
         .unwrap()
         .into_inner();
+    let state = step.state.clone().unwrap();
+    assert_eq!(
+        state.fragments.len(),
+        1,
+        "consumed item lands on the document"
+    );
+    assert!(!state.inbox_pending);
     let space = step.action_space.unwrap();
     let verbs: Vec<_> = space
         .actions

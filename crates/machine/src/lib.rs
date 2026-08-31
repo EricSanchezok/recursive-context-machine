@@ -13,6 +13,7 @@
 
 pub mod completion;
 pub mod context;
+pub mod edit;
 pub mod env;
 pub mod event;
 pub mod fragment;
@@ -31,6 +32,7 @@ pub mod tool;
 pub mod usage;
 
 pub use context::{CellMeta, Context, ContextIdNotFound, PROTECTED_ANCHORS, SLOT_ORDER};
+pub use edit::{CellPredicate, ContentSpec, EditOp, Position, Selector};
 pub use env::Environment;
 pub use fragment::{
     Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, ToolResult, Video,

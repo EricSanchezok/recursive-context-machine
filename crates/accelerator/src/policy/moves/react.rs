@@ -1,3 +1,4 @@
+use machine::edit::{ContentSpec, EditOp, Position};
 use machine::{Action, Content, Context, Inbox, Role};
 use tracing::{trace, warn};
 
@@ -9,8 +10,33 @@ pub enum ReactDecision {
 }
 
 pub async fn decide(ctx: &Context, inbox: &Inbox, retry: &Retry) -> ReactDecision {
+    // Consume the whole pending inbox in one Edit batch — the v2 idiom for
+    // the old per-item Take loop.
     if inbox.peek().is_some() {
-        return ReactDecision::Action(Action::Take);
+        let mut ops = Vec::new();
+        for item in inbox.items() {
+            if let Content::ToolResult(result) = &item.fragment.content {
+                ops.push(EditOp::Insert {
+                    position: Position::End,
+                    content: ContentSpec::Inbox {
+                        call_id: Some(result.call_id.clone()),
+                    },
+                    anchor: None,
+                });
+            } else {
+                // Assistant text and other fragments consume FIFO.
+                ops.push(EditOp::Insert {
+                    position: Position::End,
+                    content: ContentSpec::Inbox { call_id: None },
+                    anchor: None,
+                });
+            }
+        }
+        let _ = Role::System;
+        return ReactDecision::Action(Action::Edit {
+            ops,
+            because: Some("react: consume pending outputs".into()),
+        });
     }
 
     let last_fragment = ctx.fragments().last();

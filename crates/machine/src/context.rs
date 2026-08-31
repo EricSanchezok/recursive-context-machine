@@ -178,26 +178,37 @@ impl Context {
             .map(Fragment::id)
     }
 
+    /// Idempotent named-slot write with an explicit cell id: replace in
+    /// place when the anchor exists (keeping the found cell's id), else
+    /// insert at the SLOT_ORDER position under the given id. Effect replay
+    /// uses this so resolved ids stay stable.
+    pub fn set_named_with_id(&mut self, anchor: &str, id: u64, fragment: Fragment) {
+        if let Some(existing) = self.find_anchor(anchor) {
+            let mut fragment = fragment;
+            fragment.anchor = Some(anchor.to_string());
+            let _ = self.replace(existing, fragment);
+            return;
+        }
+        let mut fragment = fragment;
+        fragment.anchor = Some(anchor.to_string());
+        let insertion = self.slot_position(anchor);
+        self.assign_specific_id(id, &mut fragment);
+        self.cells.insert(insertion, fragment);
+    }
+
     /// Idempotent named-slot write: replace in place when the anchor exists,
     /// otherwise insert at the slot's declared position (SLOT_ORDER keeps the
     /// header stable; unknown anchors land after the anchored region, before
     /// unanchored cells). Returns the cell id.
     pub fn set_named(&mut self, anchor: &str, fragment: Fragment) -> u64 {
         if let Some(id) = self.find_anchor(anchor) {
-            let mut fragment = fragment;
-            fragment.anchor = Some(anchor.to_string());
-            let _ = self.replace(id, fragment);
+            self.set_named_with_id(anchor, id, fragment);
             return id;
         }
         let id = self.next_id;
-        let mut fragment = fragment;
-        fragment.anchor = Some(anchor.to_string());
-        let insertion = self.slot_position(anchor);
-        self.assign_specific_id(id, &mut fragment);
-        self.cells.insert(insertion, fragment);
+        self.set_named_with_id(anchor, id, fragment);
         id
     }
-
     /// Document-order position for a new named slot: after the last existing
     /// cell whose anchor ranks at-or-before it in SLOT_ORDER, before any
     /// cell that ranks later or is unanchored.

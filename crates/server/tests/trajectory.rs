@@ -41,7 +41,7 @@ async fn open_step_destroy_produces_restorable_wal() {
             .step(Request::new(StepRequest {
                 machine_id: machine_id.clone(),
                 command: Some(server::rcm::ActionCommand {
-                    verb: "Take".into(),
+                    verb: "Halt".into(),
                     ..Default::default()
                 }),
             }))
@@ -66,14 +66,14 @@ async fn open_step_destroy_produces_restorable_wal() {
     let store = Store::open(&machine_wal[0]).unwrap();
     let restored = store.restore().await.unwrap().expect("recorded state");
     assert_eq!(restored.run.purpose.text, "trajectory integration");
-    assert_eq!(restored.frame.step, 3, "three Take steps recorded");
+    assert_eq!(restored.frame.step, 3, "three Halt steps recorded");
 
     let trajectories = store.trajectories().await.unwrap();
     assert_eq!(trajectories.len(), 3);
     assert!(
         trajectories
             .iter()
-            .all(|trajectory| trajectory.event.action == machine::Action::Take)
+            .all(|trajectory| trajectory.event.action == machine::Action::Halt)
     );
 }
 

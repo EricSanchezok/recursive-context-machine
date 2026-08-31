@@ -123,6 +123,8 @@ message DestroyRequest {
 }
 
 // ── ActionCommand ───────────────────────────────────────
+// v2 document-model verbs: Edit (ops as JSON-encoded EditOp list) and
+// Tool (name + JSON args). Legacy tape verbs are gone — no compat.
 
 message ActionCommand {
   string verb = 1;
@@ -131,6 +133,11 @@ message ActionCommand {
   optional uint64 fragment_id2 = 3;
   optional FragmentContent fragment = 4;
   optional string name = 5;
+  // JSON-encoded Vec<EditOp> for verb = "Edit".
+  optional string edit_ops_json = 6;
+  // JSON-encoded arguments object for verb = "Tool".
+  optional string args_json = 7;
+  optional string because = 8;
 }
 
 message MediaSource {
