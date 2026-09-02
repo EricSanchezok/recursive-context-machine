@@ -57,7 +57,9 @@ jobs:
       - name: Check for a published release
         id: release
         run: |
-          if gh release view --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if gh release view --repo "$GITHUB_REPOSITORY" --json assets \
+              --jq 'any(.assets[]; .name == "accelerate-x86_64-linux.tar.gz")' \
+              | grep -qx true; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
