@@ -1,7 +1,0 @@
-gaps:
-  - id: G01
-    description: 没有现有工作训练一个独立小模型,为 LLM agent 提供 step-level 动作分布先验。现有方案要么训练完整 LLM(GRPO)、要么静态 skill 注入、要么输出 NL 建议、要么程序化压缩上下文——没有"参数化动作先验"这一格。
-    status: open
-    source_paper: parthasawa_2025_how_to_train_your_advisor_steering_blackbox_llms_with_advisor_models
-    linked_ideas: []
-    created: 2026-08-18T09:31:06.323Z
