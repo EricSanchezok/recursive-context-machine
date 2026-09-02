@@ -209,9 +209,16 @@ jobs:
             Formula/rcm.rb
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -C "$RELEASE_BRANCH"
+          if git ls-remote --exit-code --heads origin "$RELEASE_BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$RELEASE_BRANCH"
+            git switch -C "$RELEASE_BRANCH" "origin/$RELEASE_BRANCH"
+          else
+            git switch -C "$RELEASE_BRANCH"
+          fi
           git add Formula/rcm.rb
-          git commit -m "chore(release): update formula for $TAG"
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): update formula for $TAG"
+          fi
           git push origin "HEAD:$RELEASE_BRANCH"
           PR_URL=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$RELEASE_BRANCH" --base main --state open --json url --jq '.[0].url')
           if [ -z "$PR_URL" ]; then
