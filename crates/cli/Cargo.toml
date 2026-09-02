@@ -23,5 +23,5 @@ tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
 crossterm = "0.28"
-toml = "0.8"
+toml = "1.1"
 chrono = { workspace = true }
