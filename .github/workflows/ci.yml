@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same PR / ref.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: 1
+  LINUX_BUILD_IMAGE: rust:bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa
+  LINUX_RUNTIME_IMAGE: debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --all -- --check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rcm-ci
+      - name: cargo clippy --workspace --all-targets --tests
+        run: cargo clippy --workspace --all-targets --tests --locked -- -D warnings
+
+  test:
+    name: build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rcm-ci
+      - name: cargo build --workspace --all-targets
+        run: cargo build --workspace --all-targets --locked
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: cargo nextest run
+        run: cargo nextest run --workspace --locked
+      - name: cargo test --doc
+        run: cargo test --workspace --doc --locked
+
+  linux-release-compatibility:
+    name: Linux release compatibility (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build in Debian Bookworm
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          docker run --rm \
+            --platform linux/amd64 \
+            --env TARGET \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            "$LINUX_BUILD_IMAGE" \
+            bash -euxo pipefail -c '
+              if [ "$TARGET" = "aarch64-unknown-linux-gnu" ]; then
+                apt-get update
+                apt-get install -y --no-install-recommends \
+                  gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+              fi
+              rustup target add "$TARGET"
+              cargo build --release --bin accelerate --target "$TARGET" --locked
+            '
+      - name: Execute in a clean Debian Bookworm runtime
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          docker run --rm \
+            --platform linux/amd64 \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            "$LINUX_RUNTIME_IMAGE" \
+            /workspace/target/x86_64-unknown-linux-gnu/release/accelerate --help
+
+  hygiene:
+    name: dependency hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rcm-ci
+      - name: Install cargo-machete
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+      - name: cargo machete --with-metadata
+        run: cargo machete --with-metadata
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: cargo deny check
+        run: cargo deny check

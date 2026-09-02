@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rcm"
+version = "0.1.0"
+description = "RCM (Recursive Context Machine) Python SDK"
+requires-python = ">=3.10"
+dependencies = [
+    "grpcio>=1.60",
+    "protobuf>=4.20",
+]
+
+[project.optional-dependencies]
+# Codegen extra: regenerates src/rcm/_pb2*.py from proto/rcm.proto via
+# `bash generate.sh`. Runtime installs do not need these.
+codegen = [
+    "grpcio-tools>=1.60",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rcm"]

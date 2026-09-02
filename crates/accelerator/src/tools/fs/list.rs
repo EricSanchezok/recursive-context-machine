@@ -33,7 +33,7 @@ pub(crate) fn execute<'a>(
             .as_str()
             .ok_or("missing required parameter 'filePath'")?;
 
-        let resolved = resolve_path(file_path, &env.cwd);
+        let resolved = resolve_path(file_path, env)?;
 
         let metadata = tokio::fs::metadata(&resolved)
             .await

@@ -1,21 +1,19 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::fmt;
 
+use serde::{Deserialize, Serialize};
 use utils::{Name, ResourcesId};
 
 use crate::model::Model;
-use crate::tool::Tool;
+use crate::tool::ToolDefinition;
 
-/// Resources — the pool of available tools and models with activation state.
-///
-/// The Policy switches models and toggles tools via [`Action`](crate::Action).
-/// The completion reads the active state directly.
-#[derive(Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Resources {
     id: ResourcesId,
     pub name: Name,
-    pub tools: HashMap<String, Arc<dyn Tool>>,
+    pub tool_definitions: HashMap<String, ToolDefinition>,
     pub models: HashMap<String, Model>,
+    pub model_order: Vec<String>,
     pub active_model: String,
     pub active_tools: HashSet<String>,
     pub prompts: HashMap<String, String>,
@@ -40,103 +38,112 @@ impl Resources {
         Self {
             id: ResourcesId::new(),
             name: Name::new(name).expect("resources name must be valid"),
-            tools: HashMap::new(),
+            tool_definitions: HashMap::new(),
             models: HashMap::new(),
+            model_order: Vec::new(),
             active_model: String::new(),
             active_tools: HashSet::new(),
             prompts: HashMap::new(),
         }
     }
 
-    /// Register a tool. Overwrites any tool with the same name.
-    pub fn with_tool(mut self, tool: Arc<dyn Tool>) -> Self {
-        let name = tool.name().to_string();
-        self.tools.insert(name, tool);
+    pub fn with_tool_definition(mut self, definition: ToolDefinition) -> Self {
+        self.tool_definitions
+            .insert(definition.name.clone(), definition);
         self
     }
 
-    /// Register a model. The first model registered becomes the active model.
-    /// Overwrites any model with the same name.
     pub fn with_model(mut self, model: Model) -> Self {
-        if self.active_model.is_empty() {
-            self.active_model.clone_from(&model.name);
+        if !self.models.contains_key(&model.name) {
+            self.model_order.push(model.name.clone());
         }
         self.models.insert(model.name.clone(), model);
         self
     }
 
-    /// Enable a tool. Idempotent.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the tool is not registered.
-    pub fn enable(&mut self, name: impl Into<String>) {
-        let name = name.into();
-        assert!(
-            self.tools.contains_key(&name),
-            "tool '{name}' not registered"
-        );
-        self.active_tools.insert(name);
+    pub fn deactivate_model(&mut self) {
+        self.active_model.clear();
     }
 
-    /// Disable a tool.
+    pub fn deactivate_tools(&mut self) {
+        self.active_tools.clear();
+    }
+
+    pub fn enable(&mut self, name: impl Into<String>) -> Result<(), ToolNotRegistered> {
+        let name = name.into();
+        if self.tool_definitions.contains_key(&name) {
+            self.active_tools.insert(name);
+            Ok(())
+        } else {
+            Err(ToolNotRegistered(name))
+        }
+    }
+
     pub fn disable(&mut self, name: impl Into<String>) {
         self.active_tools.remove(&name.into());
     }
 
-    /// Switch the active model. Returns the previous active-model name on
-    /// success, or [`ModelNotRegistered`] if no model with that name has been
-    /// registered.
-    pub fn use_model(&mut self, name: impl Into<String>) -> Result<String, ModelNotRegistered> {
+    pub fn use_model(&mut self, name: impl Into<String>) -> Result<(), ModelNotRegistered> {
         let name = name.into();
-        if !self.models.contains_key(&name) {
-            return Err(ModelNotRegistered(name));
+        if self.models.contains_key(&name) {
+            self.active_model = name;
+            Ok(())
+        } else {
+            Err(ModelNotRegistered(name))
         }
-        let previous = std::mem::replace(&mut self.active_model, name);
-        Ok(previous)
     }
 
-    /// The currently active model, if any has been registered and selected.
-    ///
-    /// Returns `None` when no model has been registered, or when the active
-    /// name does not point at a registered model (which can only happen if
-    /// `active_model` was mutated through public field access — kept here for
-    /// safety).
     pub fn active_model(&self) -> Option<&Model> {
-        if self.active_model.is_empty() {
-            return None;
-        }
         self.models.get(&self.active_model)
     }
 
-    /// All active tools.
-    pub fn active_tools(&self) -> Vec<&dyn Tool> {
+    pub fn active_tool_definitions(&self) -> Vec<&ToolDefinition> {
         self.active_tools
             .iter()
-            .filter_map(|name| self.tools.get(name))
-            .map(|t| t.as_ref())
+            .filter_map(|name| self.tool_definitions.get(name))
             .collect()
     }
 
-    /// Look up an active tool by name.
-    pub fn lookup(&self, name: &str) -> Option<&dyn Tool> {
-        if !self.active_tools.contains(name) {
-            return None;
+    pub fn lookup(&self, name: &str) -> LookupResult {
+        if !self.tool_definitions.contains_key(name) {
+            LookupResult::NotFound
+        } else if self.active_tools.contains(name) {
+            LookupResult::Active
+        } else {
+            LookupResult::Inactive
         }
-        self.tools.get(name).map(|t| t.as_ref())
+    }
+
+    pub fn tool_definition(&self, name: &str) -> Option<&ToolDefinition> {
+        self.tool_definitions.get(name)
     }
 }
 
-/// Returned by [`Resources::use_model`] when the requested model has not been
-/// registered. Carries the offending name so the caller can build a useful
-/// hitch / error message.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LookupResult {
+    Active,
+    Inactive,
+    NotFound,
+}
+
+#[derive(Debug)]
 pub struct ModelNotRegistered(pub String);
 
-impl std::fmt::Display for ModelNotRegistered {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ModelNotRegistered {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "model '{}' not registered", self.0)
     }
 }
 
 impl std::error::Error for ModelNotRegistered {}
+
+#[derive(Debug)]
+pub struct ToolNotRegistered(pub String);
+
+impl fmt::Display for ToolNotRegistered {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "tool '{}' not registered", self.0)
+    }
+}
+
+impl std::error::Error for ToolNotRegistered {}

@@ -65,6 +65,15 @@ pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: Value,
+    /// Reasoning text the model emitted alongside this tool call.
+    ///
+    /// Thinking-mode providers (DeepSeek, Kimi Coding, …) return reasoning
+    /// content on assistant turns and **require it to be echoed back** on
+    /// subsequent requests that include this turn as history. Captured by
+    /// `completion::decode` from `AssistantContent::Reasoning` and re-emitted
+    /// by `completion::encode`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
 }
 
 /// Outcome of a tool execution.
@@ -88,21 +97,18 @@ pub enum Content {
     Document(Document),
     ToolCall(ToolCall),
     ToolResult(ToolResult),
-    /// Execution error that Policy may intercept for retry decisions.
     Hitch {
         message: String,
-        retryable: bool,
+        /// ID of the originating tool call, if this hitch is a tool error.
+        call_id: Option<String>,
+        /// HTTP status code for retry strategy (Policy decides permanent vs transient).
         code: Option<u16>,
     },
 }
 
 /// A symbol on the context tape.
 ///
-/// `id` is assigned by [`Context`](crate::Context) on storage and should not be
-/// set directly — mutating the id would break the context's internal invariants.
-/// The `role`, `tag`, and `content` fields are public but effectively read-only
-/// after construction; the only way to modify a fragment in a context is through
-/// [`Action`](crate::Action) variants applied by [`Machine`](crate::Machine).
+/// `id` is assigned by [`Context`](crate::Context) on storage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fragment {
     pub(crate) id: u64,
@@ -162,15 +168,28 @@ impl Fragment {
     }
 
     /// Creates a [`Content::Hitch`] fragment.
-    pub fn hitch(message: impl Into<String>) -> Self {
+    ///
+    /// `code` is an optional HTTP status code from the failed request.
+    /// `call_id` is the originating tool call ID when this hitch represents a
+    /// tool error; required for `completion::encode` to emit a valid
+    /// `role: "tool"` message.
+    /// `code` and `role` convey the failure context for Policy. Role should
+    /// match the origin: tool errors → [`Role::Tool`], LLM errors →
+    /// [`Role::Assistant`], system errors → [`Role::System`].
+    pub fn hitch(
+        message: impl Into<String>,
+        code: Option<u16>,
+        role: Role,
+        call_id: Option<impl Into<String>>,
+    ) -> Self {
         Self {
             id: 0,
-            role: Role::System,
+            role,
             tag: "hitch".into(),
             content: Content::Hitch {
                 message: message.into(),
-                retryable: false,
-                code: None,
+                call_id: call_id.map(Into::into),
+                code,
             },
         }
     }
@@ -184,7 +203,58 @@ impl Fragment {
                 id: id.into(),
                 name: name.into(),
                 arguments,
+                reasoning: None,
             }),
+        }
+    }
+
+    /// Attach reasoning text to this fragment when it carries a [`Content::ToolCall`].
+    ///
+    /// No-op on other content variants. Used by `completion::decode` to
+    /// preserve the model's `reasoning_content` so it can be echoed back on
+    /// the next request for thinking-mode providers.
+    pub fn with_reasoning(mut self, reasoning: impl Into<String>) -> Self {
+        if let Content::ToolCall(ref mut tc) = self.content {
+            tc.reasoning = Some(reasoning.into());
+        }
+        self
+    }
+
+    // ── Multi-modal constructors (P2) ──
+
+    pub fn image(source: DataSource, media_type: Option<String>) -> Self {
+        Self {
+            id: 0,
+            role: Role::User,
+            tag: "image".into(),
+            content: Content::Image(Image { source, media_type }),
+        }
+    }
+
+    pub fn audio(source: DataSource, media_type: Option<String>) -> Self {
+        Self {
+            id: 0,
+            role: Role::User,
+            tag: "audio".into(),
+            content: Content::Audio(Audio { source, media_type }),
+        }
+    }
+
+    pub fn video(source: DataSource, media_type: Option<String>) -> Self {
+        Self {
+            id: 0,
+            role: Role::User,
+            tag: "video".into(),
+            content: Content::Video(Video { source, media_type }),
+        }
+    }
+
+    pub fn document(source: DataSource, media_type: Option<String>) -> Self {
+        Self {
+            id: 0,
+            role: Role::User,
+            tag: "document".into(),
+            content: Content::Document(Document { source, media_type }),
         }
     }
 
@@ -199,6 +269,29 @@ impl Fragment {
         match &self.content {
             Content::Text(text) => Some(&text.text),
             _ => None,
+        }
+    }
+
+    /// Full text content suitable for external consumption (embedding, logging).
+    ///
+    /// Returns the complete text content for all Fragment types:
+    /// - Text/ToolResult/Hitch: the actual text content
+    /// - ToolCall: `tool_call: name(arguments)`
+    /// - Multi-modal (Image, Audio, Video, Document): placeholder tags like
+    ///   `"<image>"`, `"<audio>"`. These are **not** suitable for direct
+    ///   embedding — downstream consumers (RL observations, prompt builders)
+    ///   should replace placeholders with actual content or metadata from
+    ///   the Content variant as needed.
+    pub fn content_as_text(&self) -> String {
+        match &self.content {
+            Content::Text(t) => t.text.clone(),
+            Content::ToolCall(tc) => format!("tool_call: {}({})", tc.name, tc.arguments),
+            Content::ToolResult(tr) => tr.content.clone(),
+            Content::Hitch { message, .. } => message.clone(),
+            Content::Image(_) => "<image>".into(),
+            Content::Audio(_) => "<audio>".into(),
+            Content::Video(_) => "<video>".into(),
+            Content::Document(_) => "<document>".into(),
         }
     }
 }

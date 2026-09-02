@@ -53,11 +53,15 @@ fn final_message(ctx: &Context) -> Option<&str> {
 }
 
 fn print_fragment(role: Role, content: &Content) {
-    let tag = match role {
-        Role::System => "system",
-        Role::User => "user",
-        Role::Assistant => "assistant",
-        Role::Tool => "tool",
+    let tag = match content {
+        Content::ToolCall(_) => "tool_call",
+        Content::ToolResult(_) => "tool_result",
+        _ => match role {
+            Role::System => "system",
+            Role::User => "user",
+            Role::Assistant => "assistant",
+            Role::Tool => "tool",
+        },
     };
 
     match content {
@@ -79,14 +83,9 @@ fn print_fragment(role: Role, content: &Content) {
         Content::Audio(audio) => println!("[{tag}] <audio {:?}>", audio.media_type),
         Content::Video(video) => println!("[{tag}] <video {:?}>", video.media_type),
         Content::Document(document) => println!("[{tag}] <document {:?}>", document.media_type),
-        Content::Hitch {
-            message,
-            retryable,
-            code,
-        } => {
-            let retry = if *retryable { " (retryable)" } else { "" };
-            let status = code.map(|code| format!(" HTTP {code}")).unwrap_or_default();
-            println!("[{tag}] hitch{}{} {message}", status, retry);
+        Content::Hitch { message, code, .. } => {
+            let status = code.map(|c| format!(" HTTP {c}")).unwrap_or_default();
+            println!("[{tag}] hitch{status} {message}");
         }
     }
 }

@@ -86,14 +86,9 @@ fn content_json(content: &Content) -> serde_json::Value {
         Content::Document(document) => {
             json!({ "type": "document", "media_type": format!("{:?}", document.media_type) })
         }
-        Content::Hitch {
-            message,
-            retryable,
-            code,
-        } => json!({
+        Content::Hitch { message, code, .. } => json!({
             "type": "hitch",
             "message": message,
-            "retryable": retryable,
             "code": code,
         }),
     }

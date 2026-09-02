@@ -1,14 +1,15 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use crate::context::Context;
-use crate::env::Environment;
+use serde::{Deserialize, Serialize};
+
 use crate::fragment::Fragment;
 use crate::inbox::Inbox;
-use crate::purpose::Purpose;
-use crate::resources::Resources;
+use crate::machine::{MachineStatus, RunState};
+use crate::obs::Obs;
+use crate::overlay::Overlay;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     Append(Fragment),
     Insert { after: u64, fragment: Fragment },
@@ -23,29 +24,64 @@ pub enum Action {
     Done,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum PhaseOutcome {
-    Action(Action),
-    Done,
-}
-
-pub trait Phase: Send + Sync {
-    fn clone_box(&self) -> Box<dyn Phase>;
-    fn name(&self) -> &str;
-
-    fn decide(
-        &self,
-        purpose: &Purpose,
-        ctx: &Context,
-        env: &Environment,
-        resources: &Resources,
-    ) -> PhaseOutcome;
-}
-
-impl Clone for Box<dyn Phase> {
-    fn clone(&self) -> Self {
-        self.clone_box()
+impl Action {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Action::Append(_) => "append",
+            Action::Insert { .. } => "insert",
+            Action::Replace { .. } => "replace",
+            Action::Remove(_) => "remove",
+            Action::Swap(..) => "swap",
+            Action::Model(_) => "model",
+            Action::Activate(_) => "activate",
+            Action::Deactivate(_) => "deactivate",
+            Action::Take => "take",
+            Action::Halt => "halt",
+            Action::Done => "done",
+        }
     }
+
+    pub fn is_done(&self) -> bool {
+        matches!(self, Action::Done)
+    }
+
+    pub fn verb(&self) -> &'static str {
+        match self {
+            Action::Append(_) => "Append",
+            Action::Insert { .. } => "Insert",
+            Action::Replace { .. } => "Replace",
+            Action::Remove(_) => "Remove",
+            Action::Swap(..) => "Swap",
+            Action::Model(_) => "Model",
+            Action::Activate(_) => "Activate",
+            Action::Deactivate(_) => "Deactivate",
+            Action::Take => "Take",
+            Action::Halt => "Halt",
+            Action::Done => "Done",
+        }
+    }
+}
+
+pub const ACTION_VERBS: &[&str] = &[
+    "Append",
+    "Insert",
+    "Replace",
+    "Remove",
+    "Swap",
+    "Model",
+    "Activate",
+    "Deactivate",
+    "Take",
+    "Halt",
+    "Done",
+];
+
+pub struct PolicyView<'a> {
+    pub run: &'a RunState,
+    pub inbox: &'a Inbox,
+    pub step: u64,
+    pub status: MachineStatus,
+    pub obs: &'a Obs,
 }
 
 pub trait Policy: Send + Sync {
@@ -55,30 +91,18 @@ pub trait Policy: Send + Sync {
         "policy"
     }
 
-    fn pre(&self) -> Vec<Box<dyn Phase>> {
-        Vec::new()
-    }
-
-    fn post(&self) -> Vec<Box<dyn Phase>> {
-        Vec::new()
-    }
-
-    fn pre_halt(&self) -> Vec<Box<dyn Phase>> {
-        Vec::new()
-    }
-
-    fn post_halt(&self) -> Vec<Box<dyn Phase>> {
-        Vec::new()
-    }
-
     fn decide<'a>(
         &'a self,
-        purpose: &'a Purpose,
-        ctx: &'a Context,
-        env: &'a Environment,
-        resources: &'a Resources,
-        inbox: &'a Inbox,
+        view: PolicyView<'a>,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>>;
+
+    /// Projection declared for the next completion request. Consumed only
+    /// at Halt; never materialized on the tape; re-derived every turn.
+    /// Empty by default — policies that do not opt in produce requests
+    /// byte-identical to pre-overlay behavior.
+    fn overlay(&self, _view: &PolicyView<'_>) -> Overlay {
+        Overlay::default()
+    }
 }
 
 impl Clone for Box<dyn Policy> {

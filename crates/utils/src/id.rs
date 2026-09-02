@@ -95,9 +95,8 @@ impl std::error::Error for IdError {}
 
 define_id!(GraphId, "graph_");
 define_id!(AcceleratorId, "accel_");
+define_id!(MachineId, "rcm_");
 define_id!(FluxId, "flux_");
 define_id!(ConditionId, "cond_");
-define_id!(AssemblyId, "asm_");
-define_id!(SlotId, "slot_");
 define_id!(EnvironmentId, "env_");
 define_id!(ResourcesId, "res_");

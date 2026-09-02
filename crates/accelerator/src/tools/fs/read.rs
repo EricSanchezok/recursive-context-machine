@@ -8,6 +8,8 @@ use super::{
     DEFAULT_READ_LIMIT, MAX_LINE_LENGTH, OUTPUT_CAP_BYTES, guard, relative_path, resolve_path,
 };
 
+use chrono::{TimeZone, Utc};
+
 /// File extensions known to be binary — no content is readable.
 const BINARY_EXTENSIONS: &[&str] = &[
     "zip", "tar", "gz", "exe", "dll", "so", "class", "jar", "war", "7z", "doc", "xls", "ppt",
@@ -29,7 +31,7 @@ pub(crate) fn execute<'a>(
             .as_str()
             .ok_or("missing required parameter 'filePath'")?;
 
-        let resolved = resolve_path(raw_path, &env.cwd);
+        let resolved = resolve_path(raw_path, env)?;
 
         // Stat the file (handles not-found with suggestions).
         let metadata = match tokio::fs::metadata(&resolved).await {
@@ -51,6 +53,23 @@ pub(crate) fn execute<'a>(
             let lower = ext.to_ascii_lowercase();
             if BINARY_EXTENSIONS.contains(&lower.as_str()) {
                 return Err(format!("Cannot read binary file: {}", resolved.display()));
+            }
+            if lower == "pdf" {
+                // PDFs are read by extracting text with a safe pdftotext wrapper
+                // (no shell is exposed to the model).
+                let text = super::pdf::extract_pdf_text(&resolved).await?;
+                let offset = args["offset"].as_u64().unwrap_or(0) as usize;
+                let limit = args["limit"].as_u64().unwrap_or(DEFAULT_READ_LIMIT as u64) as usize;
+                let path_str = relative_path(&resolved, &env.cwd);
+                let mut output = stat_header(&metadata, &path_str);
+                output.push('\n');
+                output.push_str(&format_lines(&text, offset, limit, &path_str));
+                guard::mark_read(env.name.as_str(), &resolved);
+                return Ok(ToolResult {
+                    call_id: String::new(),
+                    content: output,
+                    title: Some(path_str),
+                });
             }
             if DOCUMENT_EXTENSIONS.contains(&lower.as_str()) {
                 return Err(format!(
@@ -80,7 +99,10 @@ pub(crate) fn execute<'a>(
         let limit = args["limit"].as_u64().unwrap_or(DEFAULT_READ_LIMIT as u64) as usize;
 
         let path_str = relative_path(&resolved, &env.cwd);
-        let output = format_lines(&text, offset, limit, &path_str);
+        let mut output = stat_header(&metadata, &path_str);
+        output.push('\n');
+        let content = format_lines(&text, offset, limit, &path_str);
+        output.push_str(&content);
 
         guard::mark_read(env.name.as_str(), &resolved);
         let lsp_env = env.clone();
@@ -156,6 +178,39 @@ async fn build_not_found_message(resolved: &Path) -> String {
     }
 
     message
+}
+
+/// Build the stat header for a file.
+fn stat_header(metadata: &std::fs::Metadata, title: &str) -> String {
+    let file_type = if metadata.is_dir() {
+        "directory"
+    } else if metadata.is_symlink() {
+        "symlink"
+    } else {
+        "file"
+    };
+    let bytes = metadata.len();
+    let size = if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    };
+    let modified = metadata.modified().ok().map(|t| {
+        let dur = t.duration_since(std::time::UNIX_EPOCH).ok();
+        dur.and_then(|d| {
+            Utc.timestamp_opt(d.as_secs() as i64, d.subsec_nanos())
+                .single()
+        })
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+    });
+    let modified = modified.as_deref().unwrap_or("unknown");
+
+    format!(
+        "Path: {title}\nType: {file_type}\nSize: {size} ({bytes} bytes)\nModified: {modified}\n\n"
+    )
 }
 
 /// Build the `<file>`-wrapped line-numbered output.

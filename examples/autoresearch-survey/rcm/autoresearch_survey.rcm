@@ -1,0 +1,79 @@
+name = "Autoresearch Survey Pipeline"
+
+use "./anchor.rcm" as Anchor
+use "./query_plan.rcm" as QueryPlan
+use "./discovery.rcm" as Discovery
+use "./expansion.rcm" as Expansion
+use "./rank_pool.rcm" as RankPool
+use "./card_plan.rcm" as CardPlan
+use "./paper_card.rcm" as PaperCard
+use "./research_map.rcm" as ResearchMap
+use "./judge_panel.rcm" as JudgePanel
+use "./image_planner.rcm" as ImagePlanner
+use "./survey_outline.rcm" as SurveyOutline
+use "./section_expander.rcm" as SectionExpander
+use "./survey_assembler.rcm" as SurveyAssembler
+use "./zh_frame.rcm" as ZhFrame
+use "./section_translator.rcm" as SectionTranslator
+use "./zh_assemble.rcm" as ZhAssemble
+
+graph {
+    accelerator anchor = Anchor
+    accelerator query_plan = QueryPlan
+    accelerator discovery = Discovery
+    accelerator expansion = Expansion
+    accelerator rank_pool = RankPool
+    // CardPlan gets spawn_PaperCard so its LLM dispatches paper_card workers.
+    accelerator card_plan = CardPlan { spawns = ["PaperCard"] }
+    accelerator research_map = ResearchMap
+    accelerator judge_panel = JudgePanel
+    accelerator image_planner = ImagePlanner
+    // SurveyOutline gets spawn_SectionExpander so its LLM dispatches section writers.
+    accelerator survey_outline = SurveyOutline { spawns = ["SectionExpander"] }
+    accelerator survey_assembler = SurveyAssembler
+    // ZhFrame gets spawn_SectionTranslator so its LLM dispatches translators.
+    accelerator zh_frame = ZhFrame { spawns = ["SectionTranslator"] }
+    accelerator zh_assemble = ZhAssemble
+
+    input.purpose -> anchor.purpose
+
+    anchor.context -> query_plan.context
+    anchor.done -> query_plan.trigger
+
+    query_plan.context -> discovery.context
+    query_plan.done -> discovery.trigger
+
+    discovery.context -> expansion.context
+    discovery.done -> expansion.trigger
+
+    expansion.context -> rank_pool.context
+    expansion.done -> rank_pool.trigger
+
+    rank_pool.context -> card_plan.context
+    rank_pool.done -> card_plan.trigger
+
+    card_plan.context -> research_map.context
+    card_plan.done -> research_map.trigger
+
+    research_map.context -> judge_panel.context
+    research_map.done -> judge_panel.trigger
+
+    judge_panel.context -> image_planner.context
+    judge_panel.done -> image_planner.trigger
+
+    image_planner.context -> survey_outline.context
+    image_planner.done -> survey_outline.trigger
+
+    survey_outline.context -> survey_assembler.context
+    survey_outline.done -> survey_assembler.trigger
+
+    survey_assembler.context -> zh_frame.context
+    survey_assembler.done -> zh_frame.trigger
+
+    zh_frame.context -> zh_assemble.context
+    zh_frame.done -> zh_assemble.trigger
+
+    survey_assembler.done -> output.done
+    survey_assembler.context -> output.context
+    survey_assembler.purpose -> output.purpose
+}

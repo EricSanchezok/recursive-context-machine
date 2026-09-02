@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-const DEFAULT_TIMEOUT_SECS: u64 = 180;
+pub const DEFAULT_MODEL_TIMEOUT_SECS: u64 = 1_800;
 
 /// LLM configuration.
 ///
@@ -29,6 +29,14 @@ pub struct Model {
     pub modalities: Option<Modalities>,
     /// Request timeout in seconds.
     pub timeout: u64,
+    /// Extra HTTP headers sent with every request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<HashMap<String, String>>,
+    /// Provider requires a `reasoning_content` field alongside tool calls
+    /// (e.g. Kimi Coding with thinking enabled). Off by default; most
+    /// OpenAI-compatible providers reject or ignore the field.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub thinking: bool,
     #[serde(flatten, default, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, Value>,
 }
@@ -44,9 +52,21 @@ impl Default for Model {
             limit: None,
             cost: None,
             modalities: None,
-            timeout: DEFAULT_TIMEOUT_SECS,
+            timeout: DEFAULT_MODEL_TIMEOUT_SECS,
+            headers: None,
+            thinking: false,
             extra: HashMap::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Model;
+
+    #[test]
+    fn model_default_timeout_allows_thirty_minute_requests() {
+        assert_eq!(Model::default().timeout, 1_800);
     }
 }
 

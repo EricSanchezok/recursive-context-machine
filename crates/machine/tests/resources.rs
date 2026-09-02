@@ -1,54 +1,162 @@
-//! Tests for `Resources::active_model` and `Resources::use_model` after the
-//! API hardening: they must return `Option` / `Result` rather than panic.
+use machine::{LookupResult, Resources, Tool, ToolDefinition, ToolResult};
+use serde_json::json;
+use std::sync::Arc;
 
-#[allow(dead_code)]
-mod common;
-
-use common::test_model;
-use machine::{Model, ModelNotRegistered, Resources};
-
-#[test]
-fn active_model_is_none_when_empty() {
-    let resources = Resources::new();
-    assert!(resources.active_model().is_none());
-}
-
-#[test]
-fn first_with_model_becomes_active() {
-    let resources = Resources::new().with_model(test_model());
-    let active = resources.active_model().expect("should have active");
-    assert_eq!(active.name, "test");
-}
-
-#[test]
-fn use_model_switches_active() {
-    let mut resources = Resources::new()
-        .with_model(test_model())
-        .with_model(Model {
-            name: "other".into(),
-            ..Default::default()
-        });
-    assert_eq!(resources.active_model().unwrap().name, "test");
-
-    let previous = resources.use_model("other").expect("registered");
-    assert_eq!(previous, "test");
-    assert_eq!(resources.active_model().unwrap().name, "other");
-}
-
-#[test]
-fn use_model_unknown_returns_error_not_panic() {
-    let mut resources = Resources::new().with_model(test_model());
-    let result = resources.use_model("nope");
-    match result {
-        Err(ModelNotRegistered(name)) => assert_eq!(name, "nope"),
-        Ok(_) => panic!("expected error for unknown model"),
+struct TestTool;
+impl Tool for TestTool {
+    fn name(&self) -> &str {
+        "test"
     }
-    // Active model unchanged after the failed switch.
-    assert_eq!(resources.active_model().unwrap().name, "test");
+    fn description(&self) -> &str {
+        "test tool"
+    }
+    fn parameters(&self) -> serde_json::Value {
+        json!({})
+    }
+    fn execute<'a>(
+        &'a self,
+        _args: serde_json::Value,
+        _env: &machine::Environment,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ToolResult, String>> + Send + 'a>>
+    {
+        Box::pin(async {
+            Ok(ToolResult {
+                call_id: String::new(),
+                content: String::new(),
+                title: None,
+            })
+        })
+    }
+}
+
+struct AnotherTool;
+impl Tool for AnotherTool {
+    fn name(&self) -> &str {
+        "other"
+    }
+    fn description(&self) -> &str {
+        "another tool"
+    }
+    fn parameters(&self) -> serde_json::Value {
+        json!({})
+    }
+    fn execute<'a>(
+        &'a self,
+        _args: serde_json::Value,
+        _env: &machine::Environment,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ToolResult, String>> + Send + 'a>>
+    {
+        Box::pin(async {
+            Ok(ToolResult {
+                call_id: String::new(),
+                content: String::new(),
+                title: None,
+            })
+        })
+    }
+}
+
+fn tool() -> Arc<dyn Tool> {
+    Arc::new(TestTool)
+}
+fn other_tool() -> Arc<dyn Tool> {
+    Arc::new(AnotherTool)
+}
+fn tool_definition() -> ToolDefinition {
+    ToolDefinition::from_tool(tool().as_ref())
+}
+fn other_tool_definition() -> ToolDefinition {
+    ToolDefinition::from_tool(other_tool().as_ref())
 }
 
 #[test]
-fn model_not_registered_error_includes_name() {
-    let error = ModelNotRegistered("missing-x".into());
-    assert!(error.to_string().contains("missing-x"));
+fn enable_makes_lookup_active() {
+    let mut res = Resources::new().with_tool_definition(tool_definition());
+    assert_eq!(res.lookup("test"), LookupResult::Inactive);
+    res.enable("test").unwrap();
+    assert_eq!(res.lookup("test"), LookupResult::Active);
+}
+
+#[test]
+fn disable_makes_lookup_inactive() {
+    let mut res = Resources::new().with_tool_definition(tool_definition());
+    res.enable("test").unwrap();
+    assert_eq!(res.lookup("test"), LookupResult::Active);
+    res.disable("test");
+    assert_eq!(res.lookup("test"), LookupResult::Inactive);
+}
+
+#[test]
+fn enable_nonexistent_returns_err() {
+    let mut res = Resources::new();
+    assert!(res.enable("nonexistent").is_err());
+}
+
+#[test]
+fn lookup_active_implies_definition_exists() {
+    let mut res = Resources::new()
+        .with_tool_definition(tool_definition())
+        .with_tool_definition(other_tool_definition());
+    res.enable("test").unwrap();
+    res.enable("other").unwrap();
+    for name in &["test", "other"] {
+        assert_eq!(res.lookup(name), LookupResult::Active);
+        assert!(
+            res.tool_definition(name).is_some(),
+            "tool_definition() must return Some for tool '{}' when lookup() == Active",
+            name
+        );
+    }
+}
+
+#[test]
+fn lookup_inactive_still_has_definition() {
+    let res = Resources::new().with_tool_definition(tool_definition());
+    assert_eq!(res.lookup("test"), LookupResult::Inactive);
+    assert!(
+        res.tool_definition("test").is_some(),
+        "inactive registered tools still keep their serializable definition"
+    );
+}
+
+#[test]
+fn lookup_not_found_has_no_definition() {
+    let res = Resources::new();
+    assert_eq!(res.lookup("nonexistent"), LookupResult::NotFound);
+    assert!(
+        res.tool_definition("nonexistent").is_none(),
+        "tool_definition() must return None when lookup() == NotFound"
+    );
+}
+
+#[test]
+fn inactive_hitch_mentions_disabled() {
+    use machine::Fragment;
+    use machine::fragment::Content;
+    let res = Resources::new().with_tool_definition(tool_definition());
+    assert_eq!(res.lookup("test"), LookupResult::Inactive);
+    let hitch = Fragment::hitch(
+        format!("tool '{}' is disabled — activate it before use", "test"),
+        None,
+        machine::Role::Tool,
+        Some(String::from("call_1")),
+    );
+    assert!(matches!(hitch.content, Content::Hitch { .. }));
+    assert!(hitch.content_as_text().contains("is disabled"));
+}
+
+#[test]
+fn not_found_hitch_mentions_not_found() {
+    use machine::Fragment;
+    use machine::fragment::Content;
+    let res = Resources::new();
+    assert_eq!(res.lookup("nonexistent"), LookupResult::NotFound);
+    let hitch = Fragment::hitch(
+        format!("tool '{}' not found", "nonexistent"),
+        None,
+        machine::Role::Tool,
+        None::<String>,
+    );
+    assert!(matches!(hitch.content, Content::Hitch { .. }));
+    assert!(hitch.content_as_text().contains("not found"));
 }

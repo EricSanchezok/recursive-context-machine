@@ -1,7 +1,5 @@
 mod id;
 mod name;
 
-pub use id::{
-    AcceleratorId, AssemblyId, ConditionId, EnvironmentId, FluxId, GraphId, ResourcesId, SlotId,
-};
+pub use id::{AcceleratorId, ConditionId, EnvironmentId, FluxId, GraphId, MachineId, ResourcesId};
 pub use name::{Name, NameError};

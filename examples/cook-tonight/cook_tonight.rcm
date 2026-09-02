@@ -1,0 +1,23 @@
+name = "Cook Tonight"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+mcp anysearch {
+    transport = http
+    url = "https://api.anysearch.com/mcp"
+}
+
+accelerator {
+    purpose = "one-shot dinner decision assistant"
+    models = ["deepseek-v4-flash"]
+    policy = "captain"
+    prompts = { captain = file "./prompts/cook_tonight.txt" }
+    tools = ["fs", "find"]
+    mcps = ["anysearch"]
+}

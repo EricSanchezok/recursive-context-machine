@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -24,13 +25,24 @@ pub(crate) struct StdioTransport {
 }
 
 impl StdioTransport {
-    pub(crate) async fn spawn(command: &str, args: &[String]) -> Result<Self, String> {
-        let mut child = tokio::process::Command::new(command)
+    pub(crate) async fn spawn(
+        command: &str,
+        args: &[String],
+        env: &HashMap<String, String>,
+        cwd: Option<&Path>,
+    ) -> Result<Self, String> {
+        let mut process = tokio::process::Command::new(command);
+        process
             .args(args)
+            .envs(env)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        if let Some(cwd) = cwd {
+            process.current_dir(cwd);
+        }
+        let mut child = process
             .spawn()
             .map_err(|e| format!("failed to spawn MCP server '{}': {}", command, e))?;
 
@@ -139,11 +151,27 @@ impl StdioTransport {
     }
 
     pub(crate) async fn list_tools(&self) -> Result<Vec<Value>, String> {
-        let result: Value = self.call_raw("tools/list", json!({})).await?;
-        let tools = result["tools"]
-            .as_array()
-            .ok_or_else(|| "tools/list returned non-array 'tools'".to_string())?;
-        Ok(tools.clone())
+        let mut cursor = None;
+        let mut tools = Vec::new();
+        loop {
+            let params = cursor
+                .take()
+                .map(|cursor| json!({ "cursor": cursor }))
+                .unwrap_or_else(|| json!({}));
+            let result: Value = self.call_raw("tools/list", params).await?;
+            let page = result["tools"]
+                .as_array()
+                .ok_or_else(|| "tools/list returned non-array 'tools'".to_string())?;
+            tools.extend(page.iter().cloned());
+            cursor = result
+                .get("nextCursor")
+                .and_then(|value| value.as_str())
+                .map(ToOwned::to_owned);
+            if cursor.is_none() {
+                break;
+            }
+        }
+        Ok(tools)
     }
 
     pub(crate) async fn call(&self, method: &str, params: Value) -> Result<Value, String> {

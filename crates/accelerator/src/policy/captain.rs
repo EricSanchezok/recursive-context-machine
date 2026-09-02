@@ -1,30 +1,60 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU8, Ordering};
 
-use machine::{Action, Context, Environment, Inbox, Phase, Policy, Purpose, Resources, Role};
-use tracing::trace;
+use machine::{Action, Context, Environment, Policy, PolicyView, Purpose, Resources};
 
-use super::phases::{self, Bootstrap, Env, Instructions};
+use super::retry::Retry;
+use super::{Step, moves};
+use moves::react::ReactDecision;
 
-/// Captain — a simple single-agent Policy.
-///
-/// Decides purely based on inbox state and the last fragment in context:
-///
-///   Inbox not empty  → Take (drain one fragment into context)
-///   Inbox empty:
-///     last in context is Tool  → Halt (tool was just run, show LLM the result)
-///     last in context is not Tool, first call already happened → Done
-///     first call ever → Halt (kick off the LLM)
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    Agent = 0,
+    Instruction = 1,
+    Environment = 2,
+    Purpose = 3,
+    Resources = 4,
+    Respond = 5,
+    Running = 6,
+}
+
+impl Phase {
+    fn from_u8(value: u8) -> Self {
+        match value {
+            0 => Self::Agent,
+            1 => Self::Instruction,
+            2 => Self::Environment,
+            3 => Self::Purpose,
+            4 => Self::Resources,
+            5 => Self::Respond,
+            _ => Self::Running,
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Agent => Self::Instruction,
+            Self::Instruction => Self::Environment,
+            Self::Environment => Self::Purpose,
+            Self::Purpose => Self::Resources,
+            Self::Resources => Self::Respond,
+            Self::Respond => Self::Running,
+            Self::Running => Self::Running,
+        }
+    }
+}
+
 pub struct Captain {
-    started: std::sync::atomic::AtomicBool,
+    phase: AtomicU8,
+    retry: Retry,
 }
 
 impl Clone for Captain {
     fn clone(&self) -> Self {
         Self {
-            started: std::sync::atomic::AtomicBool::new(
-                self.started.load(std::sync::atomic::Ordering::Relaxed),
-            ),
+            phase: AtomicU8::new(Phase::Agent as u8),
+            retry: self.retry.clone(),
         }
     }
 }
@@ -32,7 +62,8 @@ impl Clone for Captain {
 impl Default for Captain {
     fn default() -> Self {
         Self {
-            started: std::sync::atomic::AtomicBool::new(false),
+            phase: AtomicU8::new(Phase::Agent as u8),
+            retry: Retry::default(),
         }
     }
 }
@@ -40,6 +71,58 @@ impl Default for Captain {
 impl Captain {
     pub fn new() -> Self {
         Self::default()
+    }
+}
+
+impl Captain {
+    fn phase(&self) -> Phase {
+        Phase::from_u8(self.phase.load(Ordering::Relaxed))
+    }
+
+    fn enter(&self, phase: Phase) {
+        self.phase.store(phase as u8, Ordering::Relaxed);
+    }
+
+    fn advance(&self) {
+        self.enter(self.phase().next());
+    }
+
+    fn drive(&self, step: Step) -> Option<Action> {
+        match step {
+            Step::Emit(action) => Some(action),
+            Step::Ready => {
+                self.advance();
+                None
+            }
+        }
+    }
+
+    fn setup(
+        &self,
+        ctx: &Context,
+        env: &Environment,
+        resources: &Resources,
+        purpose: &Purpose,
+    ) -> Option<Action> {
+        loop {
+            let step = match self.phase() {
+                Phase::Agent => moves::agent::prepare(ctx, resources, "captain"),
+                Phase::Instruction => moves::instruction::load(ctx),
+                Phase::Environment => moves::env::refresh(ctx, env),
+                Phase::Purpose => moves::purpose::append(ctx, purpose),
+                Phase::Resources => moves::resources::activate(resources),
+                _ => return None,
+            };
+
+            if let Some(action) = self.drive(step) {
+                return Some(action);
+            }
+        }
+    }
+
+    fn respond(&self) -> Action {
+        self.enter(Phase::Running);
+        Action::Halt
     }
 }
 
@@ -52,48 +135,29 @@ impl Policy for Captain {
         "captain"
     }
 
-    fn pre(&self) -> Vec<Box<dyn Phase>> {
-        vec![
-            Box::new(Bootstrap::new("captain")),
-            Box::new(Instructions),
-            Box::new(phases::Purpose),
-        ]
-    }
-
-    fn pre_halt(&self) -> Vec<Box<dyn Phase>> {
-        vec![Box::new(Env)]
-    }
-
     fn decide<'a>(
         &'a self,
-        _purpose: &'a Purpose,
-        ctx: &'a Context,
-        _env: &'a Environment,
-        _resources: &'a Resources,
-        inbox: &'a Inbox,
+        view: PolicyView<'a>,
     ) -> Pin<Box<dyn Future<Output = Action> + Send + 'a>> {
         Box::pin(async move {
-            if inbox.peek().is_some() {
-                return Action::Take;
+            if let Some(action) = self.setup(
+                &view.run.context,
+                &view.run.environment,
+                &view.run.resources,
+                &view.run.purpose,
+            ) {
+                return action;
             }
 
-            // Inbox is empty.
-            let not_started = !self
-                .started
-                .swap(true, std::sync::atomic::Ordering::Relaxed);
-            if not_started {
-                trace!("decide: first call, halting");
-                return Action::Halt;
+            if self.phase() == Phase::Respond {
+                return self.respond();
             }
 
-            match ctx.fragments().last().map(|f| f.role) {
-                Some(Role::Tool) => {
-                    trace!("decide: last is Tool, halting");
-                    Action::Halt
-                }
-                _ => {
-                    trace!("decide: done");
-                    Action::Done
+            match moves::react::decide(&view.run.context, view.inbox, &self.retry).await {
+                ReactDecision::Action(action) => action,
+                ReactDecision::Respond => {
+                    self.enter(Phase::Respond);
+                    self.respond()
                 }
             }
         })

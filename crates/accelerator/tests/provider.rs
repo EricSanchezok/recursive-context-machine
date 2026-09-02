@@ -18,7 +18,9 @@ struct EnvGuard {
 
 impl EnvGuard {
     fn new(keys: &[&'static str]) -> Self {
-        let lock = ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let lock = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let saved = keys
             .iter()
             .map(|key| (key.to_string(), std::env::var(key).ok()))
@@ -66,7 +68,10 @@ fn resolves_explicit_provider_slash_model() {
 
     let model = provider::resolve_model(Some("sii/gpt-4.1")).expect("resolve");
     assert_eq!(model.name, "sii/gpt-4.1");
-    assert_eq!(model.endpoint.as_deref(), Some("https://apicz.boyuerichdata.com/v1"));
+    assert_eq!(
+        model.endpoint.as_deref(),
+        Some("https://apicz.boyuerichdata.com/v1")
+    );
     assert_eq!(model.credentials.as_deref(), Some("sk-test"));
     // Cost / Limit / Modalities preserved from MODEL_PRESETS.
     assert!(model.cost.is_some());

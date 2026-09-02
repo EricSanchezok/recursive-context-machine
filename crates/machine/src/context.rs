@@ -1,13 +1,23 @@
+use serde::{Deserialize, Serialize};
+
 use crate::fragment::Fragment;
 
-/// The machine's context — an ordered sequence of fragments.
-///
-/// Each fragment is assigned a unique `id` when stored.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Context {
     cells: Vec<Fragment>,
     next_id: u64,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextIdNotFound(pub u64);
+
+impl std::fmt::Display for ContextIdNotFound {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "fragment id {} not found in context", self.0)
+    }
+}
+
+impl std::error::Error for ContextIdNotFound {}
 
 impl Default for Context {
     fn default() -> Self {
@@ -16,7 +26,6 @@ impl Default for Context {
 }
 
 impl Context {
-    /// Create an empty context. The first assigned id will be 1.
     pub fn new() -> Self {
         Self {
             cells: Vec::new(),
@@ -24,72 +33,60 @@ impl Context {
         }
     }
 
-    /// Append a fragment to the end, assigning it a fresh id.
-    ///
-    /// Returns the assigned id.
-    pub fn append(&mut self, mut fragment: Fragment) -> u64 {
-        let id = self.assign_id(&mut fragment);
-        self.cells.push(fragment);
+    pub fn append(&mut self, fragment: Fragment) -> u64 {
+        let id = self.next_id;
+        self.append_with_id(id, fragment);
         id
     }
 
-    /// Insert a fragment after the cell with the given id.
-    ///
-    /// Returns the assigned id of the new fragment.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `after` is not found in the context.
-    pub fn insert(&mut self, after: u64, mut fragment: Fragment) -> u64 {
-        let pos = self
-            .position_of(after)
-            .unwrap_or_else(|| panic!("id {} not found in context", after));
-        let new_id = self.assign_id(&mut fragment);
-        self.cells.insert(pos + 1, fragment);
-        new_id
+    pub fn append_with_id(&mut self, id: u64, mut fragment: Fragment) {
+        self.assign_specific_id(id, &mut fragment);
+        self.cells.push(fragment);
     }
 
-    /// Replace the fragment at the given id, preserving the id.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `id` is not found in the context.
-    pub fn replace(&mut self, id: u64, mut fragment: Fragment) {
-        let pos = self
-            .position_of(id)
-            .unwrap_or_else(|| panic!("id {} not found in context", id));
+    pub fn insert(&mut self, after: u64, fragment: Fragment) -> Result<u64, ContextIdNotFound> {
+        let new_id = self.next_id;
+        self.insert_with_id(after, new_id, fragment)?;
+        Ok(new_id)
+    }
+
+    pub fn insert_with_id(
+        &mut self,
+        after: u64,
+        id: u64,
+        mut fragment: Fragment,
+    ) -> Result<(), ContextIdNotFound> {
+        let position = self.position_of(after).ok_or(ContextIdNotFound(after))?;
+        self.assign_specific_id(id, &mut fragment);
+        self.cells.insert(position + 1, fragment);
+        Ok(())
+    }
+
+    pub fn replace(&mut self, id: u64, mut fragment: Fragment) -> Result<(), ContextIdNotFound> {
+        let position = self.position_of(id).ok_or(ContextIdNotFound(id))?;
         fragment.id = id;
-        self.cells[pos] = fragment;
+        self.cells[position] = fragment;
+        self.next_id = self.next_id.max(id + 1);
+        Ok(())
     }
 
-    /// Remove the fragment with the given id.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `id` is not found in the context.
-    pub fn remove(&mut self, id: u64) {
-        let pos = self
-            .position_of(id)
-            .unwrap_or_else(|| panic!("id {} not found in context", id));
-        self.cells.remove(pos);
+    pub fn remove(&mut self, id: u64) -> Result<(), ContextIdNotFound> {
+        let position = self.position_of(id).ok_or(ContextIdNotFound(id))?;
+        self.cells.remove(position);
+        Ok(())
     }
 
-    /// Swap the positions of two fragments by id.
-    ///
-    /// # Panics
-    ///
-    /// Panics if either id is not found in the context.
-    pub fn swap(&mut self, id1: u64, id2: u64) {
-        let i = self
-            .position_of(id1)
-            .unwrap_or_else(|| panic!("id {} not found in context", id1));
-        let j = self
-            .position_of(id2)
-            .unwrap_or_else(|| panic!("id {} not found in context", id2));
-        self.cells.swap(i, j);
+    pub fn swap(&mut self, first_id: u64, second_id: u64) -> Result<(), ContextIdNotFound> {
+        let first_position = self
+            .position_of(first_id)
+            .ok_or(ContextIdNotFound(first_id))?;
+        let second_position = self
+            .position_of(second_id)
+            .ok_or(ContextIdNotFound(second_id))?;
+        self.cells.swap(first_position, second_position);
+        Ok(())
     }
 
-    /// Clear all fragments. Id allocation continues (avoids collisions with external references).
     pub fn clear(&mut self) {
         self.cells.clear();
     }
@@ -102,35 +99,28 @@ impl Context {
         self.cells.is_empty()
     }
 
-    /// All fragments in insertion order.
     pub fn fragments(&self) -> &[Fragment] {
         &self.cells
     }
 
-    /// Find the index of a fragment by id.
     pub fn position_of(&self, id: u64) -> Option<usize> {
         self.cells.iter().position(|cell| cell.id == id)
     }
 
-    /// Get a fragment by id.
     pub fn get(&self, id: u64) -> Option<&Fragment> {
-        self.position_of(id).map(|i| &self.cells[i])
+        self.position_of(id).map(|index| &self.cells[index])
     }
 
-    /// Get a mutable reference to a fragment by id.
     pub fn get_mut(&mut self, id: u64) -> Option<&mut Fragment> {
-        self.position_of(id).map(|i| &mut self.cells[i])
+        self.position_of(id).map(|index| &mut self.cells[index])
     }
 
-    /// The next id that will be assigned.
     pub fn next_id(&self) -> u64 {
         self.next_id
     }
 
-    fn assign_id(&mut self, fragment: &mut Fragment) -> u64 {
-        let id = self.next_id;
+    fn assign_specific_id(&mut self, id: u64, fragment: &mut Fragment) {
         fragment.id = id;
-        self.next_id += 1;
-        id
+        self.next_id = self.next_id.max(id + 1);
     }
 }

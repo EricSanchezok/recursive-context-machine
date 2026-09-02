@@ -2,15 +2,24 @@
 name = "machine"
 version = "0.1.0"
 edition = "2024"
-description = "CM — Context Machine core primitives"
+publish = false
+description = "RCM machine — core context primitives"
+
+[package.metadata.cargo-machete]
+# Imported through its Rust crate name (`rig`), so source scanning cannot map
+# the dependency key back to `rig-core`.
+ignored = ["rig-core"]
 
 [dependencies]
-utils = { path = "../utils" }
+utils = { version = "0.1.0", path = "../utils" }
 tokio = { workspace = true }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-rig = { workspace = true }
-tracing = "0.1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+rig-core = { version = "0.36", features = ["reqwest", "rustls"] }
+http = "1"
+tracing = { workspace = true }
+base64 = "0.22"
+futures-util = "0.3"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt", "macros"] }
+tokio = { workspace = true, features = ["rt", "macros"] }

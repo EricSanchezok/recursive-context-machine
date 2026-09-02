@@ -1,0 +1,247 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (for example, v0.2.20)
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: 1
+  LINUX_BUILD_IMAGE: rust:bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa
+  LINUX_RUNTIME_IMAGE: debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: accelerate-x86_64-linux
+            archive: accelerate-x86_64-linux.tar.gz
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            name: accelerate-aarch64-linux
+            archive: accelerate-aarch64-linux.tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: accelerate-aarch64-darwin
+            archive: accelerate-aarch64-darwin.tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: accelerate-x86_64-darwin
+            archive: accelerate-x86_64-darwin.tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: accelerate-x86_64-windows
+            archive: accelerate-x86_64-windows.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        if: runner.os != 'Linux'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build in Debian Bookworm
+        if: runner.os == 'Linux'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          docker run --rm \
+            --platform linux/amd64 \
+            --env TARGET \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace \
+            "$LINUX_BUILD_IMAGE" \
+            bash -euxo pipefail -c '
+              if [ "$TARGET" = "aarch64-unknown-linux-gnu" ]; then
+                apt-get update
+                apt-get install -y --no-install-recommends \
+                  gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+              fi
+              rustup target add "$TARGET"
+              cargo build --release --bin accelerate --target "$TARGET" --locked
+            '
+
+      - name: Build on native runner
+        if: runner.os != 'Linux'
+        run: cargo build --release --bin accelerate --target ${{ matrix.target }} --locked
+
+      - name: Verify Linux x86_64 runtime compatibility
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          docker run --rm \
+            --platform linux/amd64 \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            "$LINUX_RUNTIME_IMAGE" \
+            /workspace/target/x86_64-unknown-linux-gnu/release/accelerate --help
+
+      - name: Package (tar.gz)
+        if: matrix.os != 'windows-latest'
+        run: tar czf "${{ matrix.archive }}" -C target/${{ matrix.target }}/release accelerate
+
+      - name: Package (zip)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: Compress-Archive -Path "target/${{ matrix.target }}/release/accelerate.exe" -DestinationPath "${{ matrix.archive }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.archive }}
+
+  publish:
+    name: Publish release and promotion PR
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve release tag
+        id: tag
+        env:
+          RELEASE_INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$RELEASE_INPUT_TAG" ]; then
+            TAG="$RELEASE_INPUT_TAG"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "release tag must match v<major>.<minor>.<patch>: $TAG" >&2; exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Validate tag provenance and CLI version
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git fetch origin dev --no-tags
+          TAG_COMMIT=$(git rev-parse "$TAG^{commit}")
+          DEV_COMMIT=$(git rev-parse origin/dev)
+          git merge-base --is-ancestor "$TAG_COMMIT" "$DEV_COMMIT" || {
+            echo "$TAG is not reachable from origin/dev" >&2
+            exit 1
+          }
+          CLI_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "cli") | .version')
+          EXPECTED_TAG="v${CLI_VERSION}"
+          [ "$TAG" = "$EXPECTED_TAG" ] || {
+            echo "tag $TAG does not match cli version $CLI_VERSION" >&2
+            exit 1
+          }
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum -- * | tee checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          files: dist/*
+          generate_release_notes: true
+
+      - name: Compute Formula hashes
+        id: hashes
+        working-directory: dist
+        run: |
+          {
+            echo "linux_x86=$(sha256sum accelerate-x86_64-linux.tar.gz | awk '{print $1}')"
+            echo "linux_arm=$(sha256sum accelerate-aarch64-linux.tar.gz | awk '{print $1}')"
+            echo "darwin_arm=$(sha256sum accelerate-aarch64-darwin.tar.gz | awk '{print $1}')"
+            echo "darwin_x86=$(sha256sum accelerate-x86_64-darwin.tar.gz | awk '{print $1}')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create release promotion branch
+        id: promotion
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          HASH_DARWIN_ARM: ${{ steps.hashes.outputs.darwin_arm }}
+          HASH_DARWIN_X86: ${{ steps.hashes.outputs.darwin_x86 }}
+          HASH_LINUX_ARM: ${{ steps.hashes.outputs.linux_arm }}
+          HASH_LINUX_X86: ${{ steps.hashes.outputs.linux_x86 }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG_CLEAN="${TAG#v}"
+          RELEASE_BRANCH="release/${TAG}"
+          ./scripts/render-formula.sh \
+            "$TAG_CLEAN" \
+            "$HASH_DARWIN_ARM" \
+            "$HASH_DARWIN_X86" \
+            "$HASH_LINUX_ARM" \
+            "$HASH_LINUX_X86" \
+            Formula/rcm.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$RELEASE_BRANCH"
+          git add Formula/rcm.rb
+          git commit -m "chore(release): update formula for $TAG"
+          git push origin "HEAD:$RELEASE_BRANCH"
+          PR_URL=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$RELEASE_BRANCH" --base main --state open --json url --jq '.[0].url')
+          if [ -z "$PR_URL" ]; then
+            PR_URL=$(gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$RELEASE_BRANCH" \
+              --title "release: $TAG" \
+              --body "This promotion PR publishes the complete $TAG release snapshot, including the generated Homebrew Formula. It is created and merged only by the release workflow after required checks pass.")
+          fi
+          PR_NUMBER=$(gh pr view "$PR_URL" --repo "$GITHUB_REPOSITORY" --json number --jq .number)
+          echo "branch=$RELEASE_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch branch validation workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ steps.promotion.outputs.branch }}
+          PR_NUMBER: ${{ steps.promotion.outputs.pr_number }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_BRANCH"
+          gh workflow run release-promotion.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$RELEASE_BRANCH" \
+            -f pr_number="$PR_NUMBER" \
+            -f tag="$TAG"
+
+      - name: Enable promotion auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.promotion.outputs.pr_number }}
+        run: gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash --delete-branch

@@ -31,9 +31,6 @@ dist/
 build/
 *.log
 
-# Research docs (auto-generated research reports)
-docs/research/
-
 # Python
 venv/
 .venv/
@@ -41,8 +38,11 @@ venv/
 # Scout temp
 .scout-tmp/
 
-# Research notes
-research/
-
 # Datasets (downloaded benchmarks, too large for git)
 data/
+
+# Maintainer dispatcher cache — rendered .rcm files are runtime artifacts
+.rcm-cache/
+
+# Runtime trajectory artifacts (server default-on recording)
+rcm-trajectories/

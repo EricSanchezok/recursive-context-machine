@@ -1,88 +1,75 @@
-# RCM Development Guide
+# AGENTS.md
 
-This document encodes the development rules for RCM. All agents editing this codebase
-must follow these conventions. Do not override unless explicitly instructed by the user.
+RCM (Recursive Context Machine) is a Rust workspace for building and executing
+composable context-machine pipelines for LLM agents.
 
-## Comments
+## Repository governance
 
-- Comments explain **why**, not **what**. The code already says what it does.
-- Doc comments on public APIs are acceptable only when the purpose is not obvious from
-  the name and signature alone.
-- No inline comments that restate the next line of code.
-- No "defaults to ..." or "(... minutes)" decay comments that specify values — they go
-  stale on every config change. Types and const names are the source of truth.
-- Section dividers like `// ── Foo ──` are not allowed in files under 200 lines.
-- No TODO comments in published docs — use real issue tracking.
+This repository's governance layer is managed by repo-seed; product code remains
+repository-owned. `.repo-seed/manifest.json` records managed files and capability
+state.
 
-## Naming
+- Use `repo-review` for change and pull-request review.
+- Use `repo-decisions` for durable choices with meaningful alternatives.
+- Use `repo-governance` when complexity, ownership, security, release, or incident
+  signals change.
+- Use the global `repo-seed` skill for governance seeding and upgrades.
 
-- Single-letter variable names (`a`, `b`, `c`, `e`, `r`, `s`, `v`, etc.) are not
-  allowed. Every variable must describe what it holds. The only exceptions are:
-  `i` / `j` for loop indices, and `f` in closures like `|f| f.id == id`.
-- Abbreviated names are acceptable when they are domain-standard and unambiguous
-  across the codebase: `frag` (fragment), `ctx` (context), `env` (environment),
-  `msg` (message), `args` (arguments), `req` (request). If in doubt, spell it out.
-- Single-letter generic parameters are not allowed. Use `impl Trait` in argument
-  position, or a descriptive name.
-- Enum variants and function names must be self-explanatory without a doc comment.
-  If a variant needs a comment to explain its purpose, rename it.
-- `Catch`/`Drop` style verb confusion is not allowed. "Catch" is error handling,
-  "Drop" is deallocation. Use `Activate`/`Deactivate` for tool toggling.
-- Avoid `XxxInfo`, `XxxDetail`, `XxxData` — find a real name.
-- The same concept must be named consistently across all files. If `completion.rs`
-  calls it `endpoint`, `machine.rs` must not call it `base_url` for the same thing.
+## Repository layout
 
-## Architecture
+See [docs/architecture.md](docs/architecture.md) for the module map and seams.
+Rust crates live in `crates/`; the Python SDK lives in `sdks/python/`; runnable
+RCM projects live in `examples/`; the protobuf contract is `proto/rcm.proto`.
 
-- `reactor` is internal to `machine`. It is a plain async function, not a trait,
-  not injected, not visible to `accelerator`.
-- `machine` does not know about provider presets (DeepSeek, Groq, etc.).
-  Protocol + endpoint is sufficient.
-- Policy receives `&self` — use atomics for internal state, not `Mutex`.
-- All execution (LLM calls, tool calls) uses `tokio::time::timeout`.
-  Defaults are defined once as module-level constants.
+## Commands
 
-## Logging
+- Test: `cargo nextest run --workspace --locked`
+- Documentation tests: `cargo test --workspace --doc --locked`
+- Lint: `cargo fmt --all -- --check && cargo clippy --workspace --all-targets --tests --locked -- -D warnings`
+- Gates: `node scripts/run-gates.mjs`
 
-- Use `tracing` macros (`debug!`, `info!`, `warn!`, `trace!`) — never `println!`
-  or `eprintln!` for operational output.
-- Every failed outcome must log at `warn!` with structured fields (`?error` or named
-  fields), not a bare string.
+Run the relevant tests and gates before every commit. `protoc` and the stable Rust
+toolchain are required for the full workspace checks.
 
-## Execution
+## Development rules
 
-- Do not autonomously modify code unless the user explicitly asks.
-- When the user asks you to change code, wait for their confirmation before
-  starting. Do not pre-emptively implement.
-- Every batch of changes must be committed before continuing to the next
-  topic. Do not accumulate uncommitted work.
-- Commits must be atomic per logical change. Do not squash unrelated
-  refactors into a single commit.
-- Only commit changes you authored. Do not include, revert, or modify
-  other people's work (e.g., Cargo.lock updates, dependency bumps,
-  files created by other agents or users) unless explicitly instructed.
+- Develop on `dev` or a short-lived feature branch based on `dev`.
+- `main` is protected and only receives release promotion pull requests.
+- Comments explain why and provenance, not what the next line already says.
+- Use descriptive names; single-letter variables and generic parameters are not
+  allowed except loop indices `i`/`j` and the documented closure exception.
+- Use `tracing` for operational logging; failed outcomes log at `warn!` with
+  structured error fields.
+- Keep `reactor` internal to `machine`; provider presets do not belong in `machine`.
+- Use module-level timeout constants for every LLM and tool execution.
+- `Environment::new` is an honest host snapshot; use `Environment::empty` for
+  explicitly sandboxed scenarios.
 
-## Testing
+## Change contracts
 
-- Tests go in `tests/`, not inline modules.
-- Test tools and test policies are defined in the test file, not in `src/`.
-- Never test mock infrastructure (helpers, builders, replay policies). Tests must
-  exercise the real crate API — `Machine::run`, `Context::append`, `Fragment::system`,
-  etc. If a test only asserts the behaviour of a `SeqPolicy` helper, delete it.
-- Never test getters (`tool_name_and_description`, `new_context_is_empty`). Test
-  **behaviour**: "does this produce the right side-effect?" not "does this struct
-  field match what I just set it to?"
-- Prefer edge cases over CRUD enumeration. One test for "remove and verify length"
-  is enough — don't write three variations.
-- Every `#[should_panic]` test must verify the panic message (`expected = "..."`).
-- Tests must be fast. No test may depend on external services (LLM APIs) or long
-  timeouts. Tests that currently depend on the reactor loop use SeqPolicy without
-  `Action::Halt` to avoid HTTP calls.
+- Risk-boundary changes start with an Approved spec in [docs/specs/](docs/specs/).
+- Durable alternatives belong in [docs/decisions/](docs/decisions/), not changelogs.
+- A subtle or systemic escaped failure earns a postmortem linked to a permanent
+  guardrail in [docs/postmortems/](docs/postmortems/).
+- Changes to `proto/rcm.proto` regenerate the Python SDK and update server tests in
+  the same change.
 
-## Research
+## Security and scope
 
-- All research materials (literature surveys, benchmark analysis, paper summaries,
-  etc.) go under `research/`, not in the project root.
-- Downloaded papers (PDFs) go in `research/` as well.
-- Keep `research/` organized — group related files into subdirectories by topic
-  when a single topic accumulates multiple files.
+- Never read `.env` files or commit credentials.
+- Never modify files outside the requested scope.
+- Never force-push or directly push `main`.
+- Never commit or push unless the user explicitly asks.
+
+## Documentation and skills
+
+Follow [docs/AGENTS.md](docs/AGENTS.md) for document placement and hygiene, and
+[docs/testing.md](docs/testing.md) for risk-adjusted evidence. Seeded governance
+files are upgraded only by rerunning the repo-seed skill.
+
+- [repo-review](.agents/skills/repo-review/SKILL.md) — semantic review policy.
+- [repo-decisions](.agents/skills/repo-decisions/SKILL.md) — MADR decision records.
+- [repo-governance](.agents/skills/repo-governance/SKILL.md) — capability assessment.
+
+Enabled optional capabilities include CI, release policy, community health files,
+CODEOWNERS, monorepo subtree instructions, and authorized local hooks.

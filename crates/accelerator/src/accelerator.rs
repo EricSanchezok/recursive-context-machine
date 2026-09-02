@@ -1,176 +1,337 @@
-use machine::{Machine, Purpose};
-use std::future::Future;
-use std::pin::Pin;
-use utils::{AcceleratorId, ConditionId, FluxId, Name};
+use std::sync::Arc;
 
-use crate::condition::ConditionBranch;
+use machine::hook;
+use machine::{
+    Action, ExecutionMode, Fragment, Machine, MachineFrame, MachineState, PolicyView, Role,
+    RunState, Tool, ToolRuntime,
+};
+use utils::{AcceleratorId, Name};
 
-use crate::state::State;
+use crate::graph::Graph;
+use crate::trajectory::TrajectoryRecorder;
 
-/// A single agent — runs the Context Machine.
+fn is_scaffolding(fragment: &Fragment) -> bool {
+    fragment.role == Role::System
+        && (fragment.tag == "agent" || fragment.tag == "instruction" || fragment.tag == "env")
+}
+
+fn is_purpose_tag(fragment: &Fragment) -> bool {
+    fragment.role == Role::User
+        && (fragment.tag == "purpose"
+            || fragment.tag == "purpose_initial"
+            || fragment.tag == "purpose_b")
+}
+
+#[derive(Clone)]
 pub struct Accelerator {
     id: AcceleratorId,
     pub name: Name,
-    pub(crate) state: State,
+    body: AcceleratorBody,
 }
 
 impl Accelerator {
-    pub fn id(&self) -> &AcceleratorId {
-        &self.id
-    }
-
-    pub fn new(state: State) -> Self {
-        Self::named("accelerator", state)
-    }
-
-    pub fn named(name: impl Into<String>, state: State) -> Self {
+    pub fn primitive(
+        state: RunState,
+        policy: Box<dyn machine::Policy>,
+        tool_runtime: ToolRuntime,
+        name: impl Into<String>,
+    ) -> Self {
         Self {
             id: AcceleratorId::new(),
             name: Name::new(name).expect("accelerator name must be valid"),
-            state,
+            body: AcceleratorBody::Primitive(Box::new(PrimitiveAccelerator {
+                state,
+                policy,
+                tool_runtime,
+            })),
         }
     }
 
-    pub fn run(self) -> Pin<Box<dyn Future<Output = State> + Send>> {
-        Box::pin(async move { fire(self.state).await })
+    pub fn composite(graph: Graph) -> Self {
+        let name = graph.name.clone();
+        Self::composite_named(name.as_str(), graph)
     }
-}
 
-pub(crate) async fn fire(mut state: State) -> State {
-    let purpose = Purpose::new(&state.purpose);
-    let machine = Machine::new(state.policy.clone());
-    machine
-        .run(&purpose, &mut state.ctx, &mut state.env, &mut state.res)
-        .await;
-    state
-}
+    pub fn composite_named(name: impl Into<String>, graph: Graph) -> Self {
+        Self {
+            id: AcceleratorId::new(),
+            name: Name::new(name).expect("accelerator name must be valid"),
+            body: AcceleratorBody::Composite(graph),
+        }
+    }
 
-#[derive(Clone, Debug)]
-pub struct AcceleratorRef {
-    pub(crate) index: usize,
-    pub(crate) id: AcceleratorId,
-}
+    /// Inject a tool into this accelerator's tool runtime and tool definitions.
+    /// Used by the DSL compiler to wire spawn tools into a planner.
+    pub fn inject_tool(&mut self, tool: Arc<dyn Tool>) {
+        if let AcceleratorBody::Primitive(ref mut primitive) = self.body {
+            let name = tool.name().to_string();
+            primitive
+                .state
+                .resources
+                .tool_definitions
+                .entry(name.clone())
+                .or_insert_with(|| machine::ToolDefinition::from_tool(tool.as_ref()));
+            primitive.tool_runtime.insert(tool);
+        }
+    }
 
-impl AcceleratorRef {
     pub fn id(&self) -> &AcceleratorId {
         &self.id
     }
 
-    pub fn purpose_out(&self) -> Port {
-        self.port(Channel::Purpose)
-    }
-    pub fn ctx_out(&self) -> Port {
-        self.port(Channel::Context)
-    }
-    pub fn env_out(&self) -> Port {
-        self.port(Channel::Environment)
-    }
-    pub fn policy_out(&self) -> Port {
-        self.port(Channel::Policy)
-    }
-    pub fn res_out(&self) -> Port {
-        self.port(Channel::Resources)
-    }
-    pub fn done(&self) -> Port {
-        self.port(Channel::Pulse)
-    }
-    pub fn purpose_in(&self) -> Port {
-        self.port(Channel::Purpose)
-    }
-    pub fn ctx_in(&self) -> Port {
-        self.port(Channel::Context)
-    }
-    pub fn env_in(&self) -> Port {
-        self.port(Channel::Environment)
-    }
-    pub fn policy_in(&self) -> Port {
-        self.port(Channel::Policy)
-    }
-    pub fn res_in(&self) -> Port {
-        self.port(Channel::Resources)
-    }
-    pub fn trigger(&self) -> Port {
-        self.port(Channel::Pulse)
+    pub fn run_with(
+        self,
+        input: RunState,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = RunState> + Send>> {
+        Box::pin(async move {
+            let input = self.merge_input(input);
+            // Label for the trajectory WAL directory: readable name plus the
+            // unique accelerator id, so graph components sharing a run_dir
+            // never collide on the same WAL.
+            let label = format!("{}-{}", self.name.as_str(), self.id);
+            match self.body {
+                AcceleratorBody::Primitive(primitive) => primitive.fire(input, &label).await,
+                AcceleratorBody::Composite(graph) => graph.run(input).await,
+            }
+        })
     }
 
-    fn port(&self, channel: Channel) -> Port {
-        Port::Accel {
-            index: self.index,
-            accelerator_id: self.id.clone(),
-            channel,
+    pub fn internal_state(&self) -> Option<&RunState> {
+        match &self.body {
+            AcceleratorBody::Primitive(primitive) => Some(&primitive.state),
+            AcceleratorBody::Composite(_) => None,
         }
     }
-}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Channel {
-    Purpose,
-    Context,
-    Environment,
-    Policy,
-    Resources,
-    Pulse,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Port {
-    Accel {
-        index: usize,
-        accelerator_id: AcceleratorId,
-        channel: Channel,
-    },
-    FluxOut {
-        index: usize,
-        flux_id: FluxId,
-        channel: Channel,
-    },
-    FluxSlot {
-        index: usize,
-        flux_id: FluxId,
-        slot: usize,
-        channel: Channel,
-    },
-    ConditionIn {
-        index: usize,
-        condition_id: ConditionId,
-    },
-    ConditionOut {
-        index: usize,
-        condition_id: ConditionId,
-        branch: ConditionBranch,
-    },
-}
-
-impl Port {
-    pub fn is_output(&self) -> bool {
-        matches!(
-            self,
-            Port::Accel { .. } | Port::FluxOut { .. } | Port::ConditionOut { .. }
-        )
-    }
-    pub fn is_input(&self) -> bool {
-        matches!(
-            self,
-            Port::Accel { .. } | Port::FluxSlot { .. } | Port::ConditionIn { .. }
-        )
-    }
-    pub fn channel(&self) -> Channel {
-        match self {
-            Port::Accel { channel, .. }
-            | Port::FluxOut { channel, .. }
-            | Port::FluxSlot { channel, .. } => *channel,
-            Port::ConditionIn { .. } | Port::ConditionOut { .. } => Channel::Pulse,
+    fn merge_input(&self, input: RunState) -> RunState {
+        let mut state = input;
+        if let AcceleratorBody::Primitive(primitive) = &self.body {
+            let base = &primitive.state;
+            let base_purpose = base.purpose.text.clone();
+            if !state.purpose.is_empty()
+                && !base_purpose.is_empty()
+                && state.purpose.text != base_purpose
+            {
+                state.purpose.text = format!("{}\n\n{}", state.purpose.text, base_purpose);
+            } else if state.purpose.is_empty() {
+                state.purpose.text.clone_from(&base_purpose);
+            }
+            if state.run_dir.is_none() {
+                state.run_dir.clone_from(&base.run_dir);
+                // When a child inherits run_dir, also use the parent's cwd
+                // so fs tools resolve paths inside the run directory.
+                if let Some(ref dir) = state.run_dir {
+                    state.environment.cwd = dir.clone();
+                }
+            }
+            if state.context.is_empty() {
+                state.context = base.context.clone();
+            }
+            if state.environment.cwd.as_os_str().is_empty() {
+                state.environment = base.environment.clone();
+            } else if state.environment.run_dir.is_none() {
+                state
+                    .environment
+                    .run_dir
+                    .clone_from(&base.environment.run_dir);
+            }
+            state.resources.models.clone_from(&base.resources.models);
+            state
+                .resources
+                .model_order
+                .clone_from(&base.resources.model_order);
+            state
+                .resources
+                .tool_definitions
+                .clone_from(&base.resources.tool_definitions);
+            state.resources.prompts.clone_from(&base.resources.prompts);
+            state
+                .resources
+                .active_model
+                .clone_from(&base.resources.active_model);
+            state
+                .resources
+                .active_tools
+                .clone_from(&base.resources.active_tools);
         }
+        state
     }
-    pub(crate) fn node_index(&self, num_accelerators: usize, num_fluxes: usize) -> usize {
-        let flux_offset = |index: usize| num_accelerators + index;
-        let condition_offset = |index: usize| num_accelerators + num_fluxes + index;
-        match self {
-            Port::Accel { index, .. } => *index,
-            Port::FluxOut { index, .. } | Port::FluxSlot { index, .. } => flux_offset(*index),
-            Port::ConditionIn { index, .. } | Port::ConditionOut { index, .. } => {
-                condition_offset(*index)
+}
+
+#[derive(Clone)]
+#[allow(clippy::large_enum_variant)]
+enum AcceleratorBody {
+    Primitive(Box<PrimitiveAccelerator>),
+    Composite(Graph),
+}
+
+#[derive(Clone)]
+struct PrimitiveAccelerator {
+    state: RunState,
+    policy: Box<dyn machine::Policy>,
+    tool_runtime: ToolRuntime,
+}
+
+impl PrimitiveAccelerator {
+    async fn fire(self, state: RunState, machine_label: &str) -> RunState {
+        let mut machine_state = MachineState {
+            run: state,
+            frame: MachineFrame::default(),
+        };
+        let base_purpose = machine_state.run.purpose.text.clone();
+        let needs_reorder = machine_state
+            .run
+            .context
+            .fragments()
+            .iter()
+            .any(|fragment| !is_scaffolding(fragment) && !is_purpose_tag(fragment));
+
+        let mut machine = Machine::new("ephemeral", "ephemeral");
+        let policy = self.policy;
+        let tool_runtime = self.tool_runtime;
+        let mut reorder_pending = needs_reorder;
+        // Trajectory recording is opt-in: only when the caller supplied a
+        // run directory. Graph components share run_dir but run concurrently,
+        // so each recorder writes its own per-machine WAL under trajectory/.
+        let mut recorder = machine_state.run.run_dir.as_ref().and_then(|run_dir| {
+            match TrajectoryRecorder::open(run_dir, machine_label) {
+                Ok(recorder) => Some(recorder),
+                Err(error) => {
+                    tracing::warn!(
+                        run_dir = %run_dir.display(),
+                        ?error,
+                        "trajectory recorder unavailable; continuing without recording"
+                    );
+                    None
+                }
+            }
+        });
+        hook!(event = "machine_start", purpose = %machine_state.run.purpose.text);
+
+        loop {
+            // Derived fresh each step: obs must never be a stale snapshot.
+            // The ledger digest is enriched from tool state — the machine
+            // itself never performs IO.
+            let mut obs = machine::obs::measure(&machine_state.run);
+            if let Some(run_dir) = machine_state.run.run_dir.as_deref() {
+                obs.ledger_digest = crate::tools::ledger_digest_for(run_dir);
+            }
+            let action = policy
+                .decide(PolicyView {
+                    run: &machine_state.run,
+                    inbox: &machine_state.frame.inbox,
+                    step: machine_state.frame.step,
+                    status: machine_state.frame.status,
+                    obs: &obs,
+                })
+                .await;
+
+            if matches!(&action, Action::Halt) && reorder_pending {
+                reorder_pending = false;
+                reorder_context_before_first_halt(&mut machine_state.run, &base_purpose);
+            }
+
+            // Overlay is declared alongside the decision but consumed only
+            // when that decision is Halt; every other action carries an
+            // empty declaration.
+            let overlay_declared = if matches!(action, Action::Halt) {
+                let overlay = policy.overlay(&PolicyView {
+                    run: &machine_state.run,
+                    inbox: &machine_state.frame.inbox,
+                    step: machine_state.frame.step,
+                    status: machine_state.frame.status,
+                    obs: &obs,
+                });
+                obs.overlay_status = machine::OverlayStatus {
+                    declared: !overlay.is_empty(),
+                    system_prefix_count: overlay.system_prefix.len() as u64,
+                    tail_count: overlay.tail.len() as u64,
+                };
+                overlay
+            } else {
+                machine::Overlay::default()
+            };
+
+            let result = machine
+                .apply(
+                    action,
+                    &mut machine_state,
+                    ExecutionMode::Live {
+                        tool_runtime: &tool_runtime,
+                        overlay: &overlay_declared,
+                    },
+                )
+                .await;
+            if let Some(ref mut recorder) = recorder {
+                let ledger_transitions = machine::ledger_transitions_in(&result.event.effects);
+                recorder.record_step(result.event.step, &obs, &ledger_transitions, &result.event);
+            }
+            if result.done {
+                break;
             }
         }
+
+        if let Some(ref mut recorder) = recorder {
+            recorder.checkpoint(&machine_state);
+        }
+        machine_state.run
+    }
+}
+
+fn reorder_context_before_first_halt(state: &mut RunState, base_purpose: &str) {
+    let env_position = state
+        .context
+        .fragments()
+        .iter()
+        .position(|fragment| is_scaffolding(fragment) && fragment.tag == "env");
+    let Some(env_position) = env_position else {
+        return;
+    };
+    let env_id = state.context.fragments()[env_position].id();
+    let before_env = state.context.fragments()[..env_position]
+        .iter()
+        .filter(|fragment| !is_scaffolding(fragment) && !is_purpose_tag(fragment))
+        .map(|fragment| (fragment.id(), fragment.clone()))
+        .collect::<Vec<_>>();
+    if before_env.is_empty() {
+        return;
+    }
+    for (id, _) in &before_env {
+        let _ = state.context.remove(*id);
+    }
+    let mut cursor = env_id;
+    for (_, fragment) in &before_env {
+        if let Ok(new_id) = state.context.insert(cursor, fragment.clone()) {
+            cursor = new_id;
+        }
+    }
+    if !base_purpose.is_empty() {
+        let _ = state
+            .context
+            .insert(cursor, Fragment::user(base_purpose).with_tag("purpose_b"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use machine::Fragment;
+
+    fn state_with_assistant(text: &str) -> RunState {
+        let mut state = RunState::default();
+        state.context.append(Fragment::assistant(text));
+        state
+    }
+
+    #[test]
+    fn run_dir_recovered_from_handoff() {
+        let input = state_with_assistant(
+            "run_dir: runs/20260604T110702Z\nartifact: runs/20260604T110702Z/00_card_plan.json\nstatus: ok",
+        );
+        assert!(input.context.fragments().iter().any(|f| {
+            f.as_text()
+                .unwrap_or("")
+                .contains("run_dir: runs/20260604T110702Z")
+        }));
     }
 }

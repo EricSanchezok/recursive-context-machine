@@ -1,0 +1,17 @@
+name = "MASA Judge Synthesizer"
+
+model deepseek-v4-flash {
+    protocol = "openai"
+    endpoint = "https://api.deepseek.com"
+    credentials = { env = "DEEPSEEK_API_KEY" }
+    limit = { context = "1000000", output = "393216" }
+    modalities = { input = ["text"], output = ["text"] }
+}
+
+accelerator {
+    purpose = "Synthesize judge scores and compute weighted total"
+    models = ["deepseek-v4-flash"]
+    policy = "captain"
+    prompts = { captain = file "../../prompts/core/judge_synthesizer.txt" }
+    tools = ["fs"]
+}

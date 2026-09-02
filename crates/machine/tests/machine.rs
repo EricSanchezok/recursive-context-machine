@@ -1,103 +1,94 @@
 mod common;
 
-use machine::{Action, Content, Context, Environment, Fragment, Inbox, Machine, Purpose};
+use machine::{
+    Action, ExecutionMode, Fragment, Inbox, Machine, MachineState, Overlay, ToolRuntime,
+};
+
 use serde_json::json;
+
+async fn run_actions(actions: &[Action]) -> MachineState {
+    let mut state = MachineState::default();
+    state.run.environment = machine::Environment::new("/tmp");
+    state.run.resources = common::test_resources();
+    let mut machine = Machine::new("test", "test-machine");
+    let tool_runtime = ToolRuntime::new();
+    for action in actions {
+        let result = machine
+            .apply(
+                action.clone(),
+                &mut state,
+                ExecutionMode::Live {
+                    tool_runtime: &tool_runtime,
+                    overlay: &Overlay::default(),
+                },
+            )
+            .await;
+        if result.done {
+            break;
+        }
+    }
+    state
+}
 
 #[tokio::test]
 async fn done_stops_immediately() {
-    let policy = common::SeqPolicy::new(vec![Action::Done]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources();
-
-    machine
-        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
-        .await;
-    assert!(ctx.is_empty());
+    let state = run_actions(&[Action::Done, Action::Append(Fragment::user("ignored"))]).await;
+    assert!(state.run.context.is_empty());
+    assert!(state.frame.status.is_done());
 }
 
 #[tokio::test]
 async fn append_and_take_flow() {
-    let policy = common::SeqPolicy::new(vec![
+    let state = run_actions(&[
         Action::Append(Fragment::system("sys")),
         Action::Append(Fragment::user("hello")),
         Action::Done,
-    ]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources();
-
-    machine
-        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
-        .await;
-    assert_eq!(ctx.len(), 2);
-    assert_eq!(ctx.fragments()[0].as_text(), Some("sys"));
-    assert_eq!(ctx.fragments()[1].as_text(), Some("hello"));
+    ])
+    .await;
+    assert_eq!(state.run.context.len(), 2);
+    assert_eq!(state.run.context.fragments()[0].as_text(), Some("sys"));
+    assert_eq!(state.run.context.fragments()[1].as_text(), Some("hello"));
 }
 
 #[tokio::test]
 async fn take_empty_inbox_is_noop() {
-    let policy = common::SeqPolicy::new(vec![Action::Take, Action::Done]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources();
-
-    machine
-        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
-        .await;
-    assert!(ctx.is_empty());
+    let state = run_actions(&[Action::Take, Action::Done]).await;
+    assert!(state.run.context.is_empty());
 }
 
 #[tokio::test]
 async fn swap_preserves_count() {
-    let policy = common::SeqPolicy::new(vec![
+    let state = run_actions(&[
         Action::Append(Fragment::system("first")),
         Action::Append(Fragment::system("second")),
         Action::Swap(1, 2),
         Action::Done,
-    ]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources();
-
-    machine
-        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
-        .await;
-    assert_eq!(ctx.len(), 2);
-    assert_eq!(ctx.fragments()[0].as_text(), Some("second"));
-    assert_eq!(ctx.fragments()[1].as_text(), Some("first"));
+    ])
+    .await;
+    assert_eq!(state.run.context.len(), 2);
+    assert_eq!(state.run.context.fragments()[0].as_text(), Some("second"));
+    assert_eq!(state.run.context.fragments()[1].as_text(), Some("first"));
 }
 
 #[tokio::test]
 async fn replace_preserves_id() {
-    let policy = common::SeqPolicy::new(vec![
+    let state = run_actions(&[
         Action::Append(Fragment::system("old")),
         Action::Replace {
             id: 1,
             fragment: Fragment::system("new"),
         },
         Action::Done,
-    ]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources();
-
-    machine
-        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
-        .await;
-    assert_eq!(ctx.len(), 1);
-    assert_eq!(ctx.fragments()[0].as_text(), Some("new"));
-    assert_eq!(ctx.fragments()[0].id(), 1);
+    ])
+    .await;
+    assert_eq!(state.run.context.len(), 1);
+    assert_eq!(state.run.context.fragments()[0].as_text(), Some("new"));
+    assert_eq!(state.run.context.fragments()[0].id(), 1);
 }
 
 #[tokio::test]
 async fn insert_after_id() {
-    let policy = common::SeqPolicy::new(vec![
+    let state = run_actions(&[
         Action::Append(Fragment::system("first")),
         Action::Append(Fragment::system("third")),
         Action::Insert {
@@ -105,95 +96,180 @@ async fn insert_after_id() {
             fragment: Fragment::system("second"),
         },
         Action::Done,
-    ]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources();
-
-    machine
-        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
-        .await;
-    assert_eq!(ctx.len(), 3);
-    assert_eq!(ctx.fragments()[0].as_text(), Some("first"));
-    assert_eq!(ctx.fragments()[1].as_text(), Some("second"));
-    assert_eq!(ctx.fragments()[2].as_text(), Some("third"));
+    ])
+    .await;
+    assert_eq!(state.run.context.len(), 3);
+    assert_eq!(state.run.context.fragments()[0].as_text(), Some("first"));
+    assert_eq!(state.run.context.fragments()[1].as_text(), Some("second"));
+    assert_eq!(state.run.context.fragments()[2].as_text(), Some("third"));
 }
 
 #[tokio::test]
 async fn remove_and_check_context() {
-    let policy = common::SeqPolicy::new(vec![
+    let state = run_actions(&[
         Action::Append(Fragment::system("a")),
         Action::Append(Fragment::user("b")),
         Action::Remove(1),
         Action::Done,
-    ]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources();
-
-    machine
-        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
-        .await;
-    assert_eq!(ctx.len(), 1);
-    assert_eq!(ctx.fragments()[0].as_text(), Some("b"));
+    ])
+    .await;
+    assert_eq!(state.run.context.len(), 1);
+    assert_eq!(state.run.context.fragments()[0].as_text(), Some("b"));
 }
 
 #[tokio::test]
-#[should_panic(expected = "not found")]
-async fn remove_unknown_panics() {
-    let policy = common::SeqPolicy::new(vec![Action::Remove(999), Action::Done]);
-    let machine = Machine::new(Box::new(policy));
-    let mut ctx = Context::new();
-    let mut env = Environment::new("/tmp");
-    let mut resources = common::test_resources();
-
-    machine
-        .run(&Purpose::default(), &mut ctx, &mut env, &mut resources)
-        .await;
+async fn remove_unknown_returns_hitch() {
+    let state = run_actions(&[
+        Action::Append(Fragment::system("existing")),
+        Action::Remove(999),
+    ])
+    .await;
+    assert_eq!(state.frame.inbox.len(), 1);
+    let fragment = &state.frame.inbox.peek().unwrap().fragment;
+    assert!(matches!(fragment.content, machine::Content::Hitch { .. }));
+    assert!(
+        fragment
+            .content_as_text()
+            .contains("fragment id 999 not found")
+    );
 }
 
-// ── Mixed-content response flow ──
+#[tokio::test]
+async fn take_drains_inbox_into_context() {
+    let mut state = MachineState::default();
+    state.run.environment = machine::Environment::new("/tmp");
+    state.run.resources = common::test_resources();
+    state.frame.inbox.push(Fragment::assistant("reply"));
+    state
+        .frame
+        .inbox
+        .push(Fragment::tool_result("1", "5", None));
+
+    let mut machine = Machine::new("test", "test-machine");
+    let tool_runtime = ToolRuntime::new();
+    machine
+        .apply(
+            Action::Take,
+            &mut state,
+            ExecutionMode::Live {
+                tool_runtime: &tool_runtime,
+                overlay: &Overlay::default(),
+            },
+        )
+        .await;
+    machine
+        .apply(
+            Action::Take,
+            &mut state,
+            ExecutionMode::Live {
+                tool_runtime: &tool_runtime,
+                overlay: &Overlay::default(),
+            },
+        )
+        .await;
+
+    assert_eq!(state.run.context.len(), 2);
+    assert_eq!(state.run.context.fragments()[0].as_text(), Some("reply"));
+    assert!(matches!(
+        state.run.context.fragments()[1].content,
+        machine::Content::ToolResult(_)
+    ));
+    assert!(state.frame.inbox.is_empty());
+}
 
 #[test]
 fn context_holds_mixed_assistant_fragments() {
-    let mut ctx = Context::new();
-    let id1 = ctx.append(Fragment::assistant("我来计算"));
-    let id2 = ctx.append(Fragment::tool_call(
+    let mut context = machine::Context::new();
+    let text_id = context.append(Fragment::assistant("我来计算"));
+    let call_id = context.append(Fragment::tool_call(
         "call_1",
         "add",
         json!({"a": 3, "b": 2}),
     ));
 
-    assert_eq!(ctx.len(), 2);
-    assert_eq!(ctx.get(id1).unwrap().as_text(), Some("我来计算"));
+    assert_eq!(context.len(), 2);
+    assert_eq!(context.get(text_id).unwrap().as_text(), Some("我来计算"));
     assert!(matches!(
-        ctx.get(id2).unwrap().content,
-        Content::ToolCall(_)
+        context.get(call_id).unwrap().content,
+        machine::Content::ToolCall(_)
     ));
 }
 
 #[test]
 fn inbox_drain_order_with_mixed_response() {
     let mut inbox = Inbox::new();
-
-    // Simulate reactor output for a mixed LLM response:
-    // assistant text → tool call → tool result
     inbox.push(Fragment::assistant("我来计算"));
     inbox.push(Fragment::tool_call("1", "add", json!({"a": 3, "b": 2})));
     inbox.push(Fragment::tool_result("1", "5", None));
 
-    // Simulate Drain (Take) behavior
-    let mut ctx = Context::new();
+    let mut context = machine::Context::new();
     while inbox.peek().is_some() {
-        if let Some(frag) = inbox.pop() {
-            ctx.append(frag);
+        if let Some(item) = inbox.pop() {
+            context.append(item.fragment);
         }
     }
 
-    assert_eq!(ctx.len(), 3);
-    assert_eq!(ctx.fragments()[0].as_text(), Some("我来计算"));
-    assert!(matches!(ctx.fragments()[1].content, Content::ToolCall(_)));
-    assert!(matches!(ctx.fragments()[2].content, Content::ToolResult(_)));
+    assert_eq!(context.len(), 3);
+    assert_eq!(context.fragments()[0].as_text(), Some("我来计算"));
+    assert!(matches!(
+        context.fragments()[1].content,
+        machine::Content::ToolCall(_)
+    ));
+    assert!(matches!(
+        context.fragments()[2].content,
+        machine::Content::ToolResult(_)
+    ));
+}
+
+#[test]
+fn use_model_nonexistent_returns_error() {
+    let mut resources = common::test_resources();
+    let error = resources.use_model("nonexistent").unwrap_err();
+    assert_eq!(error.to_string(), "model 'nonexistent' not registered");
+}
+
+#[test]
+fn enable_nonexistent_tool_returns_error() {
+    let mut resources = common::test_resources();
+    let error = resources.enable("nonexistent").unwrap_err();
+    assert_eq!(error.to_string(), "tool 'nonexistent' not registered");
+}
+
+#[tokio::test]
+async fn dispatch_model_nonexistent_pushes_hitch() {
+    let state = run_actions(&[Action::Model("nonexistent".to_string())]).await;
+    assert_eq!(state.frame.inbox.len(), 1);
+    let fragment = &state.frame.inbox.peek().unwrap().fragment;
+    assert!(matches!(fragment.content, machine::Content::Hitch { .. }));
+    assert_eq!(fragment.role, machine::Role::System);
+    assert!(fragment.content_as_text().contains("nonexistent"));
+}
+
+#[tokio::test]
+async fn dispatch_activate_nonexistent_pushes_hitch() {
+    let state = run_actions(&[Action::Activate("unknown".to_string())]).await;
+    assert_eq!(state.frame.inbox.len(), 1);
+    let fragment = &state.frame.inbox.peek().unwrap().fragment;
+    assert!(matches!(fragment.content, machine::Content::Hitch { .. }));
+    assert_eq!(fragment.role, machine::Role::System);
+    assert!(fragment.content_as_text().contains("unknown"));
+}
+
+#[tokio::test]
+async fn complete_no_active_model_returns_hitch() {
+    let mut context = machine::Context::new();
+    context.append(Fragment::user("hello"));
+    let mut resources = common::test_resources();
+    resources.deactivate_model();
+
+    let (fragments, tokens) =
+        machine::completion::complete(&context, &resources, &Overlay::default()).await;
+    assert_eq!(fragments.len(), 1);
+    assert_eq!(fragments[0].role, machine::Role::System);
+    assert_eq!(tokens.total_tokens, 0);
+    assert!(matches!(
+        fragments[0].content,
+        machine::Content::Hitch { .. }
+    ));
+    assert!(fragments[0].content_as_text().contains("no active model"));
 }

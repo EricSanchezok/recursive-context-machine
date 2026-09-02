@@ -1,19 +1,27 @@
 [package]
 name = "cli"
-version = "0.1.0"
+version = "0.2.20"
 edition = "2024"
+publish = false
 
 [[bin]]
 name = "accelerate"
 path = "src/main.rs"
 
+[lib]
+name = "cli"
+path = "src/lib.rs"
+
 [dependencies]
-machine = { path = "../machine" }
-accelerator = { path = "../accelerator" }
+machine = { version = "0.1.0", path = "../machine" }
+accelerator = { version = "0.1.0", path = "../accelerator" }
 tokio = { workspace = true, features = ["rt", "macros"] }
 anyhow = { workspace = true }
 clap = { version = "4", features = ["derive"] }
-tracing = "0.1"
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = { workspace = true }
 crossterm = "0.28"
+toml = "0.8"
+chrono = { workspace = true }

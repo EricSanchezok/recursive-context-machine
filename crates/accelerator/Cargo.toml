@@ -2,28 +2,27 @@
 name = "accelerator"
 version = "0.1.0"
 edition = "2024"
+publish = false
 description = "RCM accelerator — lightweight execution entry for Context Machine"
 
 [dependencies]
-machine = { path = "../machine" }
-utils = { path = "../utils" }
+machine = { version = "0.1.0", path = "../machine" }
+utils = { version = "0.1.0", path = "../utils" }
+storage = { version = "0.1.0", path = "../storage" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "registry", "json"] }
-tracing-appender = "0.2"
+tracing = { workspace = true }
 chrono = { workspace = true }
 regex = "1"
 ignore = "0.4"
-tree-sitter = "0.26.8"
-tree-sitter-rust = "0.24.2"
-tree-sitter-python = "0.25.0"
-tree-sitter-javascript = "0.25.0"
-tree-sitter-typescript = "0.23.2"
-tree-sitter-go = "0.25.0"
-tree-sitter-java = "0.23.5"
 globset = "0.4.18"
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls", "http2", "brotli", "gzip", "deflate", "cookies"] }
+base64 = "0.22"
+futures-util = "0.3"
 url = "2.5.8"
 lsp-types = "0.97.0"
+scraper = "0.27"
+
+[dev-dependencies]
+tempfile = "3"

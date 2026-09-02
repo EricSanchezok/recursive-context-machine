@@ -7,8 +7,8 @@
 mod edit;
 mod guard;
 mod list;
+mod pdf;
 mod read;
-mod stat;
 mod write;
 
 use std::pin::Pin;
@@ -61,8 +61,8 @@ impl Tool for FsTool {
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["read", "write", "edit", "list", "stat"],
-                    "description": "Which filesystem operation to perform: read (read a file with line numbers), write (overwrite or create a file), edit (targeted string replacement), list (list directory contents), stat (file metadata)."
+                    "enum": ["read", "write", "edit", "list"],
+                    "description": "Which filesystem operation to perform: read (read a file with line numbers and metadata), write (overwrite or create a file), edit (targeted string replacement), list (list directory contents)."
                 },
                 "filePath": {
                     "type": "string",
@@ -128,8 +128,9 @@ impl Tool for FsTool {
                 "write" => write::execute(&args, env).await,
                 "edit" => edit::execute(&args, env).await,
                 "list" => list::execute(&args, env).await,
-                "stat" => stat::execute(&args, env).await,
-                other => Err(format!("unknown action '{other}'")),
+                other => Err(format!(
+                    "unknown action '{other}'. Valid actions: read, write, edit, list"
+                )),
             }
         })
     }

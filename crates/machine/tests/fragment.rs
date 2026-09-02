@@ -20,7 +20,7 @@ fn as_text_none_for_nontinuitive_types() {
 
 #[test]
 fn hitch_content() {
-    let f = Fragment::hitch("broken");
+    let f = Fragment::hitch("broken", None, Role::System, None::<&str>);
     assert!(matches!(f.content, Content::Hitch { message, .. } if message == "broken"));
     assert_eq!(f.role, Role::System);
 }
@@ -36,4 +36,30 @@ fn tag_override() {
 fn tool_call_preserves_data() {
     let f = Fragment::tool_call("tc1", "add", serde_json::json!({"a": 1}));
     assert!(matches!(f.content, Content::ToolCall(ref tc) if tc.id == "tc1" && tc.name == "add"));
+}
+
+#[test]
+fn hitch_with_call_id() {
+    let f = Fragment::hitch("tool error", None, Role::Tool, Some("tc_42"));
+    assert!(matches!(
+        f.content,
+        Content::Hitch {
+            message,
+            call_id: Some(ref id),
+            ..
+        } if message == "tool error" && id == "tc_42"
+    ));
+}
+
+#[test]
+fn hitch_without_call_id() {
+    let f = Fragment::hitch("network error", None, Role::Assistant, None::<&str>);
+    assert!(matches!(
+        f.content,
+        Content::Hitch {
+            message,
+            call_id: None,
+            ..
+        } if message == "network error"
+    ));
 }

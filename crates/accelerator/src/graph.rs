@@ -1,21 +1,28 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashSet, VecDeque};
 
-use utils::{AssemblyId, ConditionId, FluxId, GraphId, Name};
+use machine::hook;
+use tracing::{Instrument, warn};
+use utils::{GraphId, Name};
 
-use crate::accelerator::{Accelerator, AcceleratorRef, Channel, Port};
-use crate::assembly::{Assembly, ConditionRouting, Slot};
-use crate::condition::{Condition, ConditionBranch, ConditionRef, Predicate};
-use crate::flux::{Flux, FluxMode, FluxRef};
-use crate::state::State;
+use crate::accelerator::Accelerator;
+use crate::condition::{Condition, ConditionBranch};
+use crate::flux::{Flux, FluxMode};
+use crate::wire::{Channel, ComponentId, ComponentRef, Endpoint, Port, PortOwner, Wire};
+use machine::RunState;
 
-/// Build a multi-agent execution graph.
+/// Maximum number of components executed concurrently within a single frontier.
+/// Bounds a wide `map` fan-out (one worker per item over a runtime-sized list) so
+/// it does not launch hundreds of model / arXiv calls at once, while still
+/// allowing healthy parallelism. Ordinary frontiers — sequential pipelines, the
+/// handful of parallel scouts/judges — are smaller than this and run unaffected.
+const FRONTIER_CONCURRENCY: usize = 16;
+
+#[derive(Clone)]
 pub struct Graph {
     id: GraphId,
     pub name: Name,
-    accelerators: Vec<Accelerator>,
-    fluxes: Vec<Flux>,
-    conditions: Vec<Condition>,
-    wires: Vec<(Port, Port)>,
+    components: Vec<Component>,
+    wires: Vec<Wire>,
 }
 
 impl Graph {
@@ -27,9 +34,7 @@ impl Graph {
         Self {
             id: GraphId::new(),
             name: Name::new(name).expect("graph name must be valid"),
-            accelerators: Vec::new(),
-            fluxes: Vec::new(),
-            conditions: Vec::new(),
+            components: Vec::new(),
             wires: Vec::new(),
         }
     }
@@ -42,363 +47,215 @@ impl Graph {
         self.name = Name::new(name).expect("graph name must be valid");
     }
 
-    pub fn spawn(&mut self, state: State) -> AcceleratorRef {
-        self.spawn_named("accelerator", state)
-    }
-
-    pub fn spawn_named(&mut self, name: impl Into<String>, state: State) -> AcceleratorRef {
-        let index = self.accelerators.len();
-        self.accelerators.push(Accelerator::named(name, state));
-        AcceleratorRef {
-            index,
-            id: self.accelerators[index].id().clone(),
-        }
-    }
-
-    pub fn weave(&mut self, arity: usize, mode: FluxMode) -> FluxRef {
-        self.weave_named(mode.name(), arity, mode)
-    }
-
-    pub fn weave_named(
+    pub fn add_accelerator(
         &mut self,
         name: impl Into<String>,
-        arity: usize,
+        accelerator: Accelerator,
+    ) -> ComponentRef {
+        let id = ComponentId::new(self.components.len());
+        let accelerator_id = accelerator.id().clone();
+        self.components.push(Component {
+            name: Name::new(name).expect("component name must be valid"),
+            kind: ComponentKind::Accelerator(Box::new(accelerator)),
+        });
+        ComponentRef::new(id, Some(accelerator_id))
+    }
+
+    pub fn add_flux(
+        &mut self,
+        name: impl Into<String>,
         mode: FluxMode,
-    ) -> FluxRef {
-        let index = self.fluxes.len();
-        let channel = mode.channel();
-        self.fluxes.push(Flux::new(name, mode, arity));
-        FluxRef {
-            index,
-            id: self.fluxes[index].id().clone(),
-            channel,
-        }
+        arity: usize,
+    ) -> ComponentRef {
+        let id = ComponentId::new(self.components.len());
+        let flux = Flux::new(name, mode, arity);
+        let component_name = flux.name.clone();
+        self.components.push(Component {
+            name: component_name,
+            kind: ComponentKind::Flux(flux),
+        });
+        ComponentRef::new(id, None)
     }
 
-    pub fn condition(&mut self, predicate: Predicate) -> ConditionRef {
-        self.condition_named("condition", predicate)
-    }
-
-    pub fn condition_named(
+    pub fn add_condition(
         &mut self,
         name: impl Into<String>,
-        predicate: Predicate,
-    ) -> ConditionRef {
-        let index = self.conditions.len();
-        self.conditions.push(Condition::new(name, predicate));
-        ConditionRef {
-            index,
-            id: self.conditions[index].id().clone(),
-        }
+        predicate: crate::condition::Predicate,
+    ) -> ComponentRef {
+        let id = ComponentId::new(self.components.len());
+        let condition = Condition::new(name, predicate);
+        let component_name = condition.name.clone();
+        self.components.push(Component {
+            name: component_name,
+            kind: ComponentKind::Condition(condition),
+        });
+        ComponentRef::new(id, None)
     }
 
-    pub fn rename_accelerator(&mut self, reference: AcceleratorRef, name: impl Into<String>) {
-        self.assert_accelerator_ref(&reference);
-        self.accelerators[reference.index].name =
-            Name::new(name).expect("accelerator name must be valid");
+    pub fn components(&self) -> &[Component] {
+        &self.components
     }
 
-    pub fn rename_flux(&mut self, reference: FluxRef, name: impl Into<String>) {
-        self.assert_flux_ref(&reference);
-        self.fluxes[reference.index].name = Name::new(name).expect("flux name must be valid");
-    }
-
-    pub fn rename_condition(&mut self, reference: ConditionRef, name: impl Into<String>) {
-        self.assert_condition_ref(&reference);
-        self.conditions[reference.index].name =
-            Name::new(name).expect("condition name must be valid");
+    pub fn validate(&self) -> Result<(), String> {
+        self.validate_flux_inputs()?;
+        self.validate_conditions()?;
+        self.validate_acyclic()
     }
 
     pub fn wire(&mut self, from: Port, to: Port) {
-        self.assert_port_ref(&from);
-        self.assert_port_ref(&to);
-        assert!(from.is_output(), "source must be an output pin");
-        assert!(to.is_input(), "target must be an input pin");
-        assert_eq!(from.channel(), to.channel(), "channel mismatch");
-        self.assert_supported_pulse_wire(&from, &to);
-        if to.channel() != Channel::Pulse {
-            assert!(
-                !self.wires.iter().any(|(_, target)| target == &to),
-                "input pin already wired"
-            );
-        }
-        self.wires.push((from, to));
+        self.wires.push(Wire::new(from, to));
     }
 
-    fn assert_supported_pulse_wire(&self, from: &Port, to: &Port) {
-        if from.channel() != Channel::Pulse {
-            return;
-        }
-
-        match (from, to) {
-            (Port::Accel { .. }, Port::Accel { .. })
-            | (Port::Accel { .. }, Port::ConditionIn { .. })
-            | (Port::ConditionOut { .. }, Port::Accel { .. }) => {}
-            _ => panic!("unsupported pulse wire"),
-        }
+    pub fn input(endpoint: Endpoint) -> Port {
+        Port::input(endpoint)
     }
 
-    fn assert_accelerator_ref(&self, reference: &AcceleratorRef) {
-        let Some(accelerator) = self.accelerators.get(reference.index) else {
-            panic!("accelerator reference does not belong to this graph");
-        };
-        assert_eq!(
-            accelerator.id(),
-            &reference.id,
-            "accelerator reference does not belong to this graph"
-        );
+    pub fn output(endpoint: Endpoint) -> Port {
+        Port::output(endpoint)
     }
 
-    fn assert_flux_ref(&self, reference: &FluxRef) {
-        let Some(flux) = self.fluxes.get(reference.index) else {
-            panic!("flux reference does not belong to this graph");
-        };
-        assert_eq!(
-            flux.id(),
-            &reference.id,
-            "flux reference does not belong to this graph"
-        );
+    pub async fn run(self, input: RunState) -> RunState {
+        self.validate().expect("invalid graph");
+        GraphRun::new(self, input).run().await
     }
 
-    fn assert_condition_ref(&self, reference: &ConditionRef) {
-        let Some(condition) = self.conditions.get(reference.index) else {
-            panic!("condition reference does not belong to this graph");
-        };
-        assert_eq!(
-            condition.id(),
-            &reference.id,
-            "condition reference does not belong to this graph"
-        );
-    }
-
-    fn assert_port_ref(&self, port: &Port) {
-        match port {
-            Port::Accel {
-                index,
-                accelerator_id,
-                ..
-            } => {
-                let Some(accelerator) = self.accelerators.get(*index) else {
-                    panic!("accelerator port does not belong to this graph");
-                };
-                assert_eq!(
-                    accelerator.id(),
-                    accelerator_id,
-                    "accelerator port does not belong to this graph"
-                );
-            }
-            Port::FluxOut { index, flux_id, .. } => self.assert_flux_port(*index, flux_id),
-            Port::FluxSlot {
-                index,
-                flux_id,
-                slot,
-                ..
-            } => {
-                self.assert_flux_port(*index, flux_id);
-                assert!(
-                    *slot < self.fluxes[*index].arity,
-                    "flux slot index is out of range"
-                );
-            }
-            Port::ConditionIn {
-                index,
-                condition_id,
-            }
-            | Port::ConditionOut {
-                index,
-                condition_id,
-                ..
-            } => self.assert_condition_port(*index, condition_id),
+    /// Run with specific per-component initial inputs (by component id), on top of
+    /// any boundary-input wiring. Used by a `Map` to seed each dynamically-added
+    /// worker with its own item before execution.
+    pub async fn run_seeded(
+        self,
+        input: RunState,
+        seeds: Vec<(ComponentId, RunState)>,
+    ) -> RunState {
+        self.validate().expect("invalid graph");
+        let mut run = GraphRun::new(self, input);
+        for (id, state) in seeds {
+            run.inputs[id.index()] = state;
         }
+        run.run().await
     }
 
-    fn assert_flux_port(&self, index: usize, id: &FluxId) {
-        let Some(flux) = self.fluxes.get(index) else {
-            panic!("flux port does not belong to this graph");
-        };
-        assert_eq!(flux.id(), id, "flux port does not belong to this graph");
-    }
-
-    fn assert_condition_port(&self, index: usize, id: &ConditionId) {
-        let Some(condition) = self.conditions.get(index) else {
-            panic!("condition port does not belong to this graph");
-        };
-        assert_eq!(
-            condition.id(),
-            id,
-            "condition port does not belong to this graph"
-        );
-    }
-
-    pub fn build(self) -> Result<Assembly, BuildError> {
-        self.validate_acyclic()?;
-
-        let num = self.accelerators.len();
-        let mut downstream = vec![Vec::new(); num];
-        let mut pending = vec![0usize; num];
-        let active_inputs = vec![0usize; num];
-        let skipped = vec![false; num];
-        let mut condition_sources = vec![None; self.conditions.len()];
-        let mut condition_branches = vec![ConditionBranches::default(); self.conditions.len()];
-
-        for (from, to) in &self.wires {
-            match (from, to) {
-                (
-                    Port::Accel {
-                        index: src,
-                        channel: Channel::Pulse,
-                        ..
-                    },
-                    Port::Accel {
-                        index: dst,
-                        channel: Channel::Pulse,
-                        ..
-                    },
-                ) => {
-                    downstream[*src].push(*dst);
-                    pending[*dst] += 1;
-                }
-                (
-                    Port::Accel {
-                        index: src,
-                        channel: Channel::Pulse,
-                        ..
-                    },
-                    Port::ConditionIn { index, .. },
-                ) => {
-                    if condition_sources[*index].replace(*src).is_some() {
-                        return Err(BuildError::DuplicateConditionSource);
-                    }
-                }
-                (
-                    Port::ConditionOut { index, branch, .. },
-                    Port::Accel {
-                        index: dst,
-                        channel: Channel::Pulse,
-                        ..
-                    },
-                ) => {
-                    condition_branches[*index].set(*branch, *dst)?;
-                    pending[*dst] += 1;
-                }
-                _ => {}
-            }
-        }
-
-        let mut condition_map: HashMap<usize, Vec<usize>> = HashMap::new();
-        let mut condition_routing = Vec::with_capacity(self.conditions.len());
-        for (index, condition) in self.conditions.into_iter().enumerate() {
-            let source = condition_sources[index].ok_or(BuildError::MissingConditionSource)?;
-            let branches = condition_branches[index];
-            let true_target = branches
-                .true_target
-                .ok_or(BuildError::MissingConditionTrueBranch)?;
-            let false_target = branches
-                .false_target
-                .ok_or(BuildError::MissingConditionFalseBranch)?;
-            let routing_index = condition_routing.len();
-            condition_map.entry(source).or_default().push(routing_index);
-            condition_routing.push(ConditionRouting {
-                predicate: condition.predicate,
-                true_target,
-                false_target,
-            });
-        }
-
-        let mut state_wires = HashMap::new();
-        let mut flux_slot_wires = HashMap::new();
-        for (from, to) in &self.wires {
-            match to {
-                Port::Accel { channel, .. } if *channel != Channel::Pulse => {
-                    state_wires.insert(to.clone(), from.clone());
-                }
-                Port::FluxSlot { index, slot, .. } => {
-                    flux_slot_wires.insert((*index, *slot), from.clone());
-                }
-                _ => {}
-            }
-        }
-
-        let mut is_sink = vec![true; num];
-        for (from, _) in &self.wires {
-            if let Port::Accel {
-                index,
-                channel: Channel::Pulse,
-                ..
-            } = from
-            {
-                is_sink[*index] = false;
-            }
-        }
-
-        let slots = self
-            .accelerators
-            .into_iter()
-            .map(|accelerator| {
-                Slot::new(
-                    accelerator.id().clone(),
-                    accelerator.name,
-                    accelerator.state,
-                )
+    fn validate_flux_inputs(&self) -> Result<(), String> {
+        let mut filled_slots = self
+            .components
+            .iter()
+            .map(|component| match &component.kind {
+                ComponentKind::Flux(flux) => vec![false; flux.arity],
+                _ => Vec::new(),
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        Ok(Assembly {
-            id: AssemblyId::new(),
-            name: self.name,
-            slots,
-            fluxes: self.fluxes,
-            downstream,
-            pending,
-            active_inputs,
-            skipped,
-            state_wires,
-            flux_slot_wires,
-            is_sink,
-            condition_routing,
-            condition_map,
-        })
-    }
-
-    fn validate_acyclic(&self) -> Result<(), BuildError> {
-        let total = self.accelerators.len() + self.fluxes.len() + self.conditions.len();
-        let mut adj = vec![Vec::new(); total];
-
-        for (from, to) in &self.wires {
-            let src = from.node_index(self.accelerators.len(), self.fluxes.len());
-            let dst = to.node_index(self.accelerators.len(), self.fluxes.len());
-            adj[src].push(dst);
+        for wire in &self.wires {
+            let Some(component) = component_id(&wire.to) else {
+                continue;
+            };
+            let Endpoint::FluxSlot { slot, .. } = wire.to.endpoint else {
+                continue;
+            };
+            if let Some(slot_filled) = filled_slots[component.index()].get_mut(slot) {
+                *slot_filled = true;
+            }
         }
 
-        let mut in_degree = vec![0; total];
-        for neighbors in &adj {
-            for node in neighbors {
-                in_degree[*node] += 1;
+        for (index, slots) in filled_slots.iter().enumerate() {
+            if let Some(slot) = slots.iter().position(|filled| !filled) {
+                return Err(format!(
+                    "flux {} missing input for slot {}",
+                    self.components[index].name.as_str(),
+                    slot
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_conditions(&self) -> Result<(), String> {
+        let mut condition_inputs = vec![0usize; self.components.len()];
+        let mut true_outputs = vec![0usize; self.components.len()];
+        let mut false_outputs = vec![0usize; self.components.len()];
+
+        for wire in &self.wires {
+            if let Some(component) = component_id(&wire.to)
+                && matches!(wire.to.endpoint, Endpoint::ConditionIn)
+            {
+                condition_inputs[component.index()] += 1;
+            }
+            if let Some(component) = component_id(&wire.from) {
+                match wire.from.endpoint {
+                    Endpoint::ConditionOut(ConditionBranch::True) => {
+                        true_outputs[component.index()] += 1
+                    }
+                    Endpoint::ConditionOut(ConditionBranch::False) => {
+                        false_outputs[component.index()] += 1
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        for (index, component) in self.components.iter().enumerate() {
+            if !matches!(component.kind, ComponentKind::Condition(_)) {
+                continue;
+            }
+            if condition_inputs[index] != 1 {
+                return Err(format!(
+                    "condition {} requires exactly one trigger input",
+                    component.name.as_str()
+                ));
+            }
+            if true_outputs[index] == 0 || false_outputs[index] == 0 {
+                return Err(format!(
+                    "condition {} requires true and false outputs",
+                    component.name.as_str()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_acyclic(&self) -> Result<(), String> {
+        let mut incoming = vec![0usize; self.components.len()];
+        let mut downstream = vec![Vec::new(); self.components.len()];
+        let mut edges = HashSet::new();
+
+        for wire in &self.wires {
+            let Some(source) = component_id(&wire.from) else {
+                continue;
+            };
+            let Some(target) = component_id(&wire.to) else {
+                continue;
+            };
+            if source == target {
+                return Err("graph contains a self cycle".to_string());
+            }
+            if edges.insert((source.index(), target.index())) {
+                incoming[target.index()] += 1;
+                downstream[source.index()].push(target.index());
             }
         }
 
         let mut queue = VecDeque::new();
-        for (idx, deg) in in_degree.iter().enumerate() {
-            if *deg == 0 {
-                queue.push_back(idx);
+        for (index, count) in incoming.iter().enumerate() {
+            if *count == 0 {
+                queue.push_back(index);
             }
         }
 
-        let mut visited = 0;
-        while let Some(node) = queue.pop_front() {
+        let mut visited = 0usize;
+        while let Some(index) = queue.pop_front() {
             visited += 1;
-            for next in &adj[node] {
-                in_degree[*next] -= 1;
-                if in_degree[*next] == 0 {
-                    queue.push_back(*next);
+            for target in &downstream[index] {
+                incoming[*target] -= 1;
+                if incoming[*target] == 0 {
+                    queue.push_back(*target);
                 }
             }
         }
 
-        if visited == total {
+        if visited == self.components.len() {
             Ok(())
         } else {
-            Err(BuildError::Cycle)
+            Err("graph contains a cycle".to_string())
         }
     }
 }
@@ -409,31 +266,441 @@ impl Default for Graph {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BuildError {
-    Cycle,
-    DuplicateConditionSource,
-    DuplicateConditionBranch,
-    MissingConditionSource,
-    MissingConditionTrueBranch,
-    MissingConditionFalseBranch,
+#[derive(Clone)]
+pub struct Component {
+    pub name: Name,
+    pub kind: ComponentKind,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-struct ConditionBranches {
-    true_target: Option<usize>,
-    false_target: Option<usize>,
+#[derive(Clone)]
+pub enum ComponentKind {
+    Accelerator(Box<Accelerator>),
+    Flux(Flux),
+    Condition(Condition),
 }
 
-impl ConditionBranches {
-    fn set(&mut self, branch: ConditionBranch, target: usize) -> Result<(), BuildError> {
-        let slot = match branch {
-            ConditionBranch::True => &mut self.true_target,
-            ConditionBranch::False => &mut self.false_target,
-        };
-        if slot.replace(target).is_some() {
-            return Err(BuildError::DuplicateConditionBranch);
+impl ComponentKind {
+    fn name(&self) -> &'static str {
+        match self {
+            ComponentKind::Accelerator(_) => "accelerator",
+            ComponentKind::Flux(_) => "flux",
+            ComponentKind::Condition(_) => "condition",
         }
-        Ok(())
+    }
+}
+
+struct GraphRun {
+    graph: Graph,
+    inputs: Vec<RunState>,
+    outputs: Vec<Option<RunState>>,
+    flux_slots: Vec<Vec<Option<RunState>>>,
+    condition_inputs: Vec<Option<RunState>>,
+    branches: Vec<Option<ConditionBranch>>,
+    remaining_deps: Vec<usize>,
+    active_incoming: Vec<usize>,
+    skipped: Vec<bool>,
+    result: RunState,
+    next_frontier: u64,
+}
+
+impl GraphRun {
+    fn new(graph: Graph, input: RunState) -> Self {
+        let mut inputs = Vec::with_capacity(graph.components.len());
+        let mut flux_slots = Vec::with_capacity(graph.components.len());
+
+        for component in &graph.components {
+            match &component.kind {
+                ComponentKind::Accelerator(_) => {
+                    inputs.push(RunState::default());
+                    flux_slots.push(Vec::new());
+                }
+                ComponentKind::Flux(flux) => {
+                    inputs.push(RunState::default());
+                    flux_slots.push(vec![None; flux.arity]);
+                }
+                ComponentKind::Condition(_) => {
+                    inputs.push(RunState::default());
+                    flux_slots.push(Vec::new());
+                }
+            }
+        }
+
+        let component_count = graph.components.len();
+        let mut run = Self {
+            graph,
+            inputs,
+            outputs: vec![None; component_count],
+            flux_slots,
+            condition_inputs: vec![None; component_count],
+            branches: vec![None; component_count],
+            remaining_deps: vec![0; component_count],
+            active_incoming: vec![0; component_count],
+            skipped: vec![false; component_count],
+            result: RunState::default(),
+            next_frontier: 1,
+        };
+
+        run.count_dependencies();
+        run.apply_boundary_input(&input);
+
+        // Propagate cwd from the graph's input to every sub-component so
+        // fs tools inside children write to the user-specified --run-dir.
+        //
+        // CLI callers set both RunState.run_dir and environment.run_dir, but
+        // graph channel wiring may carry only environment metadata into a
+        // nested composite. Treat environment.run_dir as an equivalent source
+        // of truth and write the resolved value back onto each child input.
+        let input_run_dir = input
+            .run_dir
+            .as_ref()
+            .or(input.environment.run_dir.as_ref())
+            .cloned();
+        if let Some(ref dir) = input_run_dir {
+            for inp in run.inputs.iter_mut() {
+                inp.run_dir = Some(dir.clone());
+                inp.environment.cwd = dir.clone();
+                inp.environment.run_dir = Some(dir.clone());
+                inp.environment
+                    .vars
+                    .entry("RCM_RUN_DIR".to_string())
+                    .or_insert_with(|| dir.display().to_string());
+            }
+            run.result.run_dir = Some(dir.clone());
+            run.result.environment.cwd = dir.clone();
+            run.result.environment.run_dir = Some(dir.clone());
+        }
+        run
+    }
+
+    async fn run(mut self) -> RunState {
+        hook!(event = "graph_start", graph = self.graph.name.as_str());
+        let mut queue = VecDeque::new();
+        for (index, count) in self.remaining_deps.iter().enumerate() {
+            if *count == 0 {
+                queue.push_back(index);
+            }
+        }
+
+        while !queue.is_empty() {
+            let frontier = self.drain_ready_frontier(&mut queue);
+            let completed = self.run_frontier(frontier).await;
+            for index in completed {
+                self.propagate_component(index, &mut queue);
+            }
+        }
+
+        hook!(event = "graph_done", graph = self.graph.name.as_str());
+        self.result
+    }
+
+    fn drain_ready_frontier(&self, queue: &mut VecDeque<usize>) -> Vec<usize> {
+        let mut frontier = Vec::new();
+        while let Some(index) = queue.pop_front() {
+            if self.skipped[index] || self.outputs[index].is_some() {
+                continue;
+            }
+            frontier.push(index);
+        }
+        frontier
+    }
+
+    async fn run_frontier(&mut self, frontier: Vec<usize>) -> Vec<usize> {
+        let frontier_id = self.next_frontier;
+        self.next_frontier += 1;
+        hook!(
+            event = "frontier_start",
+            graph = self.graph.name.as_str(),
+            frontier = frontier_id,
+            count = frontier.len()
+        );
+        let mut completed = Vec::new();
+        // Run the frontier in bounded waves so a wide `map` fan-out cannot launch
+        // hundreds of model/arXiv calls at once. Each wave is fully awaited before
+        // the next starts.
+        for chunk in frontier.chunks(FRONTIER_CONCURRENCY) {
+            let mut tasks = tokio::task::JoinSet::new();
+            for &index in chunk {
+                let component = self.graph.components[index].clone();
+                let input = self.inputs[index].clone();
+                let flux_slots = self.flux_slots[index].clone();
+                let condition_input = self.condition_inputs[index].clone();
+                let graph_name = self.graph.name.to_string();
+                let component_name = component.name.to_string();
+                let component_kind = component.kind.name();
+                let span = tracing::trace_span!(
+                    target: "hook",
+                    "component",
+                    graph = graph_name.as_str(),
+                    frontier = frontier_id,
+                    component = component_name.as_str(),
+                    component_index = index,
+                    component_kind
+                );
+                tasks.spawn(
+                    async move {
+                        hook!(
+                            event = "component_start",
+                            graph = graph_name.as_str(),
+                            frontier = frontier_id,
+                            component = component_name.as_str(),
+                            component_index = index,
+                            component_kind
+                        );
+                        let (state, branch) = match component.kind {
+                            ComponentKind::Accelerator(accelerator) => {
+                                (accelerator.run_with(input).await, None)
+                            }
+                            ComponentKind::Flux(flux) => {
+                                let slots = flux_slots
+                                    .into_iter()
+                                    .map(|slot| slot.unwrap_or_default())
+                                    .collect::<Vec<_>>();
+                                (flux.apply(&slots), None)
+                            }
+                            ComponentKind::Condition(condition) => {
+                                let state = condition_input.unwrap_or_default();
+                                let branch = condition.route(&state);
+                                (state, Some(branch))
+                            }
+                        };
+                        hook!(
+                            event = "component_done",
+                            graph = graph_name.as_str(),
+                            frontier = frontier_id,
+                            component = component_name.as_str(),
+                            component_index = index,
+                            component_kind
+                        );
+                        (index, state, branch)
+                    }
+                    .instrument(span),
+                );
+            }
+
+            while let Some(result) = tasks.join_next().await {
+                let (index, state, branch) = match result {
+                    Ok(output) => output,
+                    Err(error) if error.is_panic() => {
+                        warn!(?error, "graph component task panicked");
+                        std::panic::resume_unwind(error.into_panic());
+                    }
+                    Err(error) => {
+                        warn!(?error, "graph component task was cancelled");
+                        panic!("graph component task was cancelled: {error}");
+                    }
+                };
+                if let Some(branch) = branch {
+                    self.branches[index] = Some(branch);
+                }
+                self.outputs[index] = Some(state);
+                completed.push(index);
+            }
+        }
+        hook!(
+            event = "frontier_done",
+            graph = self.graph.name.as_str(),
+            frontier = frontier_id,
+            count = completed.len()
+        );
+        completed
+    }
+
+    fn count_dependencies(&mut self) {
+        let mut dependencies = HashSet::new();
+        for wire in &self.graph.wires {
+            let Some(source) = component_id(&wire.from) else {
+                continue;
+            };
+            let Some(target) = component_id(&wire.to) else {
+                continue;
+            };
+            if source != target && dependencies.insert((source.index(), target.index())) {
+                self.remaining_deps[target.index()] += 1;
+            }
+        }
+    }
+
+    fn apply_boundary_input(&mut self, input: &RunState) {
+        let wire_indices = self
+            .graph
+            .wires
+            .iter()
+            .enumerate()
+            .filter_map(|(index, wire)| {
+                (wire.from.owner == PortOwner::BoundaryInput).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        for index in wire_indices {
+            let wire = self.graph.wires[index].clone();
+            self.apply_wire(&wire, input);
+        }
+    }
+
+    fn propagate_component(&mut self, source: usize, queue: &mut VecDeque<usize>) {
+        let source_id = ComponentId::new(source);
+        let wire_indices = self
+            .graph
+            .wires
+            .iter()
+            .enumerate()
+            .filter_map(|(index, wire)| {
+                (component_id(&wire.from) == Some(source_id)).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        let mut released = HashSet::new();
+        for index in wire_indices {
+            let wire = self.graph.wires[index].clone();
+            let active = self.branch_is_active(source, &wire.from.endpoint);
+            if active {
+                let state = self.source_state(source, &wire.from.endpoint);
+                self.apply_wire(&wire, &state);
+            }
+            if let Some(target) = component_id(&wire.to)
+                && released.insert(target.index())
+            {
+                self.resolve_dependency(target.index(), active, queue);
+            }
+        }
+    }
+
+    fn propagate_skip(&mut self, source: usize, queue: &mut VecDeque<usize>) {
+        let source_id = ComponentId::new(source);
+        let wire_indices = self
+            .graph
+            .wires
+            .iter()
+            .enumerate()
+            .filter_map(|(index, wire)| {
+                (component_id(&wire.from) == Some(source_id)).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        let mut released = HashSet::new();
+        for index in wire_indices {
+            let wire = self.graph.wires[index].clone();
+            if let Some(target) = component_id(&wire.to)
+                && released.insert(target.index())
+            {
+                self.resolve_dependency(target.index(), false, queue);
+            }
+        }
+    }
+
+    fn branch_is_active(&self, source: usize, endpoint: &Endpoint) -> bool {
+        match endpoint {
+            Endpoint::ConditionOut(branch) => self.branches[source] == Some(*branch),
+            _ => true,
+        }
+    }
+
+    fn source_state(&self, source: usize, endpoint: &Endpoint) -> RunState {
+        match endpoint {
+            Endpoint::ConditionOut(_) => self.outputs[source].clone().unwrap_or_default(),
+            _ => match self.outputs[source].clone() {
+                Some(state) => state,
+                None => {
+                    // The source component should have produced an output
+                    // before its wires propagate (see set at line 490). A
+                    // missing output here indicates a graph/topology bug;
+                    // rather than panicking the whole pipeline, fall back to
+                    // an empty state and warn so the operator can diagnose.
+                    let name = self.graph.components[source].name.as_str();
+                    warn!(
+                        component = name,
+                        component_index = source,
+                        "component output missing during propagation; \
+                         forwarding empty RunState downstream"
+                    );
+                    RunState::default()
+                }
+            },
+        }
+    }
+
+    fn apply_wire(&mut self, wire: &Wire, state: &RunState) {
+        match (&wire.to.owner, wire.to.endpoint) {
+            (PortOwner::Component(component), Endpoint::State(channel)) => {
+                set_channel(
+                    &mut self.inputs[component.index()],
+                    channel,
+                    state_with_channel(channel, state),
+                );
+            }
+            (PortOwner::Component(component), Endpoint::FluxSlot { slot, channel }) => {
+                self.flux_slots[component.index()][slot] = Some(state_with_channel(channel, state));
+            }
+            (PortOwner::Component(component), Endpoint::ConditionIn) => {
+                self.condition_inputs[component.index()] = Some(state.clone());
+            }
+            (PortOwner::Component(_), Endpoint::Trigger) => {}
+            (PortOwner::BoundaryOutput, Endpoint::State(channel)) => {
+                set_channel(
+                    &mut self.result,
+                    channel,
+                    state_with_channel(channel, state),
+                );
+            }
+            (PortOwner::BoundaryOutput, Endpoint::Done) => {}
+            _ => unreachable!("wire validation accepted an unsupported endpoint pair"),
+        }
+    }
+
+    fn resolve_dependency(
+        &mut self,
+        target: usize,
+        active_branch: bool,
+        queue: &mut VecDeque<usize>,
+    ) {
+        if self.skipped[target] || self.outputs[target].is_some() {
+            return;
+        }
+        if active_branch {
+            self.active_incoming[target] += 1;
+        }
+        self.remaining_deps[target] -= 1;
+        if self.remaining_deps[target] != 0 {
+            return;
+        }
+        if self.active_incoming[target] > 0 {
+            queue.push_back(target);
+        } else {
+            self.skipped[target] = true;
+            hook!(
+                event = "component_skipped",
+                graph = self.graph.name.as_str(),
+                component = self.graph.components[target].name.as_str(),
+                component_index = target,
+                component_kind = self.graph.components[target].kind.name()
+            );
+            self.propagate_skip(target, queue);
+        }
+    }
+}
+
+fn component_id(port: &Port) -> Option<ComponentId> {
+    match port.owner {
+        PortOwner::Component(component) => Some(component),
+        _ => None,
+    }
+}
+
+fn state_with_channel(channel: Channel, source: &RunState) -> RunState {
+    let mut state = RunState::default();
+    match channel {
+        Channel::Purpose => state.purpose.clone_from(&source.purpose),
+        Channel::Context => state.context = source.context.clone(),
+        Channel::Environment => state.environment = source.environment.clone(),
+        Channel::Resources => state.resources = source.resources.clone(),
+        Channel::Pulse => {}
+    }
+    state
+}
+
+fn set_channel(target: &mut RunState, channel: Channel, source: RunState) {
+    match channel {
+        Channel::Purpose => target.purpose = source.purpose,
+        Channel::Context => target.context = source.context,
+        Channel::Environment => target.environment = source.environment,
+        Channel::Resources => target.resources = source.resources,
+        Channel::Pulse => {}
     }
 }
