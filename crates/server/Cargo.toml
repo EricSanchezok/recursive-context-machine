@@ -9,7 +9,7 @@ name = "rcm-server"
 path = "src/main.rs"
 
 [dependencies]
-tonic = "0.13"
+tonic = "0.14"
 prost = "0.13"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
