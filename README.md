@@ -1,139 +1,97 @@
-# RCM — Composable AI Pipelines
+# RCM — Recursive Context Machine
 
-RCM (Recursive Context Machine) is a tool for building composable AI pipelines
-using `.rcm` files. Each `.rcm` file exports an accelerator — either a
-primitive (single LLM call with tools) or a composite graph (multiple
-accelerators wired together).
+RCM is a Rust runtime for composable, stateful AI workflows. Pipelines are
+described with `.rcm` files and can combine model calls, tools, MCP servers,
+LSP diagnostics, storage, and explicit state transitions.
+
+The public source, release assets, installers, and Homebrew Formula live in
+this repository:
+
+<https://github.com/EricSanchezok/recursive-context-machine>
 
 ## Install
 
-### macOS / Linux
+### Homebrew
+
+The Formula is generated from each release and is available directly from this
+repository:
 
 ```bash
-# Homebrew
-brew tap EricSanchezok/rcm-dist
-brew install rcm
-
-# or one-line install
-curl -fsSL https://raw.githubusercontent.com/EricSanchezok/rcm-dist/main/install.sh | sh
+brew install --formula \
+  https://raw.githubusercontent.com/EricSanchezok/recursive-context-machine/main/Formula/rcm.rb
 ```
 
-### Windows
+### Shell installer
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/EricSanchezok/recursive-context-machine/main/install.sh | sh
+```
+
+On Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/EricSanchezok/rcm-dist/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/EricSanchezok/recursive-context-machine/main/install.ps1 | iex
 ```
 
-### Manual download
+Manual downloads are published on the [Releases page](https://github.com/EricSanchezok/recursive-context-machine/releases/latest).
 
-Pre-built binaries for all platforms are available on the
-[rcm-dist releases page](https://github.com/EricSanchezok/rcm-dist/releases/latest).
-Download the archive for your platform, extract it, and place `accelerate` on
-your `PATH`.
+## Quick start
 
-Verify your installation:
+Build the CLI from source and inspect an example pipeline:
 
 ```bash
-accelerate --version
+cargo run --release --bin accelerate -- inventory examples/general
+cargo run --release --bin accelerate -- parse examples/general/general.rcm
+cargo run --release --bin accelerate -- run examples/general/general.rcm --stream
 ```
 
----
-## Examples
+Other complete examples include:
+
+- `examples/city-halfday/city_halfday.rcm` — a compact multi-step workflow.
+- `examples/cook-tonight/cook_tonight.rcm` — a tool-oriented workflow.
+- `examples/paper-scout/paper_scout.rcm` — a research and synthesis workflow.
+- `examples/project-maintainer/dispatch.toml` — event routing for the maintainer pipeline.
+
+Each example directory contains its own README with setup and runtime notes.
+
+## gRPC and Python SDK
+
+Run the server locally:
 
 ```bash
-# List all available resources in a project
-accelerate inventory examples/research-assistant
-
-# Parse a .rcm file and output its AST as JSON
-accelerate parse examples/research-assistant/rcm/weather.rcm
-
-# Run a single accelerator
-accelerate run examples/research-assistant/rcm/captain.rcm
-
-# Run a composite graph with cross-file import
-accelerate run examples/research-assistant/rcm/arxiv_pipeline.rcm
-
-# Run with streaming JSON output (for frontend integration)
-accelerate run examples/research-assistant/rcm/weather.rcm --stream
-
-# Run with tape animation speed control (ms per step)
-accelerate run examples/research-assistant/rcm/captain.rcm --speed 300
+cargo run --release -p server --bin rcm-server
 ```
 
-Streaming `completion_end` events include additive, sanitized completion
-telemetry when emitted by RCM v0.2.16 or later: `outcome`, `duration_ms`, and,
-for failures, `http_status`, `failure_kind`, and `retryable`. Provider response
-text, prompts, and credentials are never included. Consumers must continue to
-accept older events where these fields are absent.
-
-### gRPC + Python Demo
-
-RCM exposes a gRPC server for programmatic control. The Python SDK lets you
-drive the full agent lifecycle from Python — ideal for MoEH training pipelines.
+The Python SDK is an independent package under `sdks/python`. Install it and
+regenerate the protobuf stubs when `proto/rcm.proto` changes:
 
 ```bash
-# Terminal 1: start the gRPC server
-DEEPSEEK_API_KEY="REDACTED" cargo run --release -p server --bin rcm-server
-
-# Terminal 2: run the Paper Digest demo
-pip install grpcio protobuf grpcio-tools
-cd sdks/python && bash generate.sh
-DEEPSEEK_API_KEY="REDACTED" python examples/research-assistant/grpc_demo.py
+cd sdks/python
+pip install -e . grpcio-tools
+bash generate.sh
+PYTHONPATH=src python examples/echo_agent.py "hello from Python"
 ```
 
-See `sdks/python/README.md` for SDK setup details.
-
----
-
-## CLI Reference
-
-```text
-accelerate
-├── run <file.rcm>                    Run a .rcm file
-│   ├── --speed <ms>                  Step delay for tape animation (default 50)
-│   ├── --format <text|json>          Output format (default text)
-│   ├── --context                     Show full context, not just final message
-│   └── --stream                      Output hook events as JSON lines
-├── parse <file.rcm>                  Parse to JSON AST
-└── inventory [project-dir]           List policies, tools, prompts, models, MCPs
-```
-
-### Standard Project Layout
-
-```text
-project/
-├── rcm.toml               Project metadata
-├── rcm/                   .rcm files
-│   ├── weather.rcm
-│   └── pipeline.rcm
-└── prompts/               External prompt files
-    └── reviewer.txt
-```
-
----
+The SDK examples also include a local MCP math server. See
+[`sdks/python/README.md`](sdks/python/README.md) for the API shape and model
+credential setup.
 
 ## Development
 
-```bash
-# Build the accelerate binary
-cargo build -p cli --bin accelerate
+Normal development happens on `dev` or a feature branch. `main` is updated only
+by the automated release-promotion pull request. Useful local checks are:
 
-# Run all Rust tests
-cargo test
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --tests --locked -- -D warnings
+cargo nextest run --workspace --locked
+cargo test --workspace --doc --locked
+node scripts/run-gates.mjs
 ```
 
-### Examples Project
+Read [`AGENTS.md`](AGENTS.md) for repository rules, and the focused guides in
+[`docs/`](docs/) for architecture, development, testing, and release policy.
 
-`examples/research-assistant/` is a standardized demo project that showcases all core features:
+## License
 
-| RCM file | Feature |
-|----------|---------|
-| `rcm/captain.rcm` | Primitive accelerator, model, policy |
-| `rcm/weather.rcm` | Shell tool (curl wttr.in) |
-| `rcm/arxiv_search.rcm` | Built-in arxiv search tool |
-| `rcm/arxiv_pipeline.rcm` | Graph with `use` cross-file import + wire + output |
-| `prompts/reviewer.txt` | External prompt loaded via `inventory` |
-| `rcm.toml` | Project metadata |
-| `grpc_demo.py` | gRPC full lifecycle demo (Python) |
-| `sdks/python/src/rcm/` | Python SDK with Open/Step/Destroy |
-| `sdks/python/examples/` | Python examples (arxiv, weather, system) |
+RCM is released under the [MIT License](LICENSE).

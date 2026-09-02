@@ -6,13 +6,18 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g., v0.2.0)'
+        description: Release tag to publish (for example, v0.2.20)
         required: true
         type: string
 
 concurrency:
-  group: release-${{ inputs.tag || github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -96,14 +101,12 @@ jobs:
 
       - name: Package (tar.gz)
         if: matrix.os != 'windows-latest'
-        run: |
-          tar czf "${{ matrix.archive }}" -C target/${{ matrix.target }}/release accelerate
+        run: tar czf "${{ matrix.archive }}" -C target/${{ matrix.target }}/release accelerate
 
       - name: Package (zip)
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/release/accelerate.exe" -DestinationPath "${{ matrix.archive }}"
+        run: Compress-Archive -Path "target/${{ matrix.target }}/release/accelerate.exe" -DestinationPath "${{ matrix.archive }}"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -112,22 +115,51 @@ jobs:
           path: ${{ matrix.archive }}
 
   publish:
-    name: Publish to rcm-dist
+    name: Publish release and promotion PR
     needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Resolve release tag
         id: tag
+        env:
+          RELEASE_INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [ -n "${{ inputs.tag }}" ]; then
-            TAG="${{ inputs.tag }}"
+          if [ -n "$RELEASE_INPUT_TAG" ]; then
+            TAG="$RELEASE_INPUT_TAG"
           else
             TAG="${GITHUB_REF#refs/tags/}"
           fi
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "release tag must match v<major>.<minor>.<patch>: $TAG" >&2; exit 1 ;;
+          esac
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Resolved tag: $TAG"
 
-      - name: Download all artifacts
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Validate tag provenance and CLI version
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git fetch origin dev --no-tags
+          TAG_COMMIT=$(git rev-parse "$TAG^{commit}")
+          DEV_COMMIT=$(git rev-parse origin/dev)
+          git merge-base --is-ancestor "$TAG_COMMIT" "$DEV_COMMIT" || {
+            echo "$TAG is not reachable from origin/dev" >&2
+            exit 1
+          }
+          CLI_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "cli") | .version')
+          EXPECTED_TAG="v${CLI_VERSION}"
+          [ "$TAG" = "$EXPECTED_TAG" ] || {
+            echo "tag $TAG does not match cli version $CLI_VERSION" >&2
+            exit 1
+          }
+
+      - name: Download all platform artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
@@ -135,67 +167,88 @@ jobs:
 
       - name: Generate checksums
         working-directory: dist
-        run: |
-          sha256sum -- * | tee checksums.txt
-          cat checksums.txt
+        run: sha256sum -- * | tee checksums.txt
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          repository: EricSanchezok/rcm-dist
-          token: ${{ secrets.RCM_DIST_TOKEN }}
           tag_name: ${{ steps.tag.outputs.tag }}
           name: ${{ steps.tag.outputs.tag }}
           files: dist/*
           generate_release_notes: true
 
-      - name: Checkout rcm-dist for formula update
-        uses: actions/checkout@v4
-        with:
-          repository: EricSanchezok/rcm-dist
-          token: ${{ secrets.RCM_DIST_TOKEN }}
-          path: rcm-dist
-
-      - name: Compute SHA256 hashes for formula
+      - name: Compute Formula hashes
         id: hashes
         working-directory: dist
         run: |
           {
-            echo "x86_64_linux=$(sha256sum accelerate-x86_64-linux.tar.gz | awk '{print $1}')"
-            echo "aarch64_linux=$(sha256sum accelerate-aarch64-linux.tar.gz | awk '{print $1}')"
-            echo "aarch64_darwin=$(sha256sum accelerate-aarch64-darwin.tar.gz | awk '{print $1}')"
-            echo "x86_64_darwin=$(sha256sum accelerate-x86_64-darwin.tar.gz | awk '{print $1}')"
+            echo "linux_x86=$(sha256sum accelerate-x86_64-linux.tar.gz | awk '{print $1}')"
+            echo "linux_arm=$(sha256sum accelerate-aarch64-linux.tar.gz | awk '{print $1}')"
+            echo "darwin_arm=$(sha256sum accelerate-aarch64-darwin.tar.gz | awk '{print $1}')"
+            echo "darwin_x86=$(sha256sum accelerate-x86_64-darwin.tar.gz | awk '{print $1}')"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Update Homebrew formula
-        working-directory: rcm-dist
+      - name: Create release promotion branch
+        id: promotion
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          HASH_DARWIN_ARM: ${{ steps.hashes.outputs.darwin_arm }}
+          HASH_DARWIN_X86: ${{ steps.hashes.outputs.darwin_x86 }}
+          HASH_LINUX_ARM: ${{ steps.hashes.outputs.linux_arm }}
+          HASH_LINUX_X86: ${{ steps.hashes.outputs.linux_x86 }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           TAG_CLEAN="${TAG#v}"
-
-          HASH_X86_64_LINUX="${{ steps.hashes.outputs.x86_64_linux }}"
-          HASH_AARCH64_LINUX="${{ steps.hashes.outputs.aarch64_linux }}"
-          HASH_AARCH64_DARWIN="${{ steps.hashes.outputs.aarch64_darwin }}"
-          HASH_X86_64_DARWIN="${{ steps.hashes.outputs.x86_64_darwin }}"
-
-          sed -i "s/version \".*\"/version \"${TAG_CLEAN}\"/" Formula/rcm.rb
-          sed -i "/accelerate-x86_64-linux.tar.gz/{n;s/sha256 \".*\"/sha256 \"${HASH_X86_64_LINUX}\"/;}" Formula/rcm.rb
-          sed -i "/accelerate-aarch64-linux.tar.gz/{n;s/sha256 \".*\"/sha256 \"${HASH_AARCH64_LINUX}\"/;}" Formula/rcm.rb
-          sed -i "/accelerate-aarch64-darwin.tar.gz/{n;s/sha256 \".*\"/sha256 \"${HASH_AARCH64_DARWIN}\"/;}" Formula/rcm.rb
-          sed -i "/accelerate-x86_64-darwin.tar.gz/{n;s/sha256 \".*\"/sha256 \"${HASH_X86_64_DARWIN}\"/;}" Formula/rcm.rb
-
-          grep -Fq "sha256 \"${HASH_X86_64_LINUX}\"" Formula/rcm.rb
-          grep -Fq "sha256 \"${HASH_AARCH64_LINUX}\"" Formula/rcm.rb
-          grep -Fq "sha256 \"${HASH_AARCH64_DARWIN}\"" Formula/rcm.rb
-          grep -Fq "sha256 \"${HASH_X86_64_DARWIN}\"" Formula/rcm.rb
-
-          cat Formula/rcm.rb
-
-      - name: Commit and push formula update
-        working-directory: rcm-dist
-        run: |
+          RELEASE_BRANCH="release/${TAG}"
+          ./scripts/render-formula.sh \
+            "$TAG_CLEAN" \
+            "$HASH_DARWIN_ARM" \
+            "$HASH_DARWIN_X86" \
+            "$HASH_LINUX_ARM" \
+            "$HASH_LINUX_X86" \
+            Formula/rcm.rb
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin "$RELEASE_BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$RELEASE_BRANCH"
+            git switch -C "$RELEASE_BRANCH" "origin/$RELEASE_BRANCH"
+          else
+            git switch -C "$RELEASE_BRANCH"
+          fi
           git add Formula/rcm.rb
-          git commit -m "Update formula for ${{ steps.tag.outputs.tag }}" || echo "No changes to commit"
-          git push
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): update formula for $TAG"
+          fi
+          git push origin "HEAD:$RELEASE_BRANCH"
+          PR_URL=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$RELEASE_BRANCH" --base main --state open --json url --jq '.[0].url')
+          if [ -z "$PR_URL" ]; then
+            PR_URL=$(gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$RELEASE_BRANCH" \
+              --title "release: $TAG" \
+              --body "This promotion PR publishes the complete $TAG release snapshot, including the generated Homebrew Formula. It is created and merged only by the release workflow after required checks pass.")
+          fi
+          PR_NUMBER=$(gh pr view "$PR_URL" --repo "$GITHUB_REPOSITORY" --json number --jq .number)
+          echo "branch=$RELEASE_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch branch validation workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ steps.promotion.outputs.branch }}
+          PR_NUMBER: ${{ steps.promotion.outputs.pr_number }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_BRANCH"
+          gh workflow run release-promotion.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$RELEASE_BRANCH" \
+            -f pr_number="$PR_NUMBER" \
+            -f tag="$TAG"
+
+      - name: Enable promotion auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.promotion.outputs.pr_number }}
+        run: gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --auto --squash --delete-branch

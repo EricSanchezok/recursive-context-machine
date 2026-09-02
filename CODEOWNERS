@@ -1,0 +1,10 @@
+# Path-level owners
+
+# Each line maps a path to the GitHub user/team responsible for review. Release
+# promotion remains zero-approval and is enforced by the release-only gate.
+
+*                       @EricSanchezok
+/docs/                  @EricSanchezok
+/scripts/               @EricSanchezok
+/.agents/               @EricSanchezok
+/.github/               @EricSanchezok
