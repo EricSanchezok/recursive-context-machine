@@ -49,7 +49,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       KIMI_CODING_API_KEY: ${{ secrets.KIMI_CODING_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history so the code_change path can branch off main cleanly.
           fetch-depth: 0

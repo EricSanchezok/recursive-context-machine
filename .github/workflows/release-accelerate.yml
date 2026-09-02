@@ -56,7 +56,7 @@ jobs:
             archive: accelerate-x86_64-windows.zip
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         if: runner.os != 'Linux'
@@ -136,7 +136,7 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Check out the release tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
           fetch-depth: 0
