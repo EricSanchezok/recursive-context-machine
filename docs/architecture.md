@@ -2,7 +2,7 @@
 
 This document is the ordered map of the repository: composition, modules, seams, and extension points. Read it before changing structure. Per-module detail lives in the owning module's own documentation; durable decision rationale lives in [docs/decisions/](../docs/decisions/).
 
-The Rust workspace is composed of six crates: machine owns context, model, policy, reactor, tools, and execution; accelerator composes graphs, policies, tools, LSP, MCP, and trajectory handling; storage persists WAL-backed sessions; cli exposes the accelerate binary and RCM parser; server exposes the gRPC API; utils provides shared identifiers and naming. The Python SDK under sdks/python mirrors the gRPC contract.
+The Rust workspace is composed of six crates: machine owns context, model, policy, reactor, tools, and execution; accelerator composes graphs, policies, provider/model resolution, tools, LSP, MCP, and trajectory handling; storage persists WAL-backed sessions; cli exposes the accelerate binary and RCM parser; server exposes the gRPC API; utils provides shared identifiers and naming. The Python SDK under sdks/python mirrors the gRPC contract.
 
 Cross-crate seams are the machine API, accelerator graph and tool registries, storage snapshots, the CLI parser/compiler boundary, the protobuf service in proto/rcm.proto, and the SDK generated bindings.
 

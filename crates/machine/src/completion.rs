@@ -48,6 +48,18 @@ use crate::resources::Resources;
 use crate::usage::TokenUsage;
 use tracing::{debug, warn};
 
+/// The bare model name to send on the wire. When a `Model` is constructed via
+/// the accelerator's provider table, `name` is `"<provider>/<model>"` and the
+/// bare model name is stashed in `extra["wire_name"]`. Hand-built `Model`s
+/// without that extra fall back to `name` directly.
+fn wire_name(model: &Model) -> &str {
+    model
+        .extra
+        .get("wire_name")
+        .and_then(|value| value.as_str())
+        .unwrap_or(&model.name)
+}
+
 /// Call the active LLM and return the response fragments or an error.
 pub async fn complete(
     ctx: &Context,
@@ -86,6 +98,7 @@ pub async fn complete(
 
     let api_key = model.credentials.as_deref().unwrap_or("");
     let endpoint_url = model.endpoint.as_deref();
+    let wire_name = wire_name(model);
 
     let result = match model.protocol {
         Protocol::OpenAI => {
@@ -99,7 +112,7 @@ pub async fn complete(
             let endpoint = builder
                 .build()
                 .expect("failed to build openai client")
-                .completion_model(&model.name);
+                .completion_model(wire_name);
             send(&endpoint, model, &messages, &tools).await
         }
         Protocol::Anthropic => {
@@ -111,7 +124,7 @@ pub async fn complete(
             let endpoint = builder
                 .build()
                 .expect("failed to build anthropic client")
-                .completion_model(&model.name);
+                .completion_model(wire_name);
             send(&endpoint, model, &messages, &tools).await
         }
         Protocol::Gemini => {
@@ -123,7 +136,7 @@ pub async fn complete(
             let endpoint = builder
                 .build()
                 .expect("failed to build gemini client")
-                .completion_model(&model.name);
+                .completion_model(wire_name);
             send(&endpoint, model, &messages, &tools).await
         }
     };
