@@ -60,8 +60,10 @@ jobs:
         # keeps working off the previous tag until a new release lands.
         run: |
           gh release download \
-            --pattern 'accelerate-x86_64-linux' \
-            --output accelerate
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'accelerate-x86_64-linux.tar.gz' \
+            --output accelerate.tar.gz
+          tar xzf accelerate.tar.gz
           chmod +x accelerate
 
       - name: Configure git identity for code_change commits

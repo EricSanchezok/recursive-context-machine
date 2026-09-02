@@ -1,0 +1,72 @@
+---
+name: repo-review
+description: Use when reviewing a pull request or a change in this repository — orients the reviewer to this repository's standards (AGENTS.md conventions, decision log, gates) and the review-specific checks that code alone cannot show
+---
+
+# Reviewing a change in this repository
+
+Read the diff, the owning docs, the decision log, and enough surrounding code to understand the design before judging it. **Blocking requirements** are hard: a violation blocks the change. **Manual checks** rank remaining risk by this project's real failure modes — apply the ones the change touches, not every one, to every change.
+
+## Sources of truth
+
+- [AGENTS.md](../../../AGENTS.md): standing repository rules.
+- [docs/AGENTS.md](../../../docs/AGENTS.md): documentation placement and prose discipline.
+- [docs/decisions/](../../../docs/decisions/): durable design rationale. Disagreement with a decision record is a design discussion, not an automatic veto.
+- [docs/specs/](../../../docs/specs/): risk-triggered change contracts.
+- [docs/testing.md](../../../docs/testing.md): risk-to-layer selection, test topology, evidence rules, and maintenance budget.
+- [docs/architecture.md](../../../docs/architecture.md): the module map and seams.
+
+## Blocking requirements
+
+### Universal (applies to any repository)
+
+1. **New prose receives semantic review.** Critically review every added or changed Markdown passage, JSDoc, comment, prompt, description, diagnostic, and visible string. Verify required coverage, accuracy, placement, and editorial quality against the owning code or behavior; automated checks do not establish those properties.
+2. **Docs match the code.** Config, defaults, errors, wire fields, events, and public behavior update the owning docs and JSDoc in the same diff.
+3. **Contracts and decisions use the right artifact.** A risk-boundary change has an Approved spec; a durable choice with real alternatives has a decision record. Do not demand an ADR as a change log.
+4. **Tests provide minimum sufficient behavior evidence.** Name the meaningful regression each changed test prevents and place its primary evidence at the lowest sufficiently real boundary. A fix links an existing deterministic reproduction or adds a regression test that fails before the fix and passes afterward; redundant coverage or implementation-only assertions do not satisfy this requirement.
+5. **External-source provenance is retained.** If implementation is materially derived from a paper, article, community post, benchmark, research report, or copied/adapted code, cite it at the closest stable code location or link that location to a decision record whose `## Links` cites the source. A pull request, issue, prompt, or chat-only citation does not count; copied or adapted material also preserves applicable license and NOTICE requirements.
+
+### Project-specific (instantiated at seed time from this project's own rules)
+
+1. **Protocol and SDK mirrors stay synchronized:** changes to `proto/rcm.proto`
+   update the server decode/service boundary, generated Python stubs, SDK tests,
+   and the owning documentation in the same change.
+2. **Main changes arrive through release promotion:** ordinary development targets
+   `dev`; a change to `main` must be the automated `release/v*` promotion PR after
+   the release artifacts and required checks succeed.
+3. **Machine boundaries remain explicit:** `reactor` stays internal to `machine`,
+   and provider presets stay outside `machine`; new dependencies must respect the
+   workspace crate ownership documented in [architecture](../../../docs/architecture.md).
+4. **External execution remains bounded:** every LLM, tool, MCP, LSP, and storage
+   operation preserves timeout, cancellation, and error-cleanup behavior.
+5. **Credentials never enter repository state:** configuration uses environment
+   references or documented placeholders; literal keys, tokens, and secrets do
+   not appear in source, tests, examples, workflow files, or release artifacts.
+
+## Manual checks
+
+### Project-specific (instantiated at seed time from this project's stack and known failure modes)
+
+- **Model-facing contract:** inspect the exact prompts, tool schemas, diagnostics,
+  telemetry, and error text exposed to a model across CLI, accelerator, and server
+  paths; preserve stable fields and sanitized failure behavior.
+- **Async lifecycle:** trace races before publication, cancellation during awaits,
+  timeout handling, child-process cleanup, and independent error reporting in
+  `machine`, MCP, LSP, and tool implementations.
+- **Graph and resource state:** follow Flux routing, graph validation, resource
+  activation/deactivation, and state projection across `accelerator` and `machine`;
+  exercise the public crate API at the lowest real integration boundary.
+- **Persistence and replay:** verify WAL writes, snapshots, trajectory envelopes,
+  replay effects, and cleanup on partial or failed runs in `storage`, `accelerator`,
+  and `server`.
+- **CLI/SDK wiring:** check parser/compiler behavior, gRPC service mapping, generated
+  Python bindings, and example project paths together when an interface changes.
+
+### Universal fallbacks (apply where the project has no specific rule)
+
+- **Intent and interface contracts:** trace both sides of every changed interface. Confirm the implementation matches the change and any decision record, including errors, cancellation, ownership, and disposal.
+- **Lifecycle and concurrency:** for async setup, callbacks, processes, or teardown, check races before publication, cancellation during awaits, independent error reporting, and complete cleanup.
+- **Human readability:** read changed code from its entry point downward. The primary path stays understandable without opening every helper. Challenge abstractions that only forward or rename, mixed abstraction levels, misleading or generic names, new synonyms for existing concepts, and logic outside its owning boundary. Block when these make behavior unreliable to infer, hide effects or cost, or violate established vocabulary or boundaries; otherwise report subjective polish as advisory. Line counts, parameter counts, duplication, and complexity scores are signals, not verdicts.
+- **Scope and necessity:** map each abstraction, option, defensive copy, and compatibility path to its current contract and consumer. Challenge unrelated features and speculative generality.
+- **Bounds cover the final operation:** probe tiny and exact limits, oversized chunks, and multibyte text for byte limits.
+- **Test value and boundary:** identify the contract each changed test owns, challenge duplicate evidence, and use the real shipped entry path whenever packaging, configuration, process setup, or wiring is part of the risk.
