@@ -54,7 +54,18 @@ jobs:
           # Full history so the code_change path can branch off main cleanly.
           fetch-depth: 0
 
+      - name: Check for a published release
+        id: release
+        run: |
+          if gh release view --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No release is published yet; maintainer dispatch is skipped."
+          fi
+
       - name: Download accelerate from the latest release
+        if: steps.release.outputs.available == 'true'
         # Decouples maintainer runs from the current HEAD: every run uses the
         # last published, known-good binary. If main breaks the build the bot
         # keeps working off the previous tag until a new release lands.
@@ -67,6 +78,7 @@ jobs:
           chmod +x accelerate
 
       - name: Configure git identity for code_change commits
+        if: steps.release.outputs.available == 'true'
         # Only the CI shell sets repo-level git config — the agent's `git` tool
         # rejects `git config` per AGENTS.md, so identity must be in place
         # before the agent runs.
@@ -76,6 +88,7 @@ jobs:
 
       - name: Render template for current event
         id: dispatch
+        if: steps.release.outputs.available == 'true'
         run: |
           ACTION=$(jq -r '.action // ""' "$GITHUB_EVENT_PATH")
           RENDERED=$(./accelerate dispatch \
@@ -99,17 +112,17 @@ jobs:
         # so PR code on disk is not run. The rendered .rcm lives in the gitignored
         # .rcm-cache/ and survives the branch switch. Internal/branch PRs only —
         # forks can't run this pipeline today (no secrets on fork pull_request).
-        if: ${{ steps.dispatch.outputs.rendered != '' && github.event_name == 'pull_request' }}
+        if: ${{ steps.release.outputs.available == 'true' && steps.dispatch.outputs.rendered != '' && github.event_name == 'pull_request' }}
         run: gh pr checkout ${{ github.event.pull_request.number }}
 
       - name: Run rendered pipeline
-        if: steps.dispatch.outputs.rendered != ''
+        if: steps.release.outputs.available == 'true' && steps.dispatch.outputs.rendered != ''
         run: ./accelerate run "${{ steps.dispatch.outputs.rendered }}" --stream
 
       - name: Upload rendered .rcm as audit artifact
         # Keep even on failure — a busted run is exactly when we need the rendered
         # pipeline to reproduce locally.
-        if: always() && steps.dispatch.outputs.rendered != ''
+        if: always() && steps.release.outputs.available == 'true' && steps.dispatch.outputs.rendered != ''
         uses: actions/upload-artifact@v4
         with:
           name: rendered-${{ github.event_name }}-${{ github.run_id }}
