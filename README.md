@@ -85,58 +85,6 @@ See `sdks/python/README.md` for SDK setup details.
 
 ---
 
-## Desktop Frontend
-
-The desktop app is in `desktop/`. It's an Electron + React app that opens `.rcm` files as interactive graph workspaces.
-
-### Setup
-
-```bash
-cd desktop
-npm install
-```
-
-### Development
-
-```bash
-# One command — builds the CLI, sets up desktop, and starts everything
-./dev.sh
-```
-
-This script will:
-1. Build the `accelerate` CLI binary (`cargo build -p cli --bin accelerate`)
-2. Set `ACCELERATE_PATH` so Electron can find it
-3. Install desktop dependencies (only on first run)
-4. Start the Vite dev server and Electron window with hot reload
-
-You can also start the desktop app manually:
-```bash
-cargo build -p cli --bin accelerate
-ACCELERATE_PATH="$PWD/target/debug/accelerate" cd desktop && npm install && npm run dev
-```
-
-### Environment
-
-The desktop app calls the `accelerate` CLI binary. Make sure `accelerate` is in your `PATH`:
-
-```bash
-# From the RCM project root
-cargo build -p cli --bin accelerate
-export ACCELERATE_PATH="$PWD/target/debug/accelerate"
-```
-
-### Building for distribution
-
-```bash
-cd desktop
-npm run build        # build only
-npm run dist         # package for current platform
-npm run dist:mac     # package macOS .dmg
-npm run dist:win     # package Windows installer
-```
-
----
-
 ## CLI Reference
 
 ```text
@@ -172,9 +120,6 @@ cargo build -p cli --bin accelerate
 
 # Run all Rust tests
 cargo test
-
-# Run frontend type check
-cd desktop && npx tsc --noEmit
 ```
 
 ### Examples Project

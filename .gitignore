@@ -29,7 +29,6 @@ target/
 # Build
 dist/
 build/
-desktop/out/
 *.log
 
 # Research docs (auto-generated research reports)
