@@ -11,8 +11,10 @@
 //! | [`Policy`] | Owned by caller |
 //! | [`Machine`] | Interpreter that turns actions into recorded effects |
 
+pub mod assistant;
 pub mod completion;
 pub mod context;
+pub mod edit;
 pub mod env;
 pub mod event;
 pub mod fragment;
@@ -30,7 +32,11 @@ pub mod resources;
 pub mod tool;
 pub mod usage;
 
-pub use context::{Context, ContextIdNotFound};
+pub use assistant::{
+    AssistantFuture, AssistantRequest, CompletionAssistant, MAX_COMPLETIONS_PER_TOOL_CALL,
+};
+pub use context::{CellMeta, Context, ContextIdNotFound, PROTECTED_ANCHORS, SLOT_ORDER};
+pub use edit::{CellPredicate, ContentSpec, EditOp, Position, Selector};
 pub use env::Environment;
 pub use fragment::{
     Audio, Content, DataSource, Document, Fragment, Image, Role, Text, ToolCall, ToolResult, Video,
@@ -39,8 +45,8 @@ pub use inbox::{Inbox, InboxItem};
 pub use machine::{ExecutionMode, Machine, MachineFrame, MachineState, MachineStatus, RunState};
 pub use model::{Cost, DEFAULT_MODEL_TIMEOUT_SECS, Limit, Modalities, Modality, Model, Protocol};
 pub use obs::{
-    Budget, LedgerDigest, LedgerDigestEntry, LedgerTransition, Obs, OverlayStatus,
-    ledger_transitions_in,
+    Budget, CellDirEntry, LedgerDigest, LedgerDigestEntry, LedgerTransition, Obs, OverlayStatus,
+    RegistryEvent, ResourceDigest, ledger_transitions_in, registry_events_in,
 };
 pub use overlay::Overlay;
 pub use policy::{ACTION_VERBS, Action, Policy, PolicyView};

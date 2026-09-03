@@ -19,6 +19,16 @@ pub struct TrajectoryEvent {
     /// Ledger state migrations caused by this step's tool calls, lifted
     /// from ledger tool results by `machine::ledger_transitions_in`.
     pub ledger_transitions: Vec<machine::LedgerTransition>,
+    /// Resource-registry mutations applied by this step's drain pass —
+    /// the self-evolution provenance (what the agent changed about its
+    /// own harness, and when).
+    #[serde(default)]
+    pub registry_events: Vec<machine::RegistryEvent>,
+    /// Effects applied by the drain-edits channel for this step's tool
+    /// payloads (context.compact, …) — nested under `DrainEdits`, so one
+    /// entry replays the whole payload application without a step bump.
+    #[serde(default)]
+    pub drain_effects: Vec<machine::Effect>,
     pub event: StoredEvent,
 }
 
@@ -60,6 +70,10 @@ impl Store {
             let trajectory = decode::<TrajectoryEvent>(&payload)?;
             state.frame.step = trajectory.event.step;
             machine.replay_effects(&mut state, &trajectory.event.effects);
+            // Drain-channel effects ride in their own envelope slot; they
+            // apply after the step's own effects, mirroring the live order
+            // (apply → registry drain → edits drain).
+            machine.replay_effects(&mut state, &trajectory.drain_effects);
             applied_event = true;
         }
 

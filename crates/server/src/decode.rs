@@ -59,53 +59,30 @@ pub fn decode_command(command: &ActionCommand) -> Result<Action, Status> {
     match command.verb.as_str() {
         "Halt" => Ok(Action::Halt),
         "Done" => Ok(Action::Done),
-        "Take" => Ok(Action::Take),
-        "Append" => {
-            let content = command
-                .fragment
+        "Edit" => {
+            let ops_json = command
+                .edit_ops_json
                 .as_ref()
-                .ok_or(Status::invalid_argument("fragment required"))?;
-            Ok(Action::Append(build_fragment(content)))
-        }
-        "Remove" => {
-            let id = command
-                .fragment_id
-                .ok_or(Status::invalid_argument("fragment_id required"))?;
-            Ok(Action::Remove(id))
-        }
-        "Swap" => {
-            let id1 = command
-                .fragment_id
-                .ok_or(Status::invalid_argument("fragment_id required"))?;
-            let id2 = command
-                .fragment_id2
-                .ok_or(Status::invalid_argument("fragment_id2 required"))?;
-            Ok(Action::Swap(id1, id2))
-        }
-        "Insert" => {
-            let after = command
-                .fragment_id
-                .ok_or(Status::invalid_argument("fragment_id required"))?;
-            let content = command
-                .fragment
-                .as_ref()
-                .ok_or(Status::invalid_argument("fragment required"))?;
-            Ok(Action::Insert {
-                after,
-                fragment: build_fragment(content),
+                .ok_or(Status::invalid_argument("edit_ops_json required"))?;
+            let ops: Vec<machine::edit::EditOp> = serde_json::from_str(ops_json)
+                .map_err(|error| Status::invalid_argument(format!("invalid edit ops: {error}")))?;
+            Ok(Action::Edit {
+                ops,
+                because: command.because.clone(),
             })
         }
-        "Replace" => {
-            let id = command
-                .fragment_id
-                .ok_or(Status::invalid_argument("fragment_id required"))?;
-            let content = command
-                .fragment
+        "Tool" => {
+            let name = command
+                .name
                 .as_ref()
-                .ok_or(Status::invalid_argument("fragment required"))?;
-            Ok(Action::Replace {
-                id,
-                fragment: build_fragment(content),
+                .ok_or(Status::invalid_argument("name required"))?;
+            let args_json = command.args_json.as_deref().unwrap_or("{}");
+            let args: serde_json::Value = serde_json::from_str(args_json)
+                .map_err(|error| Status::invalid_argument(format!("invalid tool args: {error}")))?;
+            Ok(Action::Tool {
+                name: name.clone(),
+                args,
+                because: command.because.clone(),
             })
         }
         "Model" => {

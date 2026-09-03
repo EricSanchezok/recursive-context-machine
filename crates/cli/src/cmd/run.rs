@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
 use tracing_subscriber::prelude::*;
 
+use super::report;
 use crate::args::{Format, RunArgs};
 use crate::hook::{self, HookKind};
 use crate::output;
@@ -29,14 +30,24 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
     let run_dir = prepare_run_dir(args.run_dir)?;
 
     if args.stream {
-        return stream_run(accelerator, hook_rx, purpose, run_dir).await;
+        return stream_run(accelerator, hook_rx, purpose, run_dir, args.label).await;
     }
 
     let start = Instant::now();
-    let (runtime_thread, ctx_rx) = spawn_runtime(accelerator, purpose, run_dir);
+    let (runtime_thread, ctx_rx) = spawn_runtime(accelerator, purpose.clone(), run_dir.clone());
 
     let summary = output::tape::run_animation(hook_rx, args.speed, start, &runtime_thread);
     let ctx = finish_runtime(runtime_thread, ctx_rx)?;
+
+    if let Some(ref dir) = run_dir {
+        let measures = report::RunMeasures {
+            completions: summary.completions,
+            tool_calls: summary.tool_calls as u64,
+            input_tokens: summary.input_tokens,
+            output_tokens: summary.output_tokens,
+        };
+        report::write(dir, &args.label, &purpose, &ctx, measures, start.elapsed());
+    }
 
     match args.format {
         Format::Text => output::text::print(&ctx, &summary, args.context),
@@ -59,21 +70,26 @@ pub async fn run(args: RunArgs) -> anyhow::Result<()> {
 //   component_start, component_done, component_skipped
 //   machine_start, machine_done, halt, completion_start, completion_end
 //   tool_call, tool_result, tool_error
-//   appended, taken, inserted, replaced, removed
+//   appended, taken, inserted, replaced, removed, swapped
+//   moved, consumed (document-model v2: Move op, inbox consumption)
 //   model, activate, deactivate, resource
 //
 // All field names use snake_case.
-// Consumer: portal-gateway/src/hub/parse-rcm.ts
+// Consumer: portal-gateway/src/hub/parse-rcm.ts (gateway sync waived for
+// the v2 additions; the gateway ignores unrecognized event types)
 // ===========================================================================
 async fn stream_run(
     accelerator: accelerator::Accelerator,
     hook_rx: mpsc::Receiver<hook::HookEvent>,
     purpose: String,
     run_dir: Option<std::path::PathBuf>,
+    label: String,
 ) -> anyhow::Result<()> {
-    let (runtime_thread, ctx_rx) = spawn_runtime(accelerator, purpose, run_dir);
+    let (runtime_thread, ctx_rx) = spawn_runtime(accelerator, purpose.clone(), run_dir.clone());
 
     let mut graph_seen = false;
+    let mut measures = report::RunMeasures::default();
+    let start = Instant::now();
     loop {
         let event = match hook_rx.recv_timeout(RUNTIME_POLL_INTERVAL) {
             Ok(event) => event,
@@ -81,6 +97,19 @@ async fn stream_run(
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
+        if let HookKind::Completion(hook::CompletionEvent::End {
+            input_tokens,
+            output_tokens,
+            ..
+        }) = &event.kind
+        {
+            measures.completions += 1;
+            measures.input_tokens = measures.input_tokens.saturating_add(*input_tokens);
+            measures.output_tokens = measures.output_tokens.saturating_add(*output_tokens);
+        }
+        if matches!(&event.kind, HookKind::Tool(hook::ToolEvent::Result { .. })) {
+            measures.tool_calls += 1;
+        }
         if event.source.is_none()
             && matches!(event.kind, HookKind::Graph(hook::GraphEvent::Start { .. }))
         {
@@ -180,6 +209,12 @@ async fn stream_run(
                 "swapped",
                 serde_json::json!({ "first": first, "second": second }),
             ),
+            HookKind::Fragment(hook::FragmentEvent::Moved { id, after }) => {
+                json_line("moved", serde_json::json!({ "id": id, "after": after }))
+            }
+            HookKind::Fragment(hook::FragmentEvent::Consumed { call_id }) => {
+                json_line("consumed", serde_json::json!({ "call_id": call_id }))
+            }
             HookKind::Resource(hook::ResourceEvent::Model { name }) => {
                 json_line("model", serde_json::json!({ "name": name }))
             }
@@ -196,7 +231,10 @@ async fn stream_run(
         }
     }
 
-    finish_runtime(runtime_thread, ctx_rx)?;
+    let ctx = finish_runtime(runtime_thread, ctx_rx)?;
+    if let Some(ref dir) = run_dir {
+        report::write(dir, &label, &purpose, &ctx, measures, start.elapsed());
+    }
     Ok(())
 }
 

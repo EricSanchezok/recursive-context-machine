@@ -1,3 +1,4 @@
+use machine::edit::{ContentSpec, EditOp, Position, Selector};
 use machine::{
     Action, Effect, Fragment, InboxItem, MachineState, Model, Obs, Resources, StoredEvent,
     ToolDefinition,
@@ -36,7 +37,25 @@ fn trajectory(step: u64, action: Action, effects: Vec<Effect>) -> TrajectoryEven
         step,
         obs: Obs::default(),
         ledger_transitions: Vec::new(),
+        registry_events: Vec::new(),
+        drain_effects: Vec::new(),
         event: StoredEvent::new(step, action, effects),
+    }
+}
+
+fn edit_action(ops: Vec<EditOp>) -> Action {
+    Action::Edit { ops, because: None }
+}
+
+fn insert_end(text: &str) -> EditOp {
+    EditOp::Insert {
+        position: Position::End,
+        content: ContentSpec::Literal {
+            text: text.to_string(),
+            role: machine::Role::User,
+            tag: None,
+        },
+        anchor: None,
     }
 }
 
@@ -48,21 +67,23 @@ async fn restore_returns_none_for_empty_store() {
 }
 
 #[tokio::test]
-async fn record_and_restore_context_actions() {
+async fn record_and_restore_edit_insertions() {
     let dir = TempDir::new().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
 
     store
         .record_trajectory(&trajectory(
             1,
-            Action::Append(Fragment::user("hello")),
+            edit_action(vec![insert_end("hello")]),
             vec![
                 Effect::ActionCounted {
-                    action: "append".into(),
+                    action: "edit".into(),
                 },
-                Effect::ContextAppended {
+                Effect::ContextInserted {
                     id: 1,
+                    after: None,
                     fragment: Fragment::user("hello"),
+                    source_completion: None,
                 },
             ],
         ))
@@ -70,14 +91,24 @@ async fn record_and_restore_context_actions() {
     store
         .record_trajectory(&trajectory(
             2,
-            Action::Append(Fragment::assistant("world")),
+            edit_action(vec![EditOp::Insert {
+                position: Position::End,
+                content: ContentSpec::Literal {
+                    text: "world".into(),
+                    role: machine::Role::Assistant,
+                    tag: None,
+                },
+                anchor: None,
+            }]),
             vec![
                 Effect::ActionCounted {
-                    action: "append".into(),
+                    action: "edit".into(),
                 },
-                Effect::ContextAppended {
+                Effect::ContextInserted {
                     id: 2,
+                    after: None,
                     fragment: Fragment::assistant("world"),
+                    source_completion: None,
                 },
             ],
         ))
@@ -159,11 +190,11 @@ async fn restore_replays_runtime_resource_actions() {
 }
 
 #[tokio::test]
-async fn failed_action_replays_recorded_inbox_hitch() {
+async fn failed_op_replays_recorded_inbox_hitch() {
     let dir = TempDir::new().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let hitch = Fragment::hitch(
-        "fragment id 999 not found",
+        "anchor '@ghost' not found in context",
         None,
         machine::Role::System,
         None::<&str>,
@@ -172,10 +203,12 @@ async fn failed_action_replays_recorded_inbox_hitch() {
     store
         .record_trajectory(&trajectory(
             1,
-            Action::Remove(999),
+            edit_action(vec![EditOp::Delete {
+                selector: Selector::Anchor("@ghost".into()),
+            }]),
             vec![
                 Effect::ActionCounted {
-                    action: "remove".into(),
+                    action: "edit".into(),
                 },
                 Effect::InboxPushed {
                     item: InboxItem::new(hitch, None),
@@ -195,12 +228,12 @@ async fn failed_action_replays_recorded_inbox_hitch() {
             .unwrap()
             .fragment
             .content_as_text()
-            .contains("fragment id 999 not found")
+            .contains("anchor '@ghost' not found")
     );
 }
 
 #[tokio::test]
-async fn completion_output_replays_through_inbox_and_take() {
+async fn completion_output_replays_through_inbox_and_consume() {
     let dir = TempDir::new().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let completion_id = machine::CompletionId(1);
@@ -238,14 +271,24 @@ async fn completion_output_replays_through_inbox_and_take() {
     store
         .record_trajectory(&trajectory(
             2,
-            Action::Take,
+            edit_action(vec![EditOp::Insert {
+                position: Position::End,
+                content: ContentSpec::Inbox { call_id: None },
+                anchor: None,
+            }]),
             vec![
                 Effect::ActionCounted {
-                    action: "take".into(),
+                    action: "edit".into(),
                 },
-                Effect::InboxTaken {
+                Effect::InboxConsumed {
+                    call_id: None,
+                    item: InboxItem::new(Fragment::assistant("answer"), Some(completion_id)),
+                },
+                Effect::ContextInserted {
+                    id: 1,
+                    after: None,
+                    fragment: Fragment::assistant("answer"),
                     source_completion: Some(completion_id),
-                    fragment_id: 1,
                 },
             ],
         ))
@@ -274,14 +317,16 @@ async fn checkpoint_skips_replaying_old_events() {
     store
         .record_trajectory(&trajectory(
             1,
-            Action::Append(Fragment::user("before")),
+            edit_action(vec![insert_end("before")]),
             vec![
                 Effect::ActionCounted {
-                    action: "append".into(),
+                    action: "edit".into(),
                 },
-                Effect::ContextAppended {
+                Effect::ContextInserted {
                     id: 1,
+                    after: None,
                     fragment: Fragment::user("before"),
+                    source_completion: None,
                 },
             ],
         ))
@@ -293,14 +338,24 @@ async fn checkpoint_skips_replaying_old_events() {
     store
         .record_trajectory(&trajectory(
             2,
-            Action::Append(Fragment::assistant("after")),
+            edit_action(vec![EditOp::Insert {
+                position: Position::End,
+                content: ContentSpec::Literal {
+                    text: "after".into(),
+                    role: machine::Role::Assistant,
+                    tag: None,
+                },
+                anchor: None,
+            }]),
             vec![
                 Effect::ActionCounted {
-                    action: "append".into(),
+                    action: "edit".into(),
                 },
-                Effect::ContextAppended {
+                Effect::ContextInserted {
                     id: 2,
+                    after: None,
                     fragment: Fragment::assistant("after"),
+                    source_completion: None,
                 },
             ],
         ))
@@ -328,11 +383,13 @@ async fn trajectories_round_trip_observation_snapshots() {
         step: 7,
         obs: observed,
         ledger_transitions: Vec::new(),
+        registry_events: Vec::new(),
+        drain_effects: Vec::new(),
         event: StoredEvent::new(
             7,
-            Action::Take,
+            Action::Halt,
             vec![Effect::ActionCounted {
-                action: "take".into(),
+                action: "halt".into(),
             }],
         ),
     };
@@ -344,5 +401,5 @@ async fn trajectories_round_trip_observation_snapshots() {
     assert_eq!(replayed[0].obs.budget.context_limit, 128_000);
     assert_eq!(replayed[0].obs.budget.estimated_input, 4_096);
     assert_eq!(replayed[0].obs.budget.last_actual_input, Some(3_850));
-    assert_eq!(replayed[0].event.action, Action::Take);
+    assert_eq!(replayed[0].event.action, Action::Halt);
 }

@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use machine::obs::Obs;
-use machine::{LedgerTransition, MachineState, StoredEvent};
+use machine::{MachineState, StoredEvent};
 use storage::{Store, TrajectoryEvent};
 use tracing::warn;
 
@@ -29,18 +29,27 @@ impl TrajectoryRecorder {
     /// Record one decision point. WAL failure is a side-channel problem:
     /// warn and keep running rather than kill the run. Overlay presence is
     /// captured as counts inside `obs.overlay_status`; projected content is
-    /// never persisted.
+    /// never persisted. The directory in the recorded obs is capped at
+    /// [`machine::obs::ENVELOPE_DIRECTORY_ROWS`] rows (total rides in
+    /// `context_directory_total`) so large documents do not bloat the WAL.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_step(
         &mut self,
         step: u64,
         obs: &Obs,
-        ledger_transitions: &[LedgerTransition],
+        ledger_transitions: &[machine::LedgerTransition],
+        registry_events: &[machine::RegistryEvent],
+        drain_effects: &[machine::Effect],
         event: &StoredEvent,
     ) {
+        let mut recorded_obs = obs.clone();
+        truncate_directory(&mut recorded_obs);
         let trajectory = TrajectoryEvent {
             step,
-            obs: obs.clone(),
+            obs: recorded_obs,
             ledger_transitions: ledger_transitions.to_vec(),
+            registry_events: registry_events.to_vec(),
+            drain_effects: drain_effects.to_vec(),
             event: event.clone(),
         };
         if let Err(error) = self.store.record_trajectory(&trajectory) {
@@ -62,5 +71,12 @@ impl TrajectoryRecorder {
                 "trajectory checkpoint failed; run output is unaffected"
             );
         }
+    }
+}
+
+fn truncate_directory(obs: &mut Obs) {
+    if obs.context_directory.len() > machine::obs::ENVELOPE_DIRECTORY_ROWS {
+        obs.context_directory
+            .truncate(machine::obs::ENVELOPE_DIRECTORY_ROWS);
     }
 }

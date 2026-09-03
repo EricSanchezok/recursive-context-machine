@@ -178,6 +178,15 @@ impl PrimitiveAccelerator {
             run: state,
             frame: MachineFrame::default(),
         };
+        // Generative tools reach the model through this metered gateway,
+        // carried on the environment. Published before every decide so
+        // tools always see the step-start document and active model. A
+        // pre-injected assistant (tests inject a stub) wins over the
+        // production gateway.
+        let assistant = Arc::new(crate::assistant::AssistantGateway::new());
+        if machine_state.run.environment.assistant.is_none() {
+            machine_state.run.environment.assistant = Some(assistant.clone());
+        }
         let base_purpose = machine_state.run.purpose.text.clone();
         let needs_reorder = machine_state
             .run
@@ -188,7 +197,9 @@ impl PrimitiveAccelerator {
 
         let mut machine = Machine::new("ephemeral", "ephemeral");
         let policy = self.policy;
-        let tool_runtime = self.tool_runtime;
+        // Mutable for the registry drain pass: runtime-installed tools are
+        // inserted here between steps.
+        let mut tool_runtime = self.tool_runtime;
         let mut reorder_pending = needs_reorder;
         // Trajectory recording is opt-in: only when the caller supplied a
         // run directory. Graph components share run_dir but run concurrently,
@@ -210,12 +221,14 @@ impl PrimitiveAccelerator {
 
         loop {
             // Derived fresh each step: obs must never be a stale snapshot.
-            // The ledger digest is enriched from tool state — the machine
-            // itself never performs IO.
+            // The ledger and registry digests are enriched from tool state —
+            // the machine itself never performs IO.
             let mut obs = machine::obs::measure(&machine_state.run);
             if let Some(run_dir) = machine_state.run.run_dir.as_deref() {
                 obs.ledger_digest = crate::tools::ledger_digest_for(run_dir);
+                obs.resources_digest = crate::registry::digest_for(Some(run_dir));
             }
+            assistant.publish(&machine_state);
             let action = policy
                 .decide(PolicyView {
                     run: &machine_state.run,
@@ -262,9 +275,31 @@ impl PrimitiveAccelerator {
                     },
                 )
                 .await;
+            // Registry drain-sync: apply every mutation the resources tool
+            // queued during this step's completion, so runtime-registered
+            // tools and prompts are callable on the next step.
+            let registry_events = crate::registry::drain(
+                machine_state.run.run_dir.as_deref(),
+                &mut machine_state.run.resources,
+                &mut tool_runtime,
+            );
+            // Drain-edits channel: tool payloads carrying `"edits"` arrays
+            // (context.compact) apply through the same validation path as
+            // Edit actions, without consuming a step.
+            let drain_effects = machine.apply_drain_edits(
+                &mut machine_state,
+                machine::obs::drain_edits_in(&result.event.effects),
+            );
             if let Some(ref mut recorder) = recorder {
                 let ledger_transitions = machine::ledger_transitions_in(&result.event.effects);
-                recorder.record_step(result.event.step, &obs, &ledger_transitions, &result.event);
+                recorder.record_step(
+                    result.event.step,
+                    &obs,
+                    &ledger_transitions,
+                    &registry_events,
+                    &drain_effects,
+                    &result.event,
+                );
             }
             if result.done {
                 break;

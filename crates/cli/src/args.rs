@@ -70,6 +70,11 @@ pub struct RunArgs {
     /// Exported as RCM_RUN_DIR for subprocess/shell tools.
     #[arg(long)]
     pub run_dir: Option<PathBuf>,
+
+    /// Stable label for this run, recorded in report.json so an external
+    /// optimizer (or benchmark harness) can correlate runs across iterations.
+    #[arg(long, default_value = "")]
+    pub label: String,
 }
 
 /// --- Parse ---------------------------------------------------------------

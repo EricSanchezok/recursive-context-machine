@@ -2,8 +2,24 @@ use std::future::Future;
 use std::pin::Pin;
 
 use accelerator::Accelerator;
-use machine::{Action, Fragment, Policy, PolicyView, Purpose, RunState, ToolRuntime};
+use machine::edit::{ContentSpec, EditOp, Position};
+use machine::{Action, Policy, PolicyView, Purpose, Role, RunState, ToolRuntime};
 use storage::Store;
+
+fn insert_end_action(text: String) -> Action {
+    Action::Edit {
+        ops: vec![EditOp::Insert {
+            position: Position::End,
+            content: ContentSpec::Literal {
+                text,
+                role: Role::User,
+                tag: None,
+            },
+            anchor: None,
+        }],
+        because: None,
+    }
+}
 
 /// Scripted policy: append one fragment, then finish. Exercises the
 /// trajectory recorder through the real accelerator run loop without any
@@ -33,7 +49,7 @@ impl Policy for AppendOncePolicy {
             if already_appended {
                 Action::Done
             } else {
-                Action::Append(Fragment::user(fragment_text))
+                insert_end_action(fragment_text)
             }
         })
     }
@@ -98,7 +114,7 @@ async fn run_with_run_dir_records_restorable_trajectory() {
     assert_eq!(trajectories.len(), 2);
     assert_eq!(
         trajectories[0].event.action,
-        Action::Append(Fragment::user("recorded step"))
+        insert_end_action("recorded step".into())
     );
     assert_eq!(trajectories[1].event.action, Action::Done);
     // Decision-time observation snapshots ride along with every event.

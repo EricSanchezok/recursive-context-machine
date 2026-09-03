@@ -1,4 +1,5 @@
-use machine::{Action, Context, Fragment, Purpose, Role};
+use machine::edit::{ContentSpec, EditOp, Position};
+use machine::{Action, Context, Purpose, Role};
 
 use super::super::Step;
 
@@ -9,15 +10,26 @@ pub(crate) fn append(ctx: &Context, purpose: &Purpose) -> Step {
         return Step::Ready;
     }
 
-    if ctx.fragments().last().is_some_and(|fragment| {
-        fragment.role == Role::User
-            && fragment.tag == PURPOSE_TAG
-            && fragment.as_text() == Some(&purpose.text)
-    }) {
+    // The purpose rides at the tail (per-run steering arrives late); the old
+    // dedup-by-last check collapses to a tail scan.
+    if ctx
+        .fragments()
+        .last()
+        .is_some_and(|fragment| fragment.as_text() == Some(&purpose.text))
+    {
         return Step::Ready;
     }
 
-    Step::Emit(Action::Append(
-        Fragment::user(purpose.text.clone()).with_tag(PURPOSE_TAG),
-    ))
+    Step::Emit(Action::Edit {
+        ops: vec![EditOp::Insert {
+            position: Position::End,
+            content: ContentSpec::Literal {
+                text: purpose.text.clone(),
+                role: Role::User,
+                tag: Some(PURPOSE_TAG.into()),
+            },
+            anchor: None,
+        }],
+        because: None,
+    })
 }

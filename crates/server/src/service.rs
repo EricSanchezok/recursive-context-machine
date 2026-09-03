@@ -51,7 +51,7 @@ impl Rcm for RcmService {
         } else {
             request.environment.as_str()
         };
-        let environment = catalog
+        let mut environment = catalog
             .environment(environment_name)
             .map_err(Status::invalid_argument)?;
         let runtime_resources = catalog
@@ -65,23 +65,27 @@ impl Rcm for RcmService {
             .map_err(Status::invalid_argument)?;
 
         let machine_id = utils::MachineId::new();
-        // Trajectory recording is data-collection-on-by-default for the
-        // server. An explicit run_dir is honored as the run directory with
-        // the WAL under run_dir/trajectory/<machine_id> — the same layout
-        // the CLI writes. Without one, the run directory is unset and the
-        // WAL lands directly under RCM_SERVER_TRAJECTORY_DIR/<machine_id>.
+        // The run directory is always set: an explicit run_dir is honored
+        // with the WAL under run_dir/trajectory/<machine_id> (the CLI
+        // layout); without one, root/<machine_id> under
+        // RCM_SERVER_TRAJECTORY_DIR becomes the run directory itself
+        // (registry/ledger artifacts live alongside the WAL, per machine).
         let (run_dir, trajectory_dir) = match request.run_dir.filter(|dir| !dir.is_empty()) {
             Some(explicit) => {
                 let run_dir = std::path::PathBuf::from(explicit);
                 let trajectory_dir = run_dir.join("trajectory").join(machine_id.as_str());
-                (Some(run_dir), trajectory_dir)
+                (run_dir, trajectory_dir)
             }
             None => {
                 let root = std::env::var("RCM_SERVER_TRAJECTORY_DIR")
                     .unwrap_or_else(|_| "./rcm-trajectories".to_string());
-                (None, std::path::Path::new(&root).join(machine_id.as_str()))
+                let run_dir = std::path::Path::new(&root).join(machine_id.as_str());
+                (run_dir.clone(), run_dir)
             }
         };
+        // The resources tool keys its registry by environment.run_dir; align
+        // it with the run directory so drain uses the same table.
+        environment.run_dir = Some(run_dir.clone());
         let store = match storage::Store::open(&trajectory_dir) {
             Ok(store) => Some(store),
             Err(error) => {
@@ -93,12 +97,14 @@ impl Rcm for RcmService {
                 None
             }
         };
+        let assistant = std::sync::Arc::new(accelerator::assistant::AssistantGateway::new());
+        environment.assistant = Some(assistant.clone());
         let run = Run {
             machine: Machine::new(machine_id.as_str(), "rcm"),
             state: MachineState {
                 run: RunState {
                     purpose: Purpose::new(request.purpose),
-                    run_dir,
+                    run_dir: Some(run_dir),
                     context: machine::Context::new(),
                     environment,
                     resources: runtime_resources.resources,
@@ -107,6 +113,7 @@ impl Rcm for RcmService {
                 frame: MachineFrame::default(),
             },
             tool_runtime: runtime_resources.tool_runtime,
+            assistant,
             store,
         };
 
@@ -144,6 +151,9 @@ impl Rcm for RcmService {
         // measured default (no declaration) is already accurate.
         let obs = machine::obs::measure(&run.state.run);
         let overlay_declared = machine::Overlay::default();
+        // Snapshot publication mirrors the fire loop: generative tools see
+        // the step-start document and the active model.
+        run.assistant.publish(&run.state);
         let result = run
             .machine
             .apply(
@@ -155,11 +165,24 @@ impl Rcm for RcmService {
                 },
             )
             .await;
+        // Same drain passes as the fire loop: registry mutations first,
+        // then tool-returned edit payloads (context.compact).
+        let registry_events = accelerator::registry::drain(
+            run.state.run.run_dir.as_deref(),
+            &mut run.state.run.resources,
+            &mut run.tool_runtime,
+        );
+        let drain_effects = run.machine.apply_drain_edits(
+            &mut run.state,
+            machine::obs::drain_edits_in(&result.event.effects),
+        );
         if let Some(ref mut store) = run.store {
             let trajectory = storage::TrajectoryEvent {
                 step: result.event.step,
                 obs,
                 ledger_transitions: machine::ledger_transitions_in(&result.event.effects),
+                registry_events,
+                drain_effects,
                 event: result.event.clone(),
             };
             if let Err(error) = store.record_trajectory(&trajectory) {

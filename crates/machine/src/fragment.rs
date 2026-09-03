@@ -108,12 +108,16 @@ pub enum Content {
 
 /// A symbol on the context tape.
 ///
-/// `id` is assigned by [`Context`](crate::Context) on storage.
+/// `id` is assigned by [`Context`](crate::Context) on storage. `anchor` is
+/// the cell's named-slot address (`Some("@summary")`); cells without one
+/// are addressed by their numeric id only.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fragment {
     pub(crate) id: u64,
     pub role: Role,
     pub tag: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
     pub content: Content,
 }
 
@@ -128,6 +132,7 @@ impl Fragment {
             id: 0,
             role: Role::System,
             tag: "system".into(),
+            anchor: None,
             content: Content::Text(Text { text: text.into() }),
         }
     }
@@ -137,6 +142,7 @@ impl Fragment {
             id: 0,
             role: Role::User,
             tag: "user".into(),
+            anchor: None,
             content: Content::Text(Text { text: text.into() }),
         }
     }
@@ -146,6 +152,7 @@ impl Fragment {
             id: 0,
             role: Role::Assistant,
             tag: "assistant".into(),
+            anchor: None,
             content: Content::Text(Text { text: text.into() }),
         }
     }
@@ -159,6 +166,7 @@ impl Fragment {
             id: 0,
             role: Role::Tool,
             tag: "tool_result".into(),
+            anchor: None,
             content: Content::ToolResult(ToolResult {
                 call_id: call_id.into(),
                 content: text.into(),
@@ -186,6 +194,7 @@ impl Fragment {
             id: 0,
             role,
             tag: "hitch".into(),
+            anchor: None,
             content: Content::Hitch {
                 message: message.into(),
                 call_id: call_id.map(Into::into),
@@ -199,6 +208,7 @@ impl Fragment {
             id: 0,
             role: Role::Assistant,
             tag: "tool_call".into(),
+            anchor: None,
             content: Content::ToolCall(ToolCall {
                 id: id.into(),
                 name: name.into(),
@@ -227,6 +237,7 @@ impl Fragment {
             id: 0,
             role: Role::User,
             tag: "image".into(),
+            anchor: None,
             content: Content::Image(Image { source, media_type }),
         }
     }
@@ -236,6 +247,7 @@ impl Fragment {
             id: 0,
             role: Role::User,
             tag: "audio".into(),
+            anchor: None,
             content: Content::Audio(Audio { source, media_type }),
         }
     }
@@ -245,6 +257,7 @@ impl Fragment {
             id: 0,
             role: Role::User,
             tag: "video".into(),
+            anchor: None,
             content: Content::Video(Video { source, media_type }),
         }
     }
@@ -254,6 +267,7 @@ impl Fragment {
             id: 0,
             role: Role::User,
             tag: "document".into(),
+            anchor: None,
             content: Content::Document(Document { source, media_type }),
         }
     }
@@ -261,6 +275,12 @@ impl Fragment {
     /// Assign a custom tag.
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.tag = tag.into();
+        self
+    }
+
+    /// Assign a named-slot anchor (`"@summary"` and friends).
+    pub fn with_anchor(mut self, anchor: impl Into<String>) -> Self {
+        self.anchor = Some(anchor.into());
         self
     }
 

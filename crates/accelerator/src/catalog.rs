@@ -259,12 +259,16 @@ fn ensure_name_is_usable(name: &str, kind: &str) -> Result<(), String> {
     if name.len() > 64 {
         return Err(format!("{kind} name '{name}' is too long"));
     }
-    if !name
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
-    {
+    // Dots are the namespace separator for tool families (context.compact,
+    // memory.write, …); they carry no path or wire-format meaning.
+    if !name.chars().all(|character| {
+        character.is_ascii_alphanumeric()
+            || character == '_'
+            || character == '-'
+            || character == '.'
+    }) {
         return Err(format!(
-            "{kind} name '{name}' may only contain ASCII letters, numbers, '_' and '-'"
+            "{kind} name '{name}' may only contain ASCII letters, numbers, '_', '-' and '.'"
         ));
     }
     Ok(())

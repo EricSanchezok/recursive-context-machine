@@ -124,6 +124,114 @@ fn collect_from_tool_result(
     }
 }
 
+/// One resource-registry mutation caused by the `resources` tool, lifted
+/// into the trajectory envelope. Self-evolution provenance: what the agent
+/// changed about its own harness, and when.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RegistryEvent {
+    pub op: String,
+    pub kind: String,
+    pub name: String,
+}
+
+/// Extract registry events from a step's effects by parsing tool-result
+/// fragments emitted by the resources tool (`"tool": "resources"` bodies).
+/// Shared parser for the accelerator loop and the gRPC server; the machine
+/// itself does no IO.
+pub fn registry_events_in(effects: &[crate::record::Effect]) -> Vec<RegistryEvent> {
+    let mut events = Vec::new();
+    for effect in effects {
+        match effect {
+            crate::record::Effect::CompletionRecorded { inbox_items, .. } => {
+                for item in inbox_items {
+                    collect_registry_from_tool_result(&item.fragment, &mut events);
+                }
+            }
+            crate::record::Effect::InboxPushed { item } => {
+                collect_registry_from_tool_result(&item.fragment, &mut events);
+            }
+            _ => {}
+        }
+    }
+    events
+}
+
+fn collect_registry_from_tool_result(
+    fragment: &crate::fragment::Fragment,
+    sink: &mut Vec<RegistryEvent>,
+) {
+    let crate::fragment::Content::ToolResult(tool_result) = &fragment.content else {
+        return;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&tool_result.content) else {
+        return;
+    };
+    if value.get("tool").and_then(|tool| tool.as_str()) != Some("resources") {
+        return;
+    }
+    let Some(entries) = value.get("events").and_then(|list| list.as_array()) else {
+        return;
+    };
+    for entry in entries {
+        let (Some(op), Some(kind), Some(name)) = (
+            entry.get("op").and_then(|field| field.as_str()),
+            entry.get("kind").and_then(|field| field.as_str()),
+            entry.get("name").and_then(|field| field.as_str()),
+        ) else {
+            continue;
+        };
+        sink.push(RegistryEvent {
+            op: op.to_string(),
+            kind: kind.to_string(),
+            name: name.to_string(),
+        });
+    }
+}
+
+/// Extract tool-returned edit payloads from a step's effects: tool results
+/// whose JSON body carries an `"edits"` array of serialized [`EditOp`]s
+/// (context.compact is the first producer). The fire loop applies them via
+/// [`crate::Machine::apply_drain_edits`] — the same validation path as
+/// Edit actions. Shared parser for the accelerator loop and the gRPC
+/// server; the machine itself does no IO.
+pub fn drain_edits_in(effects: &[crate::record::Effect]) -> Vec<crate::edit::EditOp> {
+    let mut ops = Vec::new();
+    for effect in effects {
+        match effect {
+            crate::record::Effect::CompletionRecorded { inbox_items, .. } => {
+                for item in inbox_items {
+                    collect_edits_from_tool_result(&item.fragment, &mut ops);
+                }
+            }
+            crate::record::Effect::InboxPushed { item } => {
+                collect_edits_from_tool_result(&item.fragment, &mut ops);
+            }
+            _ => {}
+        }
+    }
+    ops
+}
+
+fn collect_edits_from_tool_result(
+    fragment: &crate::fragment::Fragment,
+    sink: &mut Vec<crate::edit::EditOp>,
+) {
+    let crate::fragment::Content::ToolResult(tool_result) = &fragment.content else {
+        return;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&tool_result.content) else {
+        return;
+    };
+    let Some(entries) = value.get("edits").and_then(|list| list.as_array()) else {
+        return;
+    };
+    for entry in entries {
+        if let Ok(op) = serde_json::from_value::<crate::edit::EditOp>(entry.clone()) {
+            sink.push(op);
+        }
+    }
+}
+
 /// Digest of the policy-declared overlay for this turn. Counts only —
 /// projected content itself never enters observation.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,15 +241,55 @@ pub struct OverlayStatus {
     pub tail_count: u64,
 }
 
+/// Digest of the runtime resource registry. `None` until the agent (or the
+/// harness) registers a resource — no phantom "empty registry" in every
+/// observation. Enriched by the accelerator; the machine performs no IO.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResourceDigest {
+    pub total: u64,
+    pub by_kind: HashMap<String, u64>,
+    /// Registered resource names, sorted for stable serialization.
+    pub names: Vec<String>,
+}
+
+/// One row of the context directory — the policy/tool-facing read-only
+/// view of a document cell. Metadata and a bounded preview, never content.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CellDirEntry {
+    pub id: u64,
+    pub anchor: Option<String>,
+    pub role: String,
+    pub kind: String,
+    pub tag: String,
+    pub bytes: u64,
+    pub created_step: u64,
+    pub last_seen_step: u64,
+    pub preview: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Obs {
     pub budget: Budget,
     pub ledger_digest: Option<LedgerDigest>,
     pub overlay_status: OverlayStatus,
+    #[serde(default)]
+    pub resources_digest: Option<ResourceDigest>,
+    #[serde(default)]
+    pub context_directory: Vec<CellDirEntry>,
+    /// True row count of the directory; `context_directory` may carry a
+    /// truncated copy (envelope writers cap it) while this stays exact.
+    #[serde(default)]
+    pub context_directory_total: u64,
 }
+
+/// How many directory rows a recorded envelope keeps before truncation.
+/// The full directory stays available on the live state and in proto State.
+pub const ENVELOPE_DIRECTORY_ROWS: usize = 32;
 
 /// Derive a fresh observation from the run state. Pure: no IO, no caching.
 pub fn measure(run: &RunState) -> Obs {
+    let directory = directory_rows(&run.context);
+    let context_directory_total = directory.len() as u64;
     Obs {
         budget: measure_budget(run),
         // The ledger lives in accelerator tool state, not RunState; the
@@ -150,6 +298,52 @@ pub fn measure(run: &RunState) -> Obs {
         // The overlay is policy-declared and cannot be derived from state;
         // the caller fills this once the declaration is known.
         overlay_status: OverlayStatus::default(),
+        // The resource registry is likewise accelerator-side state; the
+        // fire loop enriches this digest after calling measure.
+        resources_digest: None,
+        // The directory is derived from the document itself.
+        context_directory: directory,
+        context_directory_total,
+    }
+}
+
+/// Directory rows for a context, document order, preview capped. Public so
+/// the machine can refresh the tool-environment snapshot before every tool
+/// execution, and the accelerator can enrich obs identically.
+pub fn directory_rows(context: &crate::context::Context) -> Vec<CellDirEntry> {
+    const PREVIEW_CHARS: usize = 80;
+    context
+        .fragments()
+        .iter()
+        .map(|cell| {
+            let meta = context.meta(cell.id());
+            let full_text = cell.content_as_text();
+            let preview: String = full_text.chars().take(PREVIEW_CHARS).collect();
+            CellDirEntry {
+                id: cell.id(),
+                anchor: cell.anchor.clone(),
+                role: format!("{:?}", cell.role).to_lowercase(),
+                kind: kind_of(cell).to_string(),
+                tag: cell.tag.clone(),
+                bytes: crate::context::Context::cell_bytes(cell),
+                created_step: meta.created_step,
+                last_seen_step: meta.last_seen_step,
+                preview,
+            }
+        })
+        .collect()
+}
+
+fn kind_of(cell: &crate::fragment::Fragment) -> &'static str {
+    match &cell.content {
+        crate::fragment::Content::Text(_) => "text",
+        crate::fragment::Content::Image(_) => "image",
+        crate::fragment::Content::Audio(_) => "audio",
+        crate::fragment::Content::Video(_) => "video",
+        crate::fragment::Content::Document(_) => "document",
+        crate::fragment::Content::ToolCall(_) => "tool_call",
+        crate::fragment::Content::ToolResult(_) => "tool_result",
+        crate::fragment::Content::Hitch { .. } => "hitch",
     }
 }
 

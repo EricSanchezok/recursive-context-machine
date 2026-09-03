@@ -437,6 +437,10 @@ pub(crate) struct Summary {
     pub(crate) fragments: usize,
     pub(crate) tool_calls: usize,
     pub(crate) duration_s: f64,
+    /// Completion (LLM turn) count and token totals for run reports.
+    pub(crate) completions: u64,
+    pub(crate) input_tokens: u64,
+    pub(crate) output_tokens: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -480,6 +484,9 @@ where
             fragments: 0,
             tool_calls: 0,
             duration_s: 0.0,
+            completions: 0,
+            input_tokens: 0,
+            output_tokens: 0,
         },
         origin_y: 0,
         reserved_rows: reserved_rows.max(MIN_VIEW_ROWS),
@@ -543,6 +550,9 @@ pub(crate) fn run_animation(
             fragments: 0,
             tool_calls: 0,
             duration_s: 0.0,
+            completions: 0,
+            input_tokens: 0,
+            output_tokens: 0,
         },
         origin_y,
         reserved_rows,
@@ -590,6 +600,9 @@ fn run_silent(
         fragments: 0,
         tool_calls: 0,
         duration_s: 0.0,
+        completions: 0,
+        input_tokens: 0,
+        output_tokens: 0,
     };
 
     loop {
@@ -611,6 +624,15 @@ fn run_silent(
                 summary.fragments = summary.fragments.saturating_sub(1);
             }
             HookKind::Tool(ToolEvent::Result { .. }) => summary.tool_calls += 1,
+            HookKind::Completion(CompletionEvent::End {
+                input_tokens,
+                output_tokens,
+                ..
+            }) => {
+                summary.completions += 1;
+                summary.input_tokens = summary.input_tokens.saturating_add(input_tokens);
+                summary.output_tokens = summary.output_tokens.saturating_add(output_tokens);
+            }
             _ => {}
         }
     }
@@ -660,6 +682,9 @@ fn finish_animation(view: &mut ViewState, step: Duration, start: std::time::Inst
         fragments: view.summary.fragments,
         tool_calls: view.summary.tool_calls,
         duration_s: view.summary.duration_s,
+        completions: view.summary.completions,
+        input_tokens: view.summary.input_tokens,
+        output_tokens: view.summary.output_tokens,
     }
 }
 
@@ -915,6 +940,17 @@ fn apply_event(view: &mut ViewState, event: HookEvent) {
         }
         HookKind::Tool(event) => apply_tool_event(view, source.as_ref(), event),
         HookKind::Completion(event) => {
+            if let CompletionEvent::End {
+                input_tokens,
+                output_tokens,
+                ..
+            } = &event
+            {
+                view.summary.completions += 1;
+                view.summary.input_tokens = view.summary.input_tokens.saturating_add(*input_tokens);
+                view.summary.output_tokens =
+                    view.summary.output_tokens.saturating_add(*output_tokens);
+            }
             apply_completion_event(tape_for_source(view, source.as_ref()), event)
         }
         HookKind::Machine(event) => {
@@ -1004,7 +1040,35 @@ fn apply_fragment_event(tape: &mut TapeState, event: FragmentEvent) {
         FragmentEvent::Replaced(meta) => enqueue_replace(tape, meta),
         FragmentEvent::Removed { id } => enqueue_remove(tape, id),
         FragmentEvent::Swapped { first, second } => enqueue_swap(tape, first, second),
+        FragmentEvent::Moved { id, after } => relocate_cell(tape, id, after),
+        // The consume event precedes the insert of the same content; render
+        // it as a status tick rather than a second cell write.
+        FragmentEvent::Consumed { call_id } => {
+            tape.status = if call_id.is_empty() {
+                "consumed oldest".into()
+            } else {
+                format!("consumed {call_id}")
+            };
+        }
     }
+}
+
+/// Relocate one tape cell after another (Edit Move op): reorder the model
+/// immediately and record it; no animation op — the next write flashes the
+/// new neighborhood.
+fn relocate_cell(tape: &mut TapeState, id: u64, after: u64) {
+    let Some(from) = tape.cells.iter().position(|cell| cell.id == id) else {
+        return;
+    };
+    let cell = tape.cells.remove(from);
+    let index = tape
+        .cells
+        .iter()
+        .position(|cell| cell.id == after)
+        .map(|index| index + 1)
+        .unwrap_or(tape.cells.len());
+    tape.cells.insert(index, cell);
+    tape.last_action = format!("move #{id} after #{after}");
 }
 
 fn apply_tool_event(view: &mut ViewState, source: Option<&ComponentMeta>, event: ToolEvent) {

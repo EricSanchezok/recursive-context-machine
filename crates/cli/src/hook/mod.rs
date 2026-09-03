@@ -108,10 +108,28 @@ pub enum ToolEvent {
 pub enum FragmentEvent {
     Appended(FragmentMeta),
     Taken(FragmentMeta),
-    Inserted { meta: FragmentMeta, after: u64 },
+    Inserted {
+        meta: FragmentMeta,
+        after: u64,
+    },
     Replaced(FragmentMeta),
-    Removed { id: u64 },
-    Swapped { first: u64, second: u64 },
+    Removed {
+        id: u64,
+    },
+    Swapped {
+        first: u64,
+        second: u64,
+    },
+    /// v2 document model: one cell relocated after another (Edit Move op).
+    Moved {
+        id: u64,
+        after: u64,
+    },
+    /// v2 inbox consumption (Edit Inbox content source). Carries the
+    /// call_id when the item was addressed, else FIFO.
+    Consumed {
+        call_id: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -397,6 +415,13 @@ impl HookEvent {
             "swapped" => HookKind::Fragment(FragmentEvent::Swapped {
                 first: fields.u64("id1").unwrap_or(0),
                 second: fields.u64("id2").unwrap_or(0),
+            }),
+            "moved" => HookKind::Fragment(FragmentEvent::Moved {
+                id: fields.u64("id").unwrap_or(0),
+                after: fields.u64("after").unwrap_or(0),
+            }),
+            "consumed" => HookKind::Fragment(FragmentEvent::Consumed {
+                call_id: fields.string("call_id").unwrap_or_default(),
             }),
             "model" => HookKind::Resource(ResourceEvent::Model {
                 name: fields.string("name").unwrap_or_default(),

@@ -123,6 +123,8 @@ message DestroyRequest {
 }
 
 // ── ActionCommand ───────────────────────────────────────
+// v2 document-model verbs: Edit (ops as JSON-encoded EditOp list) and
+// Tool (name + JSON args). Legacy tape verbs are gone — no compat.
 
 message ActionCommand {
   string verb = 1;
@@ -131,6 +133,11 @@ message ActionCommand {
   optional uint64 fragment_id2 = 3;
   optional FragmentContent fragment = 4;
   optional string name = 5;
+  // JSON-encoded Vec<EditOp> for verb = "Edit".
+  optional string edit_ops_json = 6;
+  // JSON-encoded arguments object for verb = "Tool".
+  optional string args_json = 7;
+  optional string because = 8;
 }
 
 message MediaSource {
@@ -154,6 +161,11 @@ message FragmentContent {
 
 message ActionSpace {
   repeated ActionItem actions = 1;
+  // Document outline for external controllers: labels for the first 32
+  // cells (anchor when present, else #id), document order.
+  repeated string document_outline = 2;
+  // Total document cell count (the outline is capped).
+  uint64 document_cells = 3;
 }
 
 message ActionItem {
@@ -184,6 +196,9 @@ message State {
   string platform = 17;
   optional string root = 18;
   Obs obs = 19;
+  // Full context directory (document-model v2). The trajectory WAL caps
+  // its copy; proto State keeps every row.
+  repeated CellDirectoryEntry context_directory = 20;
 }
 
 // ── Obs (controller observation) ─────────────────────────
@@ -217,6 +232,22 @@ message Fragment {
   optional string tag = 5;
   optional string content_text = 6;
   optional MediaSource media_source = 7;
+  // Named-slot address for this cell (document-model v2), e.g. "@summary".
+  optional string anchor = 8;
+}
+
+// One read-only row of the context directory: cell metadata plus a
+// bounded preview, never full content.
+message CellDirectoryEntry {
+  uint64 id = 1;
+  optional string anchor = 2;
+  string role = 3;
+  string kind = 4;
+  string tag = 5;
+  uint64 bytes = 6;
+  uint64 created_step = 7;
+  uint64 last_seen_step = 8;
+  string preview = 9;
 }
 
 message ToolProfile {

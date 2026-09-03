@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use machine::{Action, Context, Fragment, Role};
+use machine::edit::{ContentSpec, EditOp, Position};
+use machine::{Action, Context, Role};
 
 use super::super::Step;
 
@@ -42,9 +43,18 @@ pub(crate) fn load(ctx: &Context) -> Step {
         return Step::Ready;
     }
 
-    Step::Emit(Action::Append(
-        Fragment::system(parts.join("\n\n")).with_tag(INSTRUCTION_TAG),
-    ))
+    Step::Emit(Action::Edit {
+        ops: vec![EditOp::Insert {
+            position: Position::End,
+            content: ContentSpec::Literal {
+                text: parts.join("\n\n"),
+                role: Role::System,
+                tag: Some(INSTRUCTION_TAG.into()),
+            },
+            anchor: None,
+        }],
+        because: None,
+    })
 }
 
 fn find_instruction_files() -> Vec<(PathBuf, String)> {

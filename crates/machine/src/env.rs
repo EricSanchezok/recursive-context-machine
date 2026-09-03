@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use utils::{EnvironmentId, Name};
+
+use crate::assistant::CompletionAssistant;
 
 fn default_environment_id() -> EnvironmentId {
     EnvironmentId::new()
@@ -12,7 +15,7 @@ fn default_environment_name() -> Name {
     Name::from_static("environment")
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Environment {
     #[serde(default = "default_environment_id")]
     id: EnvironmentId,
@@ -26,6 +29,18 @@ pub struct Environment {
     /// fragment and exported as `RCM_RUN_DIR` for subprocess/shell tools.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub run_dir: Option<PathBuf>,
+    /// Read-only snapshot of the context directory (cell metadata rows),
+    /// refreshed by the machine before every tool execution. Tools use it
+    /// for staleness/range decisions without seeing cell contents. Never
+    /// serialized into WAL checkpoints — it is a derived observation.
+    #[serde(skip, default)]
+    pub context_directory: Vec<crate::obs::CellDirEntry>,
+    /// Handle to the metered completion gateway generative tools use
+    /// (context.compact, …). The machine only carries the handle; the
+    /// accelerator publishes the live document/model into it each step.
+    /// Never serialized — restored runs re-inject at fire time.
+    #[serde(skip, default)]
+    pub assistant: Option<Arc<dyn CompletionAssistant>>,
 }
 
 impl Environment {
@@ -52,9 +67,10 @@ impl Environment {
             root: None,
             platform: std::env::consts::OS.to_string(),
             run_dir: None,
+            context_directory: Vec::new(),
+            assistant: None,
         }
     }
-
     /// A deliberately empty environment for sandbox scenarios — no inherited
     /// env vars, no platform tag (defaults to the host OS string for
     /// compatibility but env vars stay empty).
@@ -75,6 +91,25 @@ impl Environment {
             root: None,
             platform: std::env::consts::OS.to_string(),
             run_dir: None,
+            context_directory: Vec::new(),
+            assistant: None,
         }
+    }
+}
+
+impl std::fmt::Debug for Environment {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The assistant handle and directory snapshot are runtime carriers,
+        // not identity; everything else is plain data.
+        formatter
+            .debug_struct("Environment")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("cwd", &self.cwd)
+            .field("vars", &self.vars.len())
+            .field("root", &self.root)
+            .field("platform", &self.platform)
+            .field("run_dir", &self.run_dir)
+            .finish_non_exhaustive()
     }
 }
