@@ -681,6 +681,18 @@ pub fn build_request(
         )
     })?;
 
+    let additional_params = if model.protocol == Protocol::OpenAI {
+        model.openai_thinking_mode().map(|enabled| {
+            serde_json::json!({
+                "thinking": {
+                    "type": if enabled { "enabled" } else { "disabled" },
+                }
+            })
+        })
+    } else {
+        None
+    };
+
     Ok(CompletionRequest {
         model: None,
         preamble: None,
@@ -690,7 +702,7 @@ pub fn build_request(
         temperature: model.temperature,
         max_tokens: model.limit.as_ref().map(|l| l.output),
         tool_choice: None,
-        additional_params: None,
+        additional_params,
         output_schema: None,
     })
 }

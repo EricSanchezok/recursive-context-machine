@@ -292,6 +292,7 @@ impl Parser {
         let mut modalities_output = Vec::new();
         let mut headers = std::collections::HashMap::new();
         let mut thinking = false;
+        let mut thinking_configured = false;
         let mut timeout = None;
 
         while !self.eat(Token::RBrace) {
@@ -320,6 +321,7 @@ impl Parser {
                         thinking = value.parse().map_err(|_| {
                             format!("thinking must be \"true\" or \"false\", got: {}", value)
                         })?;
+                        thinking_configured = true;
                     }
                     "timeout" => {
                         let value = self.expect_string()?;
@@ -349,6 +351,7 @@ impl Parser {
             modalities_output,
             headers,
             thinking,
+            thinking_configured,
             timeout,
         })
     }

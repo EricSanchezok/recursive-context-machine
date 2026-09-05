@@ -79,6 +79,8 @@ pub struct ModelDef {
     pub modalities_output: Vec<String>,
     pub headers: HashMap<String, String>,
     pub thinking: bool,
+    /// Whether the source explicitly declared `thinking`, including `false`.
+    pub thinking_configured: bool,
     /// Per-request timeout in seconds. `None` uses the engine default.
     pub timeout: Option<u64>,
 }
