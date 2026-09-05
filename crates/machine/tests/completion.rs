@@ -805,6 +805,25 @@ fn decode_attaches_reasoning_to_following_tool_call() {
     assert_eq!(tc.reasoning.as_deref(), Some("I should list the files"));
 }
 
+/// Rig 0.36's provider-native DeepSeek adapter normalizes the response as
+/// tool calls followed by the shared reasoning block. The block still belongs
+/// to that one assistant turn and must be retained for the next request.
+#[test]
+fn decode_attaches_trailing_reasoning_to_preceding_tool_call() {
+    let response = [
+        assistant_tool_call("call_1", "shell"),
+        assistant_reasoning("I should list the files"),
+    ];
+
+    let fragments = decode(response.iter());
+
+    assert_eq!(fragments.len(), 1, "reasoning is folded into the tool call");
+    let Content::ToolCall(tc) = &fragments[0].content else {
+        panic!("expected ToolCall content");
+    };
+    assert_eq!(tc.reasoning.as_deref(), Some("I should list the files"));
+}
+
 #[test]
 fn decode_concatenates_multi_block_reasoning_before_tool_call() {
     let response = [
