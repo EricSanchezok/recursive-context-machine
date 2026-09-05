@@ -24,3 +24,4 @@ Name files `NNNN-short-title.md` (sequential number) and put `Artifact-Version: 
 
 - [Provider 400 observability gap](0000-provider-400-observability-gap.md)
 - [Explicit thinking mode was not sent](0001-explicit-thinking-mode-was-not-sent.md)
+- [Thinking tool-call content was omitted](0002-thinking-tool-call-content-was-omitted.md)
