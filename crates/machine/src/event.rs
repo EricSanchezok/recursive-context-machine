@@ -1,5 +1,37 @@
 use crate::fragment::{Content, Fragment, Role};
 
+/// Content-free structural facts about one serialized completion request.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RequestShapeDiagnostics {
+    pub serialized_request_bytes: u64,
+    pub estimated_input_tokens: u64,
+    pub message_count: u64,
+    pub tool_definition_count: u64,
+    pub tool_call_count: u64,
+    pub tool_result_count: u64,
+    pub thinking_enabled: bool,
+    pub reasoning_content_present: bool,
+    pub reasoning_content_bytes: u64,
+    pub unmatched_tool_call_count: u64,
+    pub duplicate_tool_call_count: u64,
+}
+
+/// Allowlisted metadata extracted from a provider failure envelope.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProviderFailureDiagnostics {
+    pub provider_code: Option<String>,
+    pub provider_type: Option<String>,
+    pub request_id: Option<String>,
+    pub request_class: Option<&'static str>,
+}
+
+/// Diagnostics carried beside a completion result, never on the machine tape.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CompletionDiagnostics {
+    pub request: RequestShapeDiagnostics,
+    pub provider: ProviderFailureDiagnostics,
+}
+
 /// Sanitized metadata describing one model completion attempt.
 ///
 /// The classification intentionally contains no provider response text. It is
@@ -10,10 +42,33 @@ pub struct CompletionTelemetry {
     pub http_status: Option<u16>,
     pub failure_kind: Option<&'static str>,
     pub retryable: Option<bool>,
+    pub serialized_request_bytes: u64,
+    pub estimated_input_tokens: u64,
+    pub message_count: u64,
+    pub tool_definition_count: u64,
+    pub tool_call_count: u64,
+    pub tool_result_count: u64,
+    pub thinking_enabled: bool,
+    pub reasoning_content_present: bool,
+    pub reasoning_content_bytes: u64,
+    pub unmatched_tool_call_count: u64,
+    pub duplicate_tool_call_count: u64,
+    pub provider_code: Option<String>,
+    pub provider_type: Option<String>,
+    pub request_id: Option<String>,
+    pub request_class: Option<&'static str>,
 }
 
 /// Classify the completion result without exposing hitch content.
 pub fn completion_telemetry(fragments: &[Fragment]) -> CompletionTelemetry {
+    completion_telemetry_with_diagnostics(fragments, &CompletionDiagnostics::default())
+}
+
+/// Classify a completion and attach content-free request/provider diagnostics.
+pub fn completion_telemetry_with_diagnostics(
+    fragments: &[Fragment],
+    diagnostics: &CompletionDiagnostics,
+) -> CompletionTelemetry {
     let failure = fragments
         .iter()
         .find_map(|fragment| match &fragment.content {
@@ -26,6 +81,21 @@ pub fn completion_telemetry(fragments: &[Fragment]) -> CompletionTelemetry {
             http_status: None,
             failure_kind: None,
             retryable: None,
+            serialized_request_bytes: diagnostics.request.serialized_request_bytes,
+            estimated_input_tokens: diagnostics.request.estimated_input_tokens,
+            message_count: diagnostics.request.message_count,
+            tool_definition_count: diagnostics.request.tool_definition_count,
+            tool_call_count: diagnostics.request.tool_call_count,
+            tool_result_count: diagnostics.request.tool_result_count,
+            thinking_enabled: diagnostics.request.thinking_enabled,
+            reasoning_content_present: diagnostics.request.reasoning_content_present,
+            reasoning_content_bytes: diagnostics.request.reasoning_content_bytes,
+            unmatched_tool_call_count: diagnostics.request.unmatched_tool_call_count,
+            duplicate_tool_call_count: diagnostics.request.duplicate_tool_call_count,
+            provider_code: diagnostics.provider.provider_code.clone(),
+            provider_type: diagnostics.provider.provider_type.clone(),
+            request_id: diagnostics.provider.request_id.clone(),
+            request_class: diagnostics.provider.request_class,
         };
     };
 
@@ -35,6 +105,21 @@ pub fn completion_telemetry(fragments: &[Fragment]) -> CompletionTelemetry {
         http_status,
         failure_kind: Some(failure_kind),
         retryable: Some(retryable),
+        serialized_request_bytes: diagnostics.request.serialized_request_bytes,
+        estimated_input_tokens: diagnostics.request.estimated_input_tokens,
+        message_count: diagnostics.request.message_count,
+        tool_definition_count: diagnostics.request.tool_definition_count,
+        tool_call_count: diagnostics.request.tool_call_count,
+        tool_result_count: diagnostics.request.tool_result_count,
+        thinking_enabled: diagnostics.request.thinking_enabled,
+        reasoning_content_present: diagnostics.request.reasoning_content_present,
+        reasoning_content_bytes: diagnostics.request.reasoning_content_bytes,
+        unmatched_tool_call_count: diagnostics.request.unmatched_tool_call_count,
+        duplicate_tool_call_count: diagnostics.request.duplicate_tool_call_count,
+        provider_code: diagnostics.provider.provider_code.clone(),
+        provider_type: diagnostics.provider.provider_type.clone(),
+        request_id: diagnostics.provider.request_id.clone(),
+        request_class: diagnostics.provider.request_class,
     }
 }
 

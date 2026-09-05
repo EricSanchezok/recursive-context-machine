@@ -291,6 +291,7 @@ pub fn completion_event_json(event: &hook::CompletionEvent) -> serde_json::Value
         failure_kind,
         retryable,
         duration_ms,
+        diagnostics,
     } = event
     else {
         return serde_json::json!({});
@@ -321,6 +322,64 @@ pub fn completion_event_json(event: &hook::CompletionEvent) -> serde_json::Value
     }
     if let Some(value) = duration_ms {
         object.insert("duration_ms".into(), serde_json::json!(value));
+    }
+    if let Some(diagnostics) = diagnostics {
+        object.insert(
+            "serialized_request_bytes".into(),
+            serde_json::json!(diagnostics.serialized_request_bytes),
+        );
+        object.insert(
+            "estimated_input_tokens".into(),
+            serde_json::json!(diagnostics.estimated_input_tokens),
+        );
+        object.insert(
+            "message_count".into(),
+            serde_json::json!(diagnostics.message_count),
+        );
+        object.insert(
+            "tool_definition_count".into(),
+            serde_json::json!(diagnostics.tool_definition_count),
+        );
+        object.insert(
+            "tool_call_count".into(),
+            serde_json::json!(diagnostics.tool_call_count),
+        );
+        object.insert(
+            "tool_result_count".into(),
+            serde_json::json!(diagnostics.tool_result_count),
+        );
+        object.insert(
+            "thinking_enabled".into(),
+            serde_json::json!(diagnostics.thinking_enabled),
+        );
+        object.insert(
+            "reasoning_content_present".into(),
+            serde_json::json!(diagnostics.reasoning_content_present),
+        );
+        object.insert(
+            "reasoning_content_bytes".into(),
+            serde_json::json!(diagnostics.reasoning_content_bytes),
+        );
+        object.insert(
+            "unmatched_tool_call_count".into(),
+            serde_json::json!(diagnostics.unmatched_tool_call_count),
+        );
+        object.insert(
+            "duplicate_tool_call_count".into(),
+            serde_json::json!(diagnostics.duplicate_tool_call_count),
+        );
+        if let Some(value) = &diagnostics.provider_code {
+            object.insert("provider_code".into(), serde_json::json!(value));
+        }
+        if let Some(value) = &diagnostics.provider_type {
+            object.insert("provider_type".into(), serde_json::json!(value));
+        }
+        if let Some(value) = &diagnostics.request_id {
+            object.insert("request_id".into(), serde_json::json!(value));
+        }
+        if let Some(value) = &diagnostics.request_class {
+            object.insert("request_class".into(), serde_json::json!(value));
+        }
     }
     payload
 }
