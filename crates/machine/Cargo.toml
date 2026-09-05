@@ -15,7 +15,7 @@ utils = { version = "0.1.0", path = "../utils" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rig-core = { version = "0.36", features = ["reqwest", "rustls"] }
+rig-core = { version = "0.42", features = ["reqwest", "rustls"] }
 http = "1"
 tracing = { workspace = true }
 base64 = "0.22"
