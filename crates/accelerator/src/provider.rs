@@ -42,7 +42,7 @@ pub const PROVIDERS: &[Provider] = &[
     },
     Provider {
         key: "deepseek",
-        protocol: Protocol::OpenAI,
+        protocol: Protocol::DeepSeek,
         endpoint: "https://api.deepseek.com",
         env_var: "DEEPSEEK_API_KEY",
         default_model: "deepseek-v4-flash",

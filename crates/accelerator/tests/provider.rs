@@ -1,6 +1,7 @@
 //! Tests for the provider table and `resolve_model`.
 
 use accelerator::provider::{self, ResolveError};
+use machine::Protocol;
 use std::sync::Mutex;
 
 /// Tests in this file all mutate process-wide environment variables. Cargo
@@ -87,6 +88,7 @@ fn resolves_provider_only_to_default_model() {
     let model = provider::resolve_model(Some("deepseek")).expect("resolve");
     assert_eq!(model.name, "deepseek/deepseek-v4-flash");
     assert_eq!(model.endpoint.as_deref(), Some("https://api.deepseek.com"));
+    assert_eq!(model.protocol, Protocol::DeepSeek);
 }
 
 #[test]
