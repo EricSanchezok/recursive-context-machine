@@ -258,7 +258,7 @@
     },
     {
       "path": "docs/postmortems/README.md",
-      "sha256": "60f73daf42810198b809c54a071c42357187fa4bca7ab376eb1322e0cb897889",
+      "sha256": "20bf7e30cc2b66d150f4ac767b7562ff22be345f3c41189f740cbe11c51c4d84",
       "category": "docs",
       "capability": "postmortems"
     },

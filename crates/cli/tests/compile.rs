@@ -149,6 +149,43 @@ fn compile_selects_resource_pools_without_initial_activation() {
 }
 
 #[test]
+fn compile_preserves_explicit_openai_thinking_modes() {
+    let source = r#"
+        name = "thinking modes"
+        model enabled {
+            protocol = "openai"
+            credentials = { key = "REDACTED" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+            thinking = "true"
+        }
+        model disabled {
+            protocol = "openai"
+            credentials = { key = "REDACTED" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+            thinking = "false"
+        }
+        model implicit {
+            protocol = "openai"
+            credentials = { key = "REDACTED" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+        }
+        accelerator {
+            models = ["enabled", "disabled", "implicit"]
+        }
+    "#;
+
+    let accelerator = compile_result(source).unwrap();
+    let models = &primitive_state(&accelerator).resources.models;
+
+    assert_eq!(models["enabled"].openai_thinking_mode(), Some(true));
+    assert_eq!(models["disabled"].openai_thinking_mode(), Some(false));
+    assert_eq!(models["implicit"].openai_thinking_mode(), None);
+}
+
+#[test]
 fn compile_keeps_no_tools_when_only_prompts_are_supplied() {
     let source = r#"
         name = "prompt only"

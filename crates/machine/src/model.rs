@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 pub const DEFAULT_MODEL_TIMEOUT_SECS: u64 = 1_800;
+const OPENAI_THINKING_MODE_EXTRA: &str = "openai_thinking_mode";
 
 /// LLM configuration.
 ///
@@ -57,6 +58,24 @@ impl Default for Model {
             thinking: false,
             extra: HashMap::new(),
         }
+    }
+}
+
+impl Model {
+    /// Configure the OpenAI-compatible `thinking.type` request parameter.
+    ///
+    /// This is opt-in so generic OpenAI-compatible providers that do not
+    /// recognize the extension keep receiving the historical request shape.
+    pub fn set_openai_thinking_mode(&mut self, enabled: bool) {
+        self.extra
+            .insert(OPENAI_THINKING_MODE_EXTRA.to_string(), Value::Bool(enabled));
+    }
+
+    /// Return an explicitly configured OpenAI-compatible thinking mode.
+    pub fn openai_thinking_mode(&self) -> Option<bool> {
+        self.extra
+            .get(OPENAI_THINKING_MODE_EXTRA)
+            .and_then(Value::as_bool)
     }
 }
 

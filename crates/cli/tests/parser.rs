@@ -291,6 +291,7 @@ fn parse_model_with_thinking_true() {
         file.models[0].thinking,
         "thinking = \"true\" must be parsed as bool true"
     );
+    assert!(file.models[0].thinking_configured);
 }
 
 #[test]
@@ -313,6 +314,28 @@ fn parse_model_without_thinking_defaults_to_false() {
         !file.models[0].thinking,
         "models without `thinking =` default to false (no reasoning_content pollution)"
     );
+    assert!(!file.models[0].thinking_configured);
+}
+
+#[test]
+fn parse_model_with_thinking_false_remembers_explicit_mode() {
+    let source = r#"
+        name = "deepseek-non-thinking"
+        model deepseek {
+            protocol = "openai"
+            credentials = { env = "DEEPSEEK_API_KEY" }
+            limit = { context = "100000", output = "4096" }
+            modalities = { input = ["text"], output = ["text"] }
+            thinking = "false"
+        }
+        accelerator {
+            models = ["deepseek"]
+        }
+    "#;
+
+    let file = rcm::parse(source).unwrap();
+    assert!(!file.models[0].thinking);
+    assert!(file.models[0].thinking_configured);
 }
 
 #[test]
