@@ -368,6 +368,9 @@ pub fn encode_context(fragments: &[Fragment], thinking: bool) -> Vec<Message> {
 
         let has_leading_text = tool_start > index;
         if (has_leading_text || tool_call_count > 1) && tool_call_count == tool_results.len() {
+            if thinking && !has_leading_text {
+                assistant_content.push(AssistantContent::text(""));
+            }
             assistant_content.push(AssistantContent::Reasoning(Reasoning::new(
                 shared_reasoning,
             )));
@@ -889,6 +892,14 @@ pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
                     &tc.name,
                     tc.arguments.clone(),
                 ));
+                // Source: DeepSeek "Thinking Mode" tool-call contract —
+                // https://api-docs.deepseek.com/guides/thinking_mode/
+                // DeepSeek requires assistant `content` beside thinking-mode tool
+                // calls. Rig omits the wire field for an empty text collection, so
+                // retain an explicit empty item when no visible text was emitted.
+                if thinking {
+                    content.push(AssistantContent::text(""));
+                }
                 // Echo the model's original reasoning when present — thinking-mode
                 // providers (DeepSeek, Kimi) validate that assistant tool-call
                 // turns carry the same `reasoning_content` they previously emitted.
