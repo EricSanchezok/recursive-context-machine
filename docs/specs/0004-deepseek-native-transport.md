@@ -10,9 +10,10 @@ DeepSeek workflows must use a provider-native transport whose serialized request
 ## Contract
 
 - `deepseek` is an accepted RCM model protocol in the CLI, server adapter, serialized model configuration, and built-in provider registry.
-- The release artifact carrying this contract is versioned `0.2.24`; downstream pins must use its published archive checksum.
+- The native transport was introduced in `0.2.24`; order-independent reasoning replay is carried by `0.2.25`. Downstream pins must use the selected release's published archive checksum.
 - A `deepseek` model uses Rig's DeepSeek client and sends requests to its configured endpoint or the provider default.
 - A replayed pure assistant tool-call turn serializes `content` as the empty JSON string, preserves the original `reasoning_content` unchanged, and preserves its tool calls and following tool results.
+- Reasoning belongs to the complete assistant turn. Response normalization order must not affect replay: reasoning emitted before or after tool-call content is attached to every tool call from that turn.
 - Explicit `thinking = "true"` or `thinking = "false"` produces the matching DeepSeek `thinking.type` request object; omission leaves the parameter absent.
 - A configured output-token limit remains present as `max_tokens` on the DeepSeek wire request even though the pinned Rig adapter does not project the generic field itself.
 - Existing `openai`, `anthropic`, and `gemini` declarations retain their public behavior. RCM does not infer DeepSeek from an endpoint or model name.
@@ -25,6 +26,7 @@ Add the protocol variant at the model boundary, route it through Rig's DeepSeek 
 ## Verification
 
 - A local HTTP fixture captures the actual DeepSeek adapter request and asserts the exact `content`, `reasoning_content`, `tool_calls`, `thinking`, and `max_tokens` JSON shape.
+- Decode regressions cover both reasoning-before-tool and the pinned adapter's tool-before-reasoning normalization order, including parallel tool calls.
 - Compiler, server, provider-registry, serde, and legacy OpenAI tests cover the additive protocol and N-1-compatible behavior.
 - Machine, CLI, server, and accelerator tests pass together with workspace nextest, doc tests, formatting, Clippy, and repository governance gates.
 - A downstream live DeepSeek multi-turn tool canary succeeds before production adoption.
@@ -38,3 +40,4 @@ Add the protocol variant at the model boundary, route it through Rig's DeepSeek 
 - [Built-in provider registry](../../crates/accelerator/src/provider.rs)
 - [Provider-native transport decision](../decisions/0007-use-provider-native-deepseek-transport.md)
 - [Escaped request-shape postmortem](../postmortems/0003-content-presence-did-not-prove-deepseek-shape.md)
+- [Adapter ordering postmortem](../postmortems/0004-provider-normalization-order-dropped-reasoning.md)

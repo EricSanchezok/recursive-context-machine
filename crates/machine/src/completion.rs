@@ -766,6 +766,7 @@ fn merge_adjacent_system_messages(messages: &[Message]) -> Vec<Message> {
 
 pub fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fragment> {
     use rig::completion::message::MimeType;
+    let choice = choice.collect::<Vec<_>>();
     let mut fragments = Vec::new();
     // Thinking-mode providers (DeepSeek, Kimi) emit one reasoning block per
     // assistant turn and require it to be echoed back on every assistant
@@ -773,26 +774,34 @@ pub fn decode<'a>(choice: impl Iterator<Item = &'a AssistantContent>) -> Vec<Fra
     // tool_calls — we replicate the same reasoning onto each of them, so the
     // turn survives being split into one Fragment per call.
     //
-    // A completion response is one assistant turn. Providers may emit visible
-    // text before a tool call in that same turn, so its reasoning must remain
-    // available until every tool call in the response has been decoded.
-    let mut pending_reasoning: Vec<String> = Vec::new();
+    // A completion response is one assistant turn, but provider adapters do
+    // not agree on normalized content order. In particular, Rig 0.36 emits
+    // DeepSeek tool calls before their shared reasoning block. Collect the
+    // turn's reasoning first so replay is independent of that adapter order.
+    let shared_reasoning = choice
+        .iter()
+        .filter_map(|content| match content {
+            AssistantContent::Reasoning(reasoning) => {
+                let text = reasoning.display_text();
+                (!text.is_empty()).then_some(text)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let shared_reasoning = (!shared_reasoning.is_empty()).then_some(shared_reasoning);
+
     for content in choice {
         match content {
             AssistantContent::Text(text) => {
                 fragments.push(Fragment::assistant(&text.text));
             }
-            AssistantContent::Reasoning(reasoning) => {
-                let text = reasoning.display_text();
-                if !text.is_empty() {
-                    pending_reasoning.push(text);
-                }
-            }
+            AssistantContent::Reasoning(_) => {}
             AssistantContent::ToolCall(tc) => {
                 let mut frag =
                     Fragment::tool_call(&tc.id, &tc.function.name, tc.function.arguments.clone());
-                if !pending_reasoning.is_empty() {
-                    frag = frag.with_reasoning(pending_reasoning.join("\n"));
+                if let Some(reasoning) = shared_reasoning.as_deref() {
+                    frag = frag.with_reasoning(reasoning);
                 }
                 fragments.push(frag);
             }
