@@ -172,6 +172,26 @@ pub async fn complete_with_diagnostics(
                 .completion_model(wire_name);
             send(&endpoint, model, request).await
         }
+        Protocol::DeepSeek => {
+            // DeepSeek documents assistant `content` as string-or-null and
+            // requires the complete prior reasoning/tool-call response to be
+            // replayed. Its native Rig adapter owns that exact conversion.
+            // Sources:
+            // https://api-docs.deepseek.com/api/create-chat-completion/
+            // https://api-docs.deepseek.com/guides/thinking_mode/
+            let mut builder = rig::providers::deepseek::Client::builder()
+                .api_key(api_key)
+                .http_client(openai_http_client());
+            if let Some(endpoint) = endpoint_url {
+                builder = builder.base_url(endpoint);
+            }
+            builder = apply_headers(builder, &model.headers);
+            let endpoint = builder
+                .build()
+                .expect("failed to build deepseek client")
+                .completion_model(wire_name);
+            send(&endpoint, model, request).await
+        }
         Protocol::Anthropic => {
             let mut builder = rig::providers::anthropic::Client::builder().api_key(api_key);
             if let Some(endpoint) = endpoint_url {
@@ -684,16 +704,33 @@ pub fn build_request(
         )
     })?;
 
-    let additional_params = if model.protocol == Protocol::OpenAI {
-        model.openai_thinking_mode().map(|enabled| {
+    let additional_params = match model.protocol {
+        Protocol::OpenAI => model.thinking_mode().map(|enabled| {
             serde_json::json!({
                 "thinking": {
                     "type": if enabled { "enabled" } else { "disabled" },
                 }
             })
-        })
-    } else {
-        None
+        }),
+        Protocol::DeepSeek => {
+            let mut params = serde_json::Map::new();
+            if let Some(enabled) = model.thinking_mode() {
+                params.insert(
+                    "thinking".into(),
+                    serde_json::json!({
+                        "type": if enabled { "enabled" } else { "disabled" },
+                    }),
+                );
+            }
+            // Rig 0.36's native DeepSeek adapter does not project the generic
+            // CompletionRequest max_tokens field, so preserve the declared
+            // model limit through its flattened provider parameters.
+            if let Some(limit) = &model.limit {
+                params.insert("max_tokens".into(), limit.output.into());
+            }
+            (!params.is_empty()).then_some(serde_json::Value::Object(params))
+        }
+        Protocol::Anthropic | Protocol::Gemini => None,
     };
 
     Ok(CompletionRequest {

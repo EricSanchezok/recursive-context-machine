@@ -149,7 +149,7 @@ fn compile_selects_resource_pools_without_initial_activation() {
 }
 
 #[test]
-fn compile_preserves_explicit_openai_thinking_modes() {
+fn compile_preserves_explicit_thinking_modes_for_supported_protocols() {
     let source = r#"
         name = "thinking modes"
         model enabled {
@@ -172,8 +172,15 @@ fn compile_preserves_explicit_openai_thinking_modes() {
             limit = { context = "1000", output = "100" }
             modalities = { input = ["text"], output = ["text"] }
         }
+        model deepseek {
+            protocol = "deepseek"
+            credentials = { key = "REDACTED" }
+            limit = { context = "1000", output = "100" }
+            modalities = { input = ["text"], output = ["text"] }
+            thinking = "true"
+        }
         accelerator {
-            models = ["enabled", "disabled", "implicit"]
+            models = ["enabled", "disabled", "implicit", "deepseek"]
         }
     "#;
 
@@ -183,6 +190,8 @@ fn compile_preserves_explicit_openai_thinking_modes() {
     assert_eq!(models["enabled"].openai_thinking_mode(), Some(true));
     assert_eq!(models["disabled"].openai_thinking_mode(), Some(false));
     assert_eq!(models["implicit"].openai_thinking_mode(), None);
+    assert_eq!(models["deepseek"].protocol, machine::Protocol::DeepSeek);
+    assert_eq!(models["deepseek"].thinking_mode(), Some(true));
 }
 
 #[test]

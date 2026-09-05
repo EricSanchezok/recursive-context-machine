@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 pub const DEFAULT_MODEL_TIMEOUT_SECS: u64 = 1_800;
-const OPENAI_THINKING_MODE_EXTRA: &str = "openai_thinking_mode";
+const THINKING_MODE_EXTRA: &str = "openai_thinking_mode";
 
 /// LLM configuration.
 ///
@@ -62,41 +62,66 @@ impl Default for Model {
 }
 
 impl Model {
+    /// Configure an explicit provider thinking mode.
+    ///
+    /// The stored key retains its historical spelling for serialized-model
+    /// compatibility. Request construction applies it only to protocols that
+    /// support the `thinking.type` extension.
+    pub fn set_thinking_mode(&mut self, enabled: bool) {
+        self.extra
+            .insert(THINKING_MODE_EXTRA.to_string(), Value::Bool(enabled));
+    }
+
+    /// Return an explicitly configured provider thinking mode.
+    pub fn thinking_mode(&self) -> Option<bool> {
+        self.extra.get(THINKING_MODE_EXTRA).and_then(Value::as_bool)
+    }
+
     /// Configure the OpenAI-compatible `thinking.type` request parameter.
     ///
     /// This is opt-in so generic OpenAI-compatible providers that do not
     /// recognize the extension keep receiving the historical request shape.
     pub fn set_openai_thinking_mode(&mut self, enabled: bool) {
-        self.extra
-            .insert(OPENAI_THINKING_MODE_EXTRA.to_string(), Value::Bool(enabled));
+        self.set_thinking_mode(enabled);
     }
 
     /// Return an explicitly configured OpenAI-compatible thinking mode.
     pub fn openai_thinking_mode(&self) -> Option<bool> {
-        self.extra
-            .get(OPENAI_THINKING_MODE_EXTRA)
-            .and_then(Value::as_bool)
+        self.thinking_mode()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Model;
+    use super::{Model, Protocol};
 
     #[test]
     fn model_default_timeout_allows_thirty_minute_requests() {
         assert_eq!(Model::default().timeout, 1_800);
     }
+
+    #[test]
+    fn deepseek_protocol_round_trips_through_serde() {
+        let serialized = serde_json::to_string(&Protocol::DeepSeek).expect("serializes");
+        assert_eq!(serialized, "\"deepseek\"");
+        assert_eq!(
+            serde_json::from_str::<Protocol>(&serialized).expect("deserializes"),
+            Protocol::DeepSeek
+        );
+    }
 }
 
 /// Wire protocol.
 ///
-/// Three protocols are supported. Most providers are OpenAI-compatible;
-/// use the `OpenAI` variant with a custom `endpoint`.
+/// Four protocols are supported. Most providers are OpenAI-compatible;
+/// use the `OpenAI` variant with a custom `endpoint`. DeepSeek has an
+/// explicit variant because its assistant-message schema differs at the
+/// thinking/tool-history boundary.
 ///
 /// | Protocol | Examples |
 /// |----------|---------|
-/// | `OpenAI` | OpenAI, DeepSeek, Groq, Mistral, xAI, Ollama, OpenRouter ... |
+/// | `OpenAI` | OpenAI, Groq, Mistral, xAI, Ollama, OpenRouter ... |
+/// | `DeepSeek` | DeepSeek Chat Completions API |
 /// | `Anthropic` | Anthropic Claude |
 /// | `Gemini` | Google Gemini |
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,6 +130,8 @@ pub enum Protocol {
     /// OpenAI Chat Completions API.
     #[default]
     OpenAI,
+    /// DeepSeek Chat Completions API.
+    DeepSeek,
     /// Anthropic Messages API.
     Anthropic,
     /// Google Gemini API.

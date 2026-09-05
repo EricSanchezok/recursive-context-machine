@@ -1,13 +1,16 @@
 use machine::completion::{
-    build_request, decode, encode, encode_context, request_shape_diagnostics,
+    build_request, complete, decode, encode, encode_context, request_shape_diagnostics,
 };
-use machine::{Content, Fragment, Limit, Model, Protocol, Role};
+use machine::{Content, Context, Fragment, Limit, Model, Overlay, Protocol, Resources, Role};
 use rig::completion::message::{Reasoning, Text as RigText, ToolCall as RigToolCall, ToolFunction};
 use rig::completion::{AssistantContent, Message};
 use rig::providers::openai::completion::{
     CompletionRequest as OpenAICompletionRequest, OpenAIRequestParams,
 };
 use serde_json::json;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
 
 fn tool_call_fragment() -> Fragment {
     Fragment::tool_call("call_123", "shell", json!({"command": "ls"}))
@@ -322,6 +325,135 @@ fn thinking_tool_call_replay_keeps_openai_content_field() {
     );
 }
 
+async fn deepseek_gateway() -> (String, JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("test gateway should bind");
+    let address = listener
+        .local_addr()
+        .expect("test gateway should expose its address");
+    let handle = tokio::spawn(async move {
+        let (mut socket, _) = listener
+            .accept()
+            .await
+            .expect("test gateway should accept a request");
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        let (header_end, content_length) = loop {
+            let count = socket
+                .read(&mut buffer)
+                .await
+                .expect("test gateway should read a request");
+            assert!(
+                count > 0,
+                "completion request ended before its body arrived"
+            );
+            request.extend_from_slice(&buffer[..count]);
+            let Some(header_end) = request.windows(4).position(|part| part == b"\r\n\r\n") else {
+                continue;
+            };
+            let headers = String::from_utf8_lossy(&request[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .map(str::trim)
+                        .and_then(|value| value.parse::<usize>().ok())
+                })
+                .expect("completion request should declare content length");
+            break (header_end, content_length);
+        };
+        let expected_length = header_end + 4 + content_length;
+        while request.len() < expected_length {
+            let count = socket
+                .read(&mut buffer)
+                .await
+                .expect("test gateway should finish reading the request");
+            assert!(count > 0, "completion request body ended early");
+            request.extend_from_slice(&buffer[..count]);
+        }
+
+        let response_body = r#"{"choices":[{"index":0,"message":{"role":"assistant","content":"done","tool_calls":[],"reasoning_content":null},"logprobs":null,"finish_reason":"stop"}],"usage":{"completion_tokens":1,"prompt_tokens":1,"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":0,"total_tokens":2}}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        );
+        socket
+            .write_all(response.as_bytes())
+            .await
+            .expect("test gateway should return a response");
+        String::from_utf8(request).expect("completion request should be UTF-8")
+    });
+    (format!("http://{address}"), handle)
+}
+
+#[tokio::test]
+async fn deepseek_transport_uses_exact_thinking_tool_history_shape() {
+    let (endpoint, received_request) = deepseek_gateway().await;
+    let mut model = Model {
+        name: "deepseek-v4-flash".into(),
+        protocol: Protocol::DeepSeek,
+        endpoint: Some(endpoint),
+        credentials: Some("test-secret".into()),
+        limit: Some(Limit {
+            context: 100_000,
+            input: None,
+            output: 4096,
+        }),
+        timeout: 5,
+        thinking: true,
+        ..Default::default()
+    };
+    model.set_thinking_mode(true);
+    let mut resources = Resources::new().with_model(model);
+    resources
+        .use_model("deepseek-v4-flash")
+        .expect("test model should activate");
+    let mut context = Context::new();
+    context.append(
+        Fragment::tool_call("call_x", "shell", json!({"command": "ls"}))
+            .with_reasoning("the user asked for a directory listing"),
+    );
+    context.append(Fragment::tool_result("call_x", "file.txt", None));
+
+    let (fragments, _) = complete(&context, &resources, &Overlay::default()).await;
+    assert_eq!(fragments[0].as_text(), Some("done"));
+
+    let request = tokio::time::timeout(std::time::Duration::from_secs(2), received_request)
+        .await
+        .expect("test gateway should receive the request")
+        .expect("test gateway should finish cleanly");
+    assert!(request.starts_with("POST /chat/completions HTTP/1.1"));
+    assert!(
+        request
+            .lines()
+            .any(|line| line.eq_ignore_ascii_case("authorization: bearer test-secret"))
+    );
+    let (_, body) = request
+        .split_once("\r\n\r\n")
+        .expect("completion request should contain an HTTP body");
+    let payload: serde_json::Value =
+        serde_json::from_str(body).expect("completion request body should be JSON");
+
+    assert_eq!(payload["messages"][0]["content"], "");
+    assert_eq!(
+        payload["messages"][0]["reasoning_content"],
+        "the user asked for a directory listing"
+    );
+    assert_eq!(payload["messages"][0]["tool_calls"][0]["id"], "call_x");
+    assert_eq!(
+        payload["messages"][0]["tool_calls"][0]["function"]["arguments"],
+        json!({"command": "ls"}).to_string()
+    );
+    assert_eq!(payload["messages"][1]["role"], "tool");
+    assert_eq!(payload["messages"][1]["tool_call_id"], "call_x");
+    assert_eq!(payload["messages"][1]["content"], "file.txt");
+    assert_eq!(payload["thinking"]["type"], "enabled");
+    assert_eq!(payload["max_tokens"], 4096);
+}
+
 /// Symmetric: text-only assistant fragments never carry reasoning, even when
 /// `thinking=true`. The placeholder is tool-call-only.
 #[test]
@@ -543,6 +675,40 @@ fn build_request_sends_explicit_openai_thinking_mode() {
 #[test]
 fn build_request_omits_openai_thinking_mode_when_not_configured() {
     let request = build_request(&[Message::user("hi")], &[], &dummy_model()).expect("builds");
+
+    assert_eq!(request.additional_params, None);
+}
+
+#[test]
+fn build_request_sends_deepseek_thinking_mode_and_output_limit() {
+    for (enabled, expected) in [(true, "enabled"), (false, "disabled")] {
+        let mut model = dummy_model();
+        model.protocol = Protocol::DeepSeek;
+        model.limit = Some(Limit {
+            context: 100_000,
+            input: None,
+            output: 4096,
+        });
+        model.set_thinking_mode(enabled);
+
+        let request = build_request(&[Message::user("hi")], &[], &model).expect("builds");
+
+        assert_eq!(
+            request.additional_params,
+            Some(json!({
+                "thinking": {"type": expected},
+                "max_tokens": 4096,
+            })),
+        );
+    }
+}
+
+#[test]
+fn build_request_omits_unconfigured_deepseek_extensions() {
+    let mut model = dummy_model();
+    model.protocol = Protocol::DeepSeek;
+
+    let request = build_request(&[Message::user("hi")], &[], &model).expect("builds");
 
     assert_eq!(request.additional_params, None);
 }

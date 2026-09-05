@@ -1,7 +1,7 @@
 # Preserve content in thinking tool-call history
 
 ## Status
-Accepted
+Superseded by [0007](0007-use-provider-native-deepseek-transport.md)
 Class: bug-fix
 
 ## Context and Problem Statement
@@ -61,3 +61,4 @@ This beats an immediate Rig upgrade because the narrow compatibility correction 
 - [DeepSeek thinking-mode tool-call contract](https://api-docs.deepseek.com/guides/thinking_mode/)
 - [DeepSeek Chat Completions assistant message](https://api-docs.deepseek.com/api/create-chat-completion/)
 - [Thinking tool-call content specification](../specs/0003-thinking-tool-call-content.md)
+- [Provider-native successor decision](0007-use-provider-native-deepseek-transport.md)
