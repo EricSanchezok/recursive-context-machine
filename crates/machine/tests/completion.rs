@@ -496,6 +496,39 @@ fn build_request_passes_model_temperature_and_max_tokens() {
 }
 
 #[test]
+fn build_request_sends_explicit_openai_thinking_mode() {
+    for (enabled, expected) in [(true, "enabled"), (false, "disabled")] {
+        let mut model = dummy_model();
+        model.set_openai_thinking_mode(enabled);
+
+        let request = build_request(&[Message::user("hi")], &[], &model).expect("builds");
+
+        assert_eq!(
+            request.additional_params,
+            Some(json!({"thinking": {"type": expected}})),
+        );
+    }
+}
+
+#[test]
+fn build_request_omits_openai_thinking_mode_when_not_configured() {
+    let request = build_request(&[Message::user("hi")], &[], &dummy_model()).expect("builds");
+
+    assert_eq!(request.additional_params, None);
+}
+
+#[test]
+fn build_request_does_not_send_openai_thinking_extension_to_other_protocols() {
+    let mut model = dummy_model();
+    model.protocol = Protocol::Anthropic;
+    model.set_openai_thinking_mode(true);
+
+    let request = build_request(&[Message::user("hi")], &[], &model).expect("builds");
+
+    assert_eq!(request.additional_params, None);
+}
+
+#[test]
 fn request_shape_diagnostics_count_structure_without_retaining_content() {
     let sensitive_text = "PRIVATE PAPER BODY MUST NOT ENTER DIAGNOSTICS";
     let messages = vec![
