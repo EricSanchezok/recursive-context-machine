@@ -42,11 +42,38 @@ use rig::http_client;
 use tokio::time::{Duration, timeout};
 
 use crate::context::Context;
+use crate::event::{CompletionDiagnostics, ProviderFailureDiagnostics, RequestShapeDiagnostics};
 use crate::fragment::{Content, Fragment, Role};
 use crate::model::{Model, Protocol};
 use crate::resources::Resources;
 use crate::usage::TokenUsage;
 use tracing::{debug, warn};
+
+const ESTIMATED_CHARS_PER_TOKEN: u64 = 4;
+const MAX_PROVIDER_IDENTIFIER_BYTES: usize = 128;
+
+struct CompletionFailure {
+    hitch: Fragment,
+    provider: ProviderFailureDiagnostics,
+}
+
+#[derive(Default)]
+struct CountingWriter {
+    bytes: u64,
+}
+
+impl std::io::Write for CountingWriter {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        self.bytes = self
+            .bytes
+            .saturating_add(u64::try_from(buffer.len()).unwrap_or(u64::MAX));
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 /// The bare model name to send on the wire. When a `Model` is constructed via
 /// the accelerator's provider table, `name` is `"<provider>/<model>"` and the
@@ -66,6 +93,16 @@ pub async fn complete(
     resources: &Resources,
     overlay: &crate::overlay::Overlay,
 ) -> (Vec<Fragment>, TokenUsage) {
+    let (fragments, usage, _) = complete_with_diagnostics(ctx, resources, overlay).await;
+    (fragments, usage)
+}
+
+/// Call the active LLM and return content-free request/provider diagnostics.
+pub async fn complete_with_diagnostics(
+    ctx: &Context,
+    resources: &Resources,
+    overlay: &crate::overlay::Overlay,
+) -> (Vec<Fragment>, TokenUsage, CompletionDiagnostics) {
     let Some(model) = resources.active_model() else {
         warn!("completion requested but no active model is set");
         let hitch = Fragment::hitch(
@@ -74,7 +111,11 @@ pub async fn complete(
             Role::System,
             None::<&str>,
         );
-        return (vec![hitch], TokenUsage::empty());
+        return (
+            vec![hitch],
+            TokenUsage::empty(),
+            CompletionDiagnostics::default(),
+        );
     };
 
     let messages = assemble_messages(ctx.fragments(), model.thinking, overlay);
@@ -100,6 +141,22 @@ pub async fn complete(
     let endpoint_url = model.endpoint.as_deref();
     let wire_name = wire_name(model);
 
+    let request = match build_request(&messages, &tools, model) {
+        Ok(request) => request,
+        Err(hitch) => {
+            return (
+                vec![hitch],
+                TokenUsage::empty(),
+                CompletionDiagnostics::default(),
+            );
+        }
+    };
+    let request_diagnostics = request_shape_diagnostics(&request, model.thinking);
+    let mut diagnostics = CompletionDiagnostics {
+        request: request_diagnostics,
+        provider: ProviderFailureDiagnostics::default(),
+    };
+
     let result = match model.protocol {
         Protocol::OpenAI => {
             let mut builder = rig::providers::openai::CompletionsClient::builder()
@@ -113,7 +170,7 @@ pub async fn complete(
                 .build()
                 .expect("failed to build openai client")
                 .completion_model(wire_name);
-            send(&endpoint, model, &messages, &tools).await
+            send(&endpoint, model, request).await
         }
         Protocol::Anthropic => {
             let mut builder = rig::providers::anthropic::Client::builder().api_key(api_key);
@@ -125,7 +182,7 @@ pub async fn complete(
                 .build()
                 .expect("failed to build anthropic client")
                 .completion_model(wire_name);
-            send(&endpoint, model, &messages, &tools).await
+            send(&endpoint, model, request).await
         }
         Protocol::Gemini => {
             let mut builder = rig::providers::gemini::Client::builder().api_key(api_key);
@@ -137,7 +194,7 @@ pub async fn complete(
                 .build()
                 .expect("failed to build gemini client")
                 .completion_model(wire_name);
-            send(&endpoint, model, &messages, &tools).await
+            send(&endpoint, model, request).await
         }
     };
 
@@ -152,11 +209,35 @@ pub async fn complete(
                 .filter(|c| matches!(c, AssistantContent::ToolCall(_)))
                 .count();
             debug!(text_fragments, tool_calls, "completion response");
-            (decode(choice.iter()), usage)
+            (decode(choice.iter()), usage, diagnostics)
         }
-        Err(hitch) => {
-            warn!(?hitch, "completion failed");
-            (vec![hitch], TokenUsage::empty())
+        Err(failure) => {
+            diagnostics.provider = failure.provider;
+            let http_status = match &failure.hitch.content {
+                Content::Hitch { code, .. } => *code,
+                _ => None,
+            };
+            warn!(
+                model = %model.name,
+                http_status = http_status.unwrap_or_default(),
+                provider_code = diagnostics.provider.provider_code.as_deref().unwrap_or(""),
+                provider_type = diagnostics.provider.provider_type.as_deref().unwrap_or(""),
+                request_id = diagnostics.provider.request_id.as_deref().unwrap_or(""),
+                request_class = diagnostics.provider.request_class.unwrap_or(""),
+                serialized_request_bytes = diagnostics.request.serialized_request_bytes,
+                estimated_input_tokens = diagnostics.request.estimated_input_tokens,
+                message_count = diagnostics.request.message_count,
+                tool_definition_count = diagnostics.request.tool_definition_count,
+                tool_call_count = diagnostics.request.tool_call_count,
+                tool_result_count = diagnostics.request.tool_result_count,
+                thinking_enabled = diagnostics.request.thinking_enabled,
+                reasoning_content_present = diagnostics.request.reasoning_content_present,
+                reasoning_content_bytes = diagnostics.request.reasoning_content_bytes,
+                unmatched_tool_call_count = diagnostics.request.unmatched_tool_call_count,
+                duplicate_tool_call_count = diagnostics.request.duplicate_tool_call_count,
+                "completion failed"
+            );
+            (vec![failure.hitch], TokenUsage::empty(), diagnostics)
         }
     }
 }
@@ -333,11 +414,8 @@ pub fn assemble_messages(
 async fn send(
     endpoint: &impl CompletionModel,
     model: &Model,
-    messages: &[Message],
-    tools: &[RigToolDefinition],
-) -> Result<(OneOrMany<AssistantContent>, TokenUsage), Fragment> {
-    let request = build_request(messages, tools, model)?;
-
+    request: CompletionRequest,
+) -> Result<(OneOrMany<AssistantContent>, TokenUsage), CompletionFailure> {
     match timeout(
         Duration::from_secs(model.timeout),
         endpoint.completion(request),
@@ -355,30 +433,226 @@ async fn send(
             },
         )),
         Ok(Err(error)) => {
-            let code = match &error {
-                CompletionError::HttpError(http_client::Error::InvalidStatusCode(s)) => {
-                    Some(s.as_u16())
-                }
+            let (code, provider) = match &error {
+                CompletionError::HttpError(http_client::Error::InvalidStatusCode(s)) => (
+                    Some(s.as_u16()),
+                    provider_failure_diagnostics(s.as_u16(), ""),
+                ),
                 CompletionError::HttpError(http_client::Error::InvalidStatusCodeWithMessage(
                     s,
-                    _,
-                )) => Some(s.as_u16()),
-                _ => None,
+                    message,
+                )) => (
+                    Some(s.as_u16()),
+                    provider_failure_diagnostics(s.as_u16(), message),
+                ),
+                _ => (None, ProviderFailureDiagnostics::default()),
             };
-            Err(Fragment::hitch(
-                error.to_string(),
-                code,
+            let hitch_message = provider_hitch_message(&error, code);
+            Err(CompletionFailure {
+                hitch: Fragment::hitch(hitch_message, code, Role::Assistant, None::<&str>),
+                provider,
+            })
+        }
+        Err(_) => Err(CompletionFailure {
+            hitch: Fragment::hitch(
+                format!("request timed out after {}s", model.timeout),
+                None,
                 Role::Assistant,
                 None::<&str>,
-            ))
-        }
-        Err(_) => Err(Fragment::hitch(
-            format!("request timed out after {}s", model.timeout),
-            None,
-            Role::Assistant,
-            None::<&str>,
-        )),
+            ),
+            provider: ProviderFailureDiagnostics::default(),
+        }),
     }
+}
+
+fn provider_hitch_message(error: &CompletionError, status: Option<u16>) -> String {
+    status.map_or_else(
+        || error.to_string(),
+        |status| format!("provider completion failed with HTTP {status}"),
+    )
+}
+
+/// Measure a normalized generic request without retaining any request content.
+pub fn request_shape_diagnostics(
+    request: &CompletionRequest,
+    thinking_enabled: bool,
+) -> RequestShapeDiagnostics {
+    use std::collections::{HashMap, HashSet};
+
+    let mut counter = CountingWriter::default();
+    let serialized_request_bytes = serde_json::to_writer(&mut counter, request)
+        .map(|()| counter.bytes)
+        .unwrap_or_default();
+    let mut tool_call_ids = Vec::new();
+    let mut tool_result_counts: HashMap<&str, u64> = HashMap::new();
+    let mut reasoning_content_bytes = 0u64;
+    let mut reasoning_content_present = false;
+    let mut tool_result_count = 0u64;
+
+    for message in request.chat_history.iter() {
+        match message {
+            Message::Assistant { content, .. } => {
+                for item in content.iter() {
+                    match item {
+                        AssistantContent::ToolCall(tool_call) => {
+                            tool_call_ids.push(tool_call.id.as_str());
+                        }
+                        AssistantContent::Reasoning(reasoning) => {
+                            reasoning_content_present = true;
+                            let bytes = serde_json::to_vec(reasoning)
+                                .map(|serialized| serialized.len())
+                                .unwrap_or_default();
+                            reasoning_content_bytes = reasoning_content_bytes
+                                .saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Message::User { content } => {
+                for item in content.iter() {
+                    if let UserContent::ToolResult(tool_result) = item {
+                        tool_result_count = tool_result_count.saturating_add(1);
+                        let call_id = tool_result
+                            .call_id
+                            .as_deref()
+                            .unwrap_or(tool_result.id.as_str());
+                        *tool_result_counts.entry(call_id).or_default() += 1;
+                    }
+                }
+            }
+            Message::System { .. } => {}
+        }
+    }
+
+    let mut seen_call_ids = HashSet::new();
+    let duplicate_tool_call_count = tool_call_ids.iter().fold(0u64, |count, call_id| {
+        count.saturating_add(u64::from(!seen_call_ids.insert(*call_id)))
+    });
+    let mut remaining_results = tool_result_counts;
+    let unmatched_tool_call_count = tool_call_ids.iter().fold(0u64, |count, call_id| {
+        let Some(remaining) = remaining_results.get_mut(*call_id) else {
+            return count.saturating_add(1);
+        };
+        if *remaining == 0 {
+            count.saturating_add(1)
+        } else {
+            *remaining -= 1;
+            count
+        }
+    });
+
+    RequestShapeDiagnostics {
+        serialized_request_bytes,
+        estimated_input_tokens: serialized_request_bytes
+            .saturating_add(ESTIMATED_CHARS_PER_TOKEN - 1)
+            .saturating_div(ESTIMATED_CHARS_PER_TOKEN),
+        message_count: u64::try_from(request.chat_history.len()).unwrap_or(u64::MAX),
+        tool_definition_count: u64::try_from(request.tools.len()).unwrap_or(u64::MAX),
+        tool_call_count: u64::try_from(tool_call_ids.len()).unwrap_or(u64::MAX),
+        tool_result_count,
+        thinking_enabled,
+        reasoning_content_present,
+        reasoning_content_bytes,
+        unmatched_tool_call_count,
+        duplicate_tool_call_count,
+    }
+}
+
+fn provider_failure_diagnostics(status: u16, body: &str) -> ProviderFailureDiagnostics {
+    let parsed = serde_json::from_str::<serde_json::Value>(body).ok();
+    let provider_code = parsed
+        .as_ref()
+        .and_then(|value| provider_identifier(value, "code"));
+    let provider_type = parsed
+        .as_ref()
+        .and_then(|value| provider_identifier(value, "type"));
+    let request_id = parsed
+        .as_ref()
+        .and_then(|value| provider_identifier(value, "request_id"))
+        .or_else(|| {
+            parsed
+                .as_ref()
+                .and_then(|value| provider_identifier(value, "requestId"))
+        });
+    let request_class = classify_provider_request(
+        status,
+        provider_code.as_deref(),
+        provider_type.as_deref(),
+        body,
+    );
+
+    ProviderFailureDiagnostics {
+        provider_code,
+        provider_type,
+        request_id,
+        request_class,
+    }
+}
+
+fn provider_identifier(value: &serde_json::Value, key: &str) -> Option<String> {
+    let candidate = value
+        .get("error")
+        .and_then(|error| error.get(key))
+        .or_else(|| value.get(key))?;
+    let candidate = match candidate {
+        serde_json::Value::String(value) => value.clone(),
+        serde_json::Value::Number(value) => value.to_string(),
+        _ => return None,
+    };
+    let valid = !candidate.is_empty()
+        && candidate.len() <= MAX_PROVIDER_IDENTIFIER_BYTES
+        && candidate
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':'));
+    valid.then_some(candidate)
+}
+
+fn classify_provider_request(
+    status: u16,
+    provider_code: Option<&str>,
+    provider_type: Option<&str>,
+    body: &str,
+) -> Option<&'static str> {
+    if status != 400 && status != 413 {
+        return None;
+    }
+    let normalized = format!(
+        "{} {} {}",
+        provider_code.unwrap_or_default(),
+        provider_type.unwrap_or_default(),
+        body
+    )
+    .to_ascii_lowercase();
+    let size_markers = [
+        "context_length",
+        "context length",
+        "maximum context",
+        "request_too_large",
+        "request too large",
+        "payload_too_large",
+        "payload too large",
+        "too many tokens",
+        "token limit",
+    ];
+    if status == 413
+        || size_markers
+            .iter()
+            .any(|marker| normalized.contains(marker))
+    {
+        return Some("request_size");
+    }
+    let invalid_history_marker = ["missing", "required", "unmatched", "duplicate", "invalid"]
+        .iter()
+        .any(|marker| normalized.contains(marker));
+    if normalized.contains("reasoning_content")
+        || normalized.contains("thinking is enabled")
+        || ((normalized.contains("tool_call") || normalized.contains("tool call"))
+            && invalid_history_marker)
+    {
+        return Some("thinking_tool_history");
+    }
+    Some("unknown_request")
 }
 
 /// Construct a `CompletionRequest` whose `chat_history` is the encoded
@@ -640,8 +914,70 @@ pub fn encode(frag: &Fragment, thinking: bool) -> Option<Message> {
 
 #[cfg(test)]
 mod transport_tests {
+    use super::{provider_failure_diagnostics, provider_hitch_message};
+
     #[test]
     fn openai_http_client_builds_with_gateway_safe_settings() {
         let _client = super::openai_http_client();
+    }
+
+    #[test]
+    fn provider_failure_diagnostics_classify_without_retaining_response_message() {
+        let sensitive = "PRIVATE PAPER BODY MUST NOT ENTER DIAGNOSTICS";
+        let body = serde_json::json!({
+            "error": {
+                "message": format!("{sensitive}: reasoning_content is missing"),
+                "type": "invalid_request_error",
+                "code": "invalid_request_error"
+            },
+            "request_id": "req-123"
+        })
+        .to_string();
+
+        let diagnostics = provider_failure_diagnostics(400, &body);
+
+        assert_eq!(
+            diagnostics.provider_code.as_deref(),
+            Some("invalid_request_error")
+        );
+        assert_eq!(
+            diagnostics.provider_type.as_deref(),
+            Some("invalid_request_error")
+        );
+        assert_eq!(diagnostics.request_id.as_deref(), Some("req-123"));
+        assert_eq!(diagnostics.request_class, Some("thinking_tool_history"));
+        assert!(!format!("{diagnostics:?}").contains(sensitive));
+    }
+
+    #[test]
+    fn provider_failure_diagnostics_distinguish_size_and_unknown_requests() {
+        let size = provider_failure_diagnostics(
+            400,
+            r#"{"error":{"code":"context_length_exceeded","message":"too many tokens"}}"#,
+        );
+        let unknown = provider_failure_diagnostics(
+            400,
+            r#"{"error":{"code":"bad code with spaces","message":"rejected"}}"#,
+        );
+
+        assert_eq!(size.request_class, Some("request_size"));
+        assert_eq!(unknown.request_class, Some("unknown_request"));
+        assert_eq!(unknown.provider_code, None);
+    }
+
+    #[test]
+    fn http_hitch_summary_does_not_retain_provider_body() {
+        let sensitive = "PRIVATE PAPER BODY MUST NOT ENTER THE HITCH";
+        let error = rig::completion::CompletionError::HttpError(
+            rig::http_client::Error::InvalidStatusCodeWithMessage(
+                http::StatusCode::BAD_REQUEST,
+                sensitive.into(),
+            ),
+        );
+        let status = Some(http::StatusCode::BAD_REQUEST.as_u16());
+        let message = provider_hitch_message(&error, status);
+
+        assert_eq!(message, "provider completion failed with HTTP 400");
+        assert!(!message.contains(sensitive));
     }
 }

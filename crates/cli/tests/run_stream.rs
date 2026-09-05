@@ -1,5 +1,8 @@
 use cli::cmd::run::{completion_event_json, is_terminal_event};
-use cli::hook::{CompletionEvent, ComponentMeta, GraphEvent, HookEvent, HookKind, MachineEvent};
+use cli::hook::{
+    CompletionDiagnosticFields, CompletionEvent, ComponentMeta, GraphEvent, HookEvent, HookKind,
+    MachineEvent,
+};
 use serde::Deserialize;
 
 fn event(kind: HookKind) -> HookEvent {
@@ -110,6 +113,23 @@ fn completion_failure_json_adds_sanitized_metadata() {
         failure_kind: Some("provider_error".into()),
         retryable: Some(true),
         duration_ms: Some(12_345),
+        diagnostics: Some(Box::new(CompletionDiagnosticFields {
+            serialized_request_bytes: 524_288,
+            estimated_input_tokens: 131_072,
+            message_count: 12,
+            tool_definition_count: 3,
+            tool_call_count: 4,
+            tool_result_count: 3,
+            thinking_enabled: true,
+            reasoning_content_present: true,
+            reasoning_content_bytes: 4096,
+            unmatched_tool_call_count: 1,
+            duplicate_tool_call_count: 0,
+            provider_code: Some("server_error".into()),
+            provider_type: Some("upstream_error".into()),
+            request_id: Some("req-123".into()),
+            request_class: Some("thinking_tool_history".into()),
+        })),
     });
 
     assert_eq!(payload["outcome"], "failure");
@@ -117,6 +137,21 @@ fn completion_failure_json_adds_sanitized_metadata() {
     assert_eq!(payload["failure_kind"], "provider_error");
     assert_eq!(payload["retryable"], true);
     assert_eq!(payload["duration_ms"], 12_345);
+    assert_eq!(payload["serialized_request_bytes"], 524_288);
+    assert_eq!(payload["estimated_input_tokens"], 131_072);
+    assert_eq!(payload["message_count"], 12);
+    assert_eq!(payload["tool_definition_count"], 3);
+    assert_eq!(payload["tool_call_count"], 4);
+    assert_eq!(payload["tool_result_count"], 3);
+    assert_eq!(payload["thinking_enabled"], true);
+    assert_eq!(payload["reasoning_content_present"], true);
+    assert_eq!(payload["reasoning_content_bytes"], 4096);
+    assert_eq!(payload["unmatched_tool_call_count"], 1);
+    assert_eq!(payload["duplicate_tool_call_count"], 0);
+    assert_eq!(payload["provider_code"], "server_error");
+    assert_eq!(payload["provider_type"], "upstream_error");
+    assert_eq!(payload["request_id"], "req-123");
+    assert_eq!(payload["request_class"], "thinking_tool_history");
     assert!(payload.get("error").is_none());
     assert!(payload.get("message").is_none());
 }
@@ -135,6 +170,7 @@ fn legacy_completion_event_omits_new_optional_fields() {
         failure_kind: None,
         retryable: None,
         duration_ms: None,
+        diagnostics: None,
     });
 
     assert!(payload.get("outcome").is_none());
@@ -164,6 +200,23 @@ fn legacy_consumers_can_ignore_additive_completion_fields() {
         failure_kind: Some("rate_limited".into()),
         retryable: Some(true),
         duration_ms: Some(100),
+        diagnostics: Some(Box::new(CompletionDiagnosticFields {
+            serialized_request_bytes: 1024,
+            estimated_input_tokens: 256,
+            message_count: 2,
+            tool_definition_count: 0,
+            tool_call_count: 0,
+            tool_result_count: 0,
+            thinking_enabled: false,
+            reasoning_content_present: false,
+            reasoning_content_bytes: 0,
+            unmatched_tool_call_count: 0,
+            duplicate_tool_call_count: 0,
+            provider_code: Some("rate_limit".into()),
+            provider_type: None,
+            request_id: Some("req-safe".into()),
+            request_class: None,
+        })),
     });
 
     let legacy: LegacyCompletionConsumer = serde_json::from_value(payload).unwrap();

@@ -1,4 +1,6 @@
-use machine::completion::{build_request, decode, encode, encode_context};
+use machine::completion::{
+    build_request, decode, encode, encode_context, request_shape_diagnostics,
+};
 use machine::{Content, Fragment, Limit, Model, Protocol, Role};
 use rig::completion::message::{Reasoning, Text as RigText, ToolCall as RigToolCall, ToolFunction};
 use rig::completion::{AssistantContent, Message};
@@ -491,6 +493,49 @@ fn build_request_passes_model_temperature_and_max_tokens() {
 
     assert_eq!(req.temperature, Some(0.42));
     assert_eq!(req.max_tokens, Some(4096));
+}
+
+#[test]
+fn request_shape_diagnostics_count_structure_without_retaining_content() {
+    let sensitive_text = "PRIVATE PAPER BODY MUST NOT ENTER DIAGNOSTICS";
+    let messages = vec![
+        Message::system("system"),
+        Message::user(sensitive_text),
+        Message::Assistant {
+            id: None,
+            content: rig::OneOrMany::many(vec![
+                assistant_tool_call("call_1", "search"),
+                assistant_reasoning("private chain of thought"),
+            ])
+            .expect("assistant content"),
+        },
+        Message::tool_result("call_1", "private tool result"),
+        Message::Assistant {
+            id: None,
+            content: rig::OneOrMany::one(assistant_tool_call("call_1", "search")),
+        },
+    ];
+    let tools = vec![rig::completion::ToolDefinition {
+        name: "search".into(),
+        description: "search private sources".into(),
+        parameters: json!({"type": "object"}),
+    }];
+    let request = build_request(&messages, &tools, &dummy_model()).expect("request builds");
+
+    let diagnostics = request_shape_diagnostics(&request, true);
+
+    assert_eq!(diagnostics.message_count, 5);
+    assert_eq!(diagnostics.tool_definition_count, 1);
+    assert_eq!(diagnostics.tool_call_count, 2);
+    assert_eq!(diagnostics.tool_result_count, 1);
+    assert!(diagnostics.thinking_enabled);
+    assert!(diagnostics.reasoning_content_present);
+    assert!(diagnostics.reasoning_content_bytes > 0);
+    assert_eq!(diagnostics.unmatched_tool_call_count, 1);
+    assert_eq!(diagnostics.duplicate_tool_call_count, 1);
+    assert!(diagnostics.serialized_request_bytes > 0);
+    assert!(diagnostics.estimated_input_tokens > 0);
+    assert!(!format!("{diagnostics:?}").contains(sensitive_text));
 }
 
 // ── decode: reasoning preservation ──

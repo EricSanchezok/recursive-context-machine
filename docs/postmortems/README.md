@@ -22,4 +22,4 @@ Name files `NNNN-short-title.md` (sequential number) and put `Artifact-Version: 
 
 ## Index
 
-None yet.
+- [Provider 400 observability gap](0000-provider-400-observability-gap.md)
