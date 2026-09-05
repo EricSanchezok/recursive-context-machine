@@ -1,7 +1,7 @@
 class Rcm < Formula
   desc "Composable AI pipelines with .rcm files"
   homepage "https://github.com/EricSanchezok/recursive-context-machine"
-  version "0.2.23"
+  version "0.2.24"
   license "MIT"
 
   livecheck do
@@ -13,20 +13,20 @@ class Rcm < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/EricSanchezok/recursive-context-machine/releases/download/v#{version}/accelerate-aarch64-darwin.tar.gz"
-      sha256 "d68af88e1b189b482d7de1e1e6269fa936f2804e9ab2738dad2864d97c190802"
+      sha256 "2cc19b4c6d309d3eb47631c51f872d2c72488e9af546599c5c109f7df9c1260d"
     else
       url "https://github.com/EricSanchezok/recursive-context-machine/releases/download/v#{version}/accelerate-x86_64-darwin.tar.gz"
-      sha256 "7a6066d73b1008e720b401b18d5f44e0a00ac1007d7066566a1a5ca88d9486d1"
+      sha256 "9be3f3abdcdd4153bd643ea15f4d6bc20c42413eff73fef0dfa95401a0e4bf9d"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/EricSanchezok/recursive-context-machine/releases/download/v#{version}/accelerate-aarch64-linux.tar.gz"
-      sha256 "83b73154124bcbbf0b221a3ffeedde8776f67dc1af6619174d558f7e024ad8fa"
+      sha256 "12f9668224dce2b1cadc8570ef7ae3b88b0b8faf2cc3bddabe59152c97628c59"
     else
       url "https://github.com/EricSanchezok/recursive-context-machine/releases/download/v#{version}/accelerate-x86_64-linux.tar.gz"
-      sha256 "1b67f96c37c8230e8b705b8e38c11829ac1b2da7a1fa3ba73dab443d8999d03e"
+      sha256 "bbfc081691507672b70de8f2c20cc2b71470080cdcb78a3ca31cb846dd2bb347"
     end
   end
 

@@ -6,6 +6,8 @@ The Rust workspace is composed of six crates: machine owns context, model, polic
 
 Cross-crate seams are the machine API, accelerator graph and tool registries, storage snapshots, the CLI parser/compiler boundary, the protobuf service in proto/rcm.proto, and the SDK generated bindings.
 
+Model protocol selection is explicit at the machine boundary. OpenAI-compatible gateways use the generic `openai` transport, while DeepSeek uses the provider-native `deepseek` transport because its thinking/tool-history assistant schema requires string content; endpoint and model names never select a protocol implicitly.
+
 ## Conventions
 
 - New behavior goes on documented extension points; a decision record is required when a core-flow change chooses among meaningful alternatives.

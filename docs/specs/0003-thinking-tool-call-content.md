@@ -1,7 +1,7 @@
 # Thinking tool-call assistant content
 
 Artifact-Version: 1
-Status: Implemented
+Status: Superseded by [0004](0004-deepseek-native-transport.md)
 
 ## Intent
 

@@ -356,8 +356,8 @@ fn build_models(defs: &[ast::ModelDef]) -> Result<Vec<Model>, String> {
             thinking: def.thinking,
             ..Default::default()
         };
-        if def.thinking_configured && protocol == Protocol::OpenAI {
-            model.set_openai_thinking_mode(def.thinking);
+        if def.thinking_configured && matches!(protocol, Protocol::OpenAI | Protocol::DeepSeek) {
+            model.set_thinking_mode(def.thinking);
         }
         if let Some(timeout) = def.timeout {
             model.timeout = timeout;
@@ -373,6 +373,7 @@ fn build_models(defs: &[ast::ModelDef]) -> Result<Vec<Model>, String> {
 fn parse_protocol(name: &str) -> Result<Protocol, String> {
     match name {
         "openai" => Ok(Protocol::OpenAI),
+        "deepseek" => Ok(Protocol::DeepSeek),
         "anthropic" => Ok(Protocol::Anthropic),
         "gemini" => Ok(Protocol::Gemini),
         _ => Err(format!("unknown protocol: {}", name)),

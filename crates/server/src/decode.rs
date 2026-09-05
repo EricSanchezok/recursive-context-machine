@@ -137,6 +137,7 @@ pub fn build_model(spec: &ModelSpec) -> Result<machine::Model, Status> {
     use machine::Protocol;
     let protocol = match spec.protocol.as_str() {
         "openai" => Protocol::OpenAI,
+        "deepseek" => Protocol::DeepSeek,
         "anthropic" => Protocol::Anthropic,
         "gemini" => Protocol::Gemini,
         other => {
@@ -225,5 +226,17 @@ mod tests {
         .expect("model should decode");
 
         assert_eq!(model.timeout, 1_800);
+    }
+
+    #[test]
+    fn decoded_model_accepts_deepseek_protocol() {
+        let model = build_model(&ModelSpec {
+            name: "deepseek-test".to_string(),
+            protocol: "deepseek".to_string(),
+            ..Default::default()
+        })
+        .expect("DeepSeek model should decode");
+
+        assert_eq!(model.protocol, machine::Protocol::DeepSeek);
     }
 }
