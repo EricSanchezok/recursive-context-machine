@@ -4,6 +4,9 @@ use machine::completion::{
 use machine::{Content, Fragment, Limit, Model, Protocol, Role};
 use rig::completion::message::{Reasoning, Text as RigText, ToolCall as RigToolCall, ToolFunction};
 use rig::completion::{AssistantContent, Message};
+use rig::providers::openai::completion::{
+    CompletionRequest as OpenAICompletionRequest, OpenAIRequestParams,
+};
 use serde_json::json;
 
 fn tool_call_fragment() -> Fragment {
@@ -290,6 +293,33 @@ fn encode_tool_call_emits_stored_reasoning_not_placeholder() {
             "thinking={thinking}: reasoning text must come from fragment, not '.'",
         );
     }
+}
+
+#[test]
+fn thinking_tool_call_replay_keeps_openai_content_field() {
+    let fragments = vec![
+        Fragment::tool_call("call_x", "shell", json!({"command": "ls"}))
+            .with_reasoning("the user asked for a directory listing"),
+        Fragment::tool_result("call_x", "file.txt", None),
+    ];
+    let messages = encode_context(&fragments, true);
+    let mut model = dummy_model();
+    model.set_openai_thinking_mode(true);
+    let request = build_request(&messages, &[], &model).expect("request builds");
+    let wire_request = OpenAICompletionRequest::try_from(OpenAIRequestParams {
+        model: "deepseek-v4-flash".into(),
+        request,
+        strict_tools: false,
+        tool_result_array_content: false,
+    })
+    .expect("OpenAI request converts");
+    let wire_json = serde_json::to_value(wire_request).expect("OpenAI request serializes");
+
+    assert_ne!(
+        wire_json["messages"][0]["content"],
+        serde_json::Value::Null,
+        "thinking tool-call history must retain the required assistant content field",
+    );
 }
 
 /// Symmetric: text-only assistant fragments never carry reasoning, even when
