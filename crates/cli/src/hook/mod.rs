@@ -80,7 +80,27 @@ pub enum CompletionEvent {
         failure_kind: Option<String>,
         retryable: Option<bool>,
         duration_ms: Option<u64>,
+        diagnostics: Option<Box<CompletionDiagnosticFields>>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct CompletionDiagnosticFields {
+    pub serialized_request_bytes: u64,
+    pub estimated_input_tokens: u64,
+    pub message_count: u64,
+    pub tool_definition_count: u64,
+    pub tool_call_count: u64,
+    pub tool_result_count: u64,
+    pub thinking_enabled: bool,
+    pub reasoning_content_present: bool,
+    pub reasoning_content_bytes: u64,
+    pub unmatched_tool_call_count: u64,
+    pub duplicate_tool_call_count: u64,
+    pub provider_code: Option<String>,
+    pub provider_type: Option<String>,
+    pub request_id: Option<String>,
+    pub request_class: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -363,6 +383,43 @@ impl HookEvent {
                     .then(|| fields.bool("retryable"))
                     .flatten(),
                 duration_ms: fields.u64("duration_ms"),
+                diagnostics: Some(Box::new(CompletionDiagnosticFields {
+                    serialized_request_bytes: fields
+                        .u64("serialized_request_bytes")
+                        .unwrap_or_default(),
+                    estimated_input_tokens: fields
+                        .u64("estimated_input_tokens")
+                        .unwrap_or_default(),
+                    message_count: fields.u64("message_count").unwrap_or_default(),
+                    tool_definition_count: fields.u64("tool_definition_count").unwrap_or_default(),
+                    tool_call_count: fields.u64("tool_call_count").unwrap_or_default(),
+                    tool_result_count: fields.u64("tool_result_count").unwrap_or_default(),
+                    thinking_enabled: fields.bool("thinking_enabled").unwrap_or_default(),
+                    reasoning_content_present: fields
+                        .bool("reasoning_content_present")
+                        .unwrap_or_default(),
+                    reasoning_content_bytes: fields
+                        .u64("reasoning_content_bytes")
+                        .unwrap_or_default(),
+                    unmatched_tool_call_count: fields
+                        .u64("unmatched_tool_call_count")
+                        .unwrap_or_default(),
+                    duplicate_tool_call_count: fields
+                        .u64("duplicate_tool_call_count")
+                        .unwrap_or_default(),
+                    provider_code: fields
+                        .string("provider_code")
+                        .filter(|value| !value.is_empty()),
+                    provider_type: fields
+                        .string("provider_type")
+                        .filter(|value| !value.is_empty()),
+                    request_id: fields
+                        .string("request_id")
+                        .filter(|value| !value.is_empty()),
+                    request_class: fields
+                        .string("request_class")
+                        .filter(|value| !value.is_empty()),
+                })),
             }),
             "tool_call" => HookKind::Tool(ToolEvent::Call {
                 call_id: fields.string("call_id").unwrap_or_default(),

@@ -25,9 +25,10 @@ pub async fn react(
 
     hook!(event = "completion_start", machine_id);
 
-    let (fragments, usage) = completion::complete(ctx, resources, overlay).await;
+    let (fragments, usage, diagnostics) =
+        completion::complete_with_diagnostics(ctx, resources, overlay).await;
     let elapsed = started_at.elapsed();
-    let telemetry = crate::event::completion_telemetry(&fragments);
+    let telemetry = crate::event::completion_telemetry_with_diagnostics(&fragments, &diagnostics);
     hook!(
         event = "completion_end",
         machine_id,
@@ -37,6 +38,21 @@ pub async fn react(
         http_status = telemetry.http_status.unwrap_or_default(),
         failure_kind = telemetry.failure_kind.unwrap_or_default(),
         retryable = telemetry.retryable.unwrap_or(false),
+        serialized_request_bytes = telemetry.serialized_request_bytes,
+        estimated_input_tokens = telemetry.estimated_input_tokens,
+        message_count = telemetry.message_count,
+        tool_definition_count = telemetry.tool_definition_count,
+        tool_call_count = telemetry.tool_call_count,
+        tool_result_count = telemetry.tool_result_count,
+        thinking_enabled = telemetry.thinking_enabled,
+        reasoning_content_present = telemetry.reasoning_content_present,
+        reasoning_content_bytes = telemetry.reasoning_content_bytes,
+        unmatched_tool_call_count = telemetry.unmatched_tool_call_count,
+        duplicate_tool_call_count = telemetry.duplicate_tool_call_count,
+        provider_code = telemetry.provider_code.as_deref().unwrap_or_default(),
+        provider_type = telemetry.provider_type.as_deref().unwrap_or_default(),
+        request_id = telemetry.request_id.as_deref().unwrap_or_default(),
+        request_class = telemetry.request_class.unwrap_or_default(),
         fragments = fragments.len(),
         input_tokens = usage.input_tokens,
         output_tokens = usage.output_tokens,

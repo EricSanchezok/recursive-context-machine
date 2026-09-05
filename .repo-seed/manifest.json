@@ -97,7 +97,8 @@
       "path": ".agents/skills/repo-review/SKILL.md",
       "sha256": "b0c935491592d2cc61008fc91c95af1f3fb39041e1f419ace80e6c3c41605bee",
       "category": "skill",
-      "capability": "baseline"
+      "capability": "baseline",
+      "userModified": true
     },
     {
       "path": ".agents/skills/repo-governance/SKILL.md",
@@ -257,7 +258,7 @@
     },
     {
       "path": "docs/postmortems/README.md",
-      "sha256": "2c25abcb13a98f5c3c7f4408665c24c80e47855e5540dfa83b76777e6c46f3c3",
+      "sha256": "60f73daf42810198b809c54a071c42357187fa4bca7ab376eb1322e0cb897889",
       "category": "docs",
       "capability": "postmortems"
     },
