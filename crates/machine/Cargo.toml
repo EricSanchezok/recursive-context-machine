@@ -18,7 +18,7 @@ serde_json = { workspace = true }
 rig-core = { version = "0.36", features = ["reqwest", "rustls"] }
 http = "1"
 tracing = { workspace = true }
-base64 = "0.22"
+base64 = "0.23"
 futures-util = "0.3"
 
 [dev-dependencies]
