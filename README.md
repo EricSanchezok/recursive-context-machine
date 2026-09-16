@@ -1,8 +1,8 @@
 # RCM — Recursive Context Machine
 
-RCM is a Rust runtime for composable, stateful AI workflows. Pipelines are
-described with `.rcm` files and can combine model calls, tools, MCP servers,
-LSP diagnostics, storage, and explicit state transitions.
+RCM is a Rust runtime for composable, stateful AI workflows with explicit context management.
+
+Pipelines are described with `.rcm` files and can combine model calls, tools, MCP servers, LSP diagnostics, storage, and explicit state transitions.
 
 The public source, release assets, installers, and Homebrew Formula live in
 this repository:
